@@ -1,4 +1,10 @@
-import { IsString, IsEmail, IsStrongPassword, IsDate } from 'class-validator';
+import {
+  IsString,
+  IsEmail,
+  IsStrongPassword,
+  IsDateString,
+  IsEmpty,
+} from 'class-validator';
 
 export class CreateUserDto {
   @IsString()
@@ -16,14 +22,17 @@ export class CreateUserDto {
   })
   password: string;
 
-  @IsDate()
+  @IsDateString()
   dateOfBirth: Date;
 
-  @IsDate()
-  dateCreated: Date;
+  @IsEmpty()
+  dateCreated?: Date;
 
-  @IsDate()
-  dateUpdated: Date;
+  @IsEmpty()
+  dateUpdated?: Date;
+
+  @IsString()
+  discordId: string;
 
   @IsString()
   accountLolId: string;
