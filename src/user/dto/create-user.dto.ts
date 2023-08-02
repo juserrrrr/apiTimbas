@@ -23,13 +23,13 @@ export class CreateUserDto {
   password: string;
 
   @IsDateString()
-  dateOfBirth: Date;
+  dateOfBirth: string;
 
   @IsEmpty()
-  dateCreated?: Date;
+  dateCreated?: string;
 
   @IsEmpty()
-  dateUpdated?: Date;
+  dateUpdated?: string;
 
   @IsString()
   discordId: string;

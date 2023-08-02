@@ -23,24 +23,21 @@ export class UserController {
 
   @Get()
   async findAll() {
-    return 'This action returns all users';
+    return this.userService.findAll();
   }
 
   @Get(':id')
-  async findOne(@Param('id', ParseIntPipe) id: number) {
-    return { id };
+  async findOne(@Param('id') id: string) {
+    return this.userService.findOne(id);
   }
 
   @Patch(':id')
-  async update(
-    @Param('id', ParseIntPipe) id: number,
-    @Body() updateUserDto: UpdateUserDto,
-  ) {
-    return { id, updateUserDto };
+  async update(@Param('id') id: string, @Body() updateUserDto: UpdateUserDto) {
+    return this.userService.update(id, updateUserDto);
   }
 
   @Delete(':id')
-  async remove(@Param('id', ParseIntPipe) id: number) {
-    return id;
+  async remove(@Param('id') id: string) {
+    return this.userService.remove(id);
   }
 }
