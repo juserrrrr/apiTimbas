@@ -4,6 +4,7 @@ import {
   IsStrongPassword,
   IsDateString,
   IsEmpty,
+  IsOptional,
 } from 'class-validator';
 
 export class CreateUserDto {
@@ -32,11 +33,14 @@ export class CreateUserDto {
   dateUpdated?: string;
 
   @IsString()
+  @IsOptional()
   discordId: string;
 
   @IsString()
-  accountLolId: string;
+  @IsOptional()
+  accountLolId?: string;
 
   @IsString()
-  accountValorantId: string;
+  @IsOptional()
+  accountValorantId?: string;
 }
