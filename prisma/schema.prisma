@@ -8,16 +8,43 @@ datasource db {
 }
 
 model User {
-  id                String   @id @default(auto()) @map("_id") @db.ObjectId
-  name              String
-  email             String   @unique
-  password          String
-  dateOfBirth       DateTime
-  dateCreated       DateTime @default(now())
-  dateUpdated       DateTime @updatedAt
-  discordId         String?   @unique
-  accountLolId      String?   @unique
-  accountValorantId String?   @unique
+  id          String    @id @default(auto()) @map("_id") @db.ObjectId
+  name        String
+  email       String    @unique
+  password    String
+  dateOfBirth DateTime
+  dateCreated DateTime  @default(now())
+  dateUpdated DateTime  @updatedAt
+  discord     Discord?  @relation(fields: [discordId], references: [id])
+  discordId   String?   @db.ObjectId
+  league      League?   @relation(fields: [leagueId], references: [id])
+  leagueId    String?   @db.ObjectId
+  valorant    Valorant? @relation(fields: [valorantId], references: [id])
+  valorantId  String?   @db.ObjectId
 
   @@map("user")
+}
+
+model Discord {
+  id        String @id @default(auto()) @map("_id") @db.ObjectId
+  discordId String @unique
+  User      User[]
+
+  @@map("discord")
+}
+
+model League {
+  id       String @id @default(auto()) @map("_id") @db.ObjectId
+  leagueId String @unique
+  User     User[]
+
+  @@map("league")
+}
+
+model Valorant {
+  id         String @id @default(auto()) @map("_id") @db.ObjectId
+  valorantId String @unique
+  User       User[]
+
+  @@map("valorant")
 }
