@@ -14,10 +14,10 @@ export class UserService {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(createUserDto: CreateUserDto) {
-    return this.prisma.user
+    const userCreated = await this.prisma.user
       .create({
         data: createUserDto,
-        select: { id: true },
+        select: { id: true, name: true, email: true },
       })
       .catch((err) => {
         if (err instanceof Prisma.PrismaClientKnownRequestError) {
@@ -28,6 +28,8 @@ export class UserService {
           }
         }
       });
+
+    return userCreated;
   }
 
   async findAll() {
