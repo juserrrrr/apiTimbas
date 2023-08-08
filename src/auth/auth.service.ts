@@ -1,8 +1,4 @@
-import {
-  BadRequestException,
-  Injectable,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { AuthRegisterDto } from './dto/auth-register.dto';
@@ -40,8 +36,8 @@ export class AuthService {
         issuer: 'ApiTimbasSignature',
       });
       return decoded;
-    } catch (err) {
-      throw new UnauthorizedException(err);
+    } catch {
+      throw new UnauthorizedException('Token invalid');
     }
   }
 
