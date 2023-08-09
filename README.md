@@ -27,6 +27,9 @@ Existem perspectivas de crescimento da ApiTimbas, para novas interfaces como tam
 
 - **Utilização de webssockets**: O objetivo principal é manter uma conexão contínua entre os bot do Discord e à API, permitindo uma interação dinâmica e em tempo real para execução de comandos e obteção de informação seja pelo dashbord ou outra interface.
 
+## Tecnologias
+Em construção
+
 ## Contribuição
 
 Se você estiver interessado em contribuir para o projeto ApiTimbas, fique à vontade para enviar pull requests, relatar problemas e sugerir melhorias. Sua participação é muito bem-vinda e valorizada!
