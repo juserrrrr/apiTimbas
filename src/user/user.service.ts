@@ -8,18 +8,24 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { isValidObjectId } from 'mongoose';
 import { Prisma } from '@prisma/client';
+import * as bcrypt from 'bcrypt';
 
 @Injectable()
 export class UserService {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(createUserDto: CreateUserDto) {
+    const salt = await bcrypt.genSalt();
+
+    createUserDto.password = await bcrypt.hash(createUserDto.password, salt);
+
     const userCreated = await this.prisma.user
       .create({
         data: createUserDto,
-        select: { id: true, name: true, email: true },
+        select: { id: true, name: true, email: true, role: true },
       })
       .catch((err) => {
+        console.log(err);
         if (err instanceof Prisma.PrismaClientKnownRequestError) {
           if (err.code === 'P2002') {
             throw new BadRequestException(
@@ -51,7 +57,10 @@ export class UserService {
   }
 
   async update(id: string, updateUserDto: UpdateUserDto) {
-    await this.findOne(id);
+    const salt = await bcrypt.genSalt();
+
+    updateUserDto.password = await bcrypt.hash(updateUserDto.password, salt);
+    await this.findOne(id); // SEE CHANGING THIS LOGIC LATER
     return this.prisma.user
       .update({
         where: {

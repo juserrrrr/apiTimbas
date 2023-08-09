@@ -3,6 +3,7 @@ import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { AuthRegisterDto } from './dto/auth-register.dto';
 import { UserService } from 'src/user/user.service';
+import * as bcrypt from 'bcrypt';
 
 @Injectable()
 export class AuthService {
@@ -12,12 +13,13 @@ export class AuthService {
     private readonly userService: UserService,
   ) {}
 
-  createToken(id: string, name: string, email: string) {
+  createToken(id: string, name: string, email: string, role: string) {
     const acessToken = this.jwtService.sign(
       {
         id,
         name,
         email,
+        role,
       },
       {
         expiresIn: '1h',
@@ -44,24 +46,22 @@ export class AuthService {
   async register(authRegisterDto: AuthRegisterDto) {
     const user = await this.userService.create(authRegisterDto); // create user
     if (typeof user === 'object') {
-      const { id, name, email } = user;
-      return this.createToken(id, name, email);
+      const { id, name, email, role } = user;
+      return this.createToken(id, name, email, role);
     }
   }
 
-  async login(email: string, password: string) {
+  async login(emailLogin: string, password: string) {
     const user = await this.prisma.user.findUnique({
       where: {
-        email,
-        password,
+        email: emailLogin,
       },
     });
-    if (user) {
-      const { id, name, email } = user;
-      return this.createToken(id, name, email);
+    if (!user || !(await bcrypt.compare(password, user.password))) {
+      throw new UnauthorizedException('email or password is incorrect');
     }
-
-    throw new UnauthorizedException('email or password is incorrect');
+    const { id, name, email, role } = user;
+    return this.createToken(id, name, email, role);
   }
 
   async forgotPassword(email: string) {
