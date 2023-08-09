@@ -4,7 +4,7 @@ A ApiTimbas é uma API projetada para ser utilizada em conjunto com o bot do Dis
 
 ## Objetivo
 
-O principal objetivo da ApiTimbas é a fins de estudo pessoal mas também com a função de facilitar a intereção entre usuários, com comandos que já existem no bot do TeamBahia. Por fim, criar uma ferramenta flexível que permita a implementação de novas funcionalidades, automações e interações entre os membros.
+O principal objetivo da ApiTimbas é para fins de estudo pessoal mas também com o objetivo de facilitar a intereção entre usuários, com comandos que já existem no bot do TeamBahia. Por fim, criar uma ferramenta flexível que permita a implementação de novas funcionalidades, automações e interações entre os membros.
 
 ## Funcionalidades Atuais
 
@@ -12,7 +12,7 @@ Atualmente, a ApiTimbas oferece as seguintes funcionalidades:
 
 - **Criaçao de usuários**: A API permite a criação de usuários através de uma solicitação HTTP.
 
-- **Proteção via token**: Já possui uma segurança para acesso da mesma afim de proteger a mesma.
+- **Proteção via token**: Já possui uma segurança para acesso através de tokens JWT, afim de proteger a mesma.
 
 - **Cargos específicos para cada usuário**: A API já entende e diferencia as funções permitdas para cada membro.
 
