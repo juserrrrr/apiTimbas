@@ -8,25 +8,38 @@ datasource db {
 }
 
 model User {
-  id          String    @id @default(auto()) @map("_id") @db.ObjectId
-  discordId   String   @unique 
-  leagueId    String?   @unique 
-  name        String
-  email       String?    @unique
-  password    String?
-  role        String    @default("user")
-  dateOfBirth DateTime?
-  dateCreated DateTime  @default(now())
-  dateUpdated DateTime  @updatedAt
+  id             String       @id @default(auto()) @map("_id") @db.ObjectId
+  discordId      String       @unique
+  leagueId       String?      @unique
+  name           String
+  email          String?      @unique
+  password       String?
+  role           String       @default("user")
+  dateOfBirth    DateTime?
+  dateCreated    DateTime     @default(now())
+  dateUpdated    DateTime     @updatedAt
+  teamsLeagueIDs String[]     @db.ObjectId
+  TeamsLeague    TeamLeague[] @relation(fields: [teamsLeagueIDs], references: [id])
+}
+
+enum Side {
+  BLUE
+  RED
+}
+
+model TeamLeague {
+  id                  String             @id @default(auto()) @map("_id") @db.ObjectId
+  side                Side
+  playerIDs           String[]           @db.ObjectId
+  players             User[]             @relation(fields: [playerIDs], references: [id])
+  customLeagueMatchId String?            @db.ObjectId
+  CustomLeagueMatch   CustomLeagueMatch? @relation(fields: [customLeagueMatchId], references: [id])
 }
 
 model CustomLeagueMatch {
-  id          String    @id @default(auto()) @map("_id") @db.ObjectId
-  blueTeam    String[]
-  redTeam     String[]
-  winner        String
-  dateCreated DateTime  @default(now())
-  dateUpdated DateTime  @updatedAt
+  id          String       @id @default(auto()) @map("_id") @db.ObjectId
+  teams       TeamLeague[]
+  winnerId    String       @db.ObjectId
+  dateCreated DateTime     @default(now())
+  dateUpdated DateTime     @updatedAt
 }
-
-
