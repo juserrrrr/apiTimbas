@@ -32,6 +32,22 @@ export class AuthService {
     };
   }
 
+  createBotToken(botId: string) {
+    const acessToken = this.jwtService.sign(
+      {
+        botId,
+      },
+      {
+        expiresIn: '1y',
+        subject: botId,
+        issuer: 'ApiTimbasSignature',
+      },
+    );
+    return {
+      acessToken,
+    };
+  }
+
   validateToken(token: string) {
     try {
       const decoded = this.jwtService.verify(token, {
@@ -62,6 +78,11 @@ export class AuthService {
     }
     const { id, name, email, role } = user;
     return this.createToken(id, name, email, role);
+  }
+
+  //Verficar se a token do user no point é valida, se for, criar token do bot e também colocar rule de admin
+  async loginBot(botId: string) {
+    return this.createBotToken(botId);
   }
 
   async forgotPassword(email: string) {

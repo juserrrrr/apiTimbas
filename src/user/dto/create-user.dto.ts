@@ -14,6 +14,7 @@ export class CreateUserDto {
   name: string;
 
   @IsEmail()
+  @IsOptional()
   email: string;
 
   @IsStrongPassword({
@@ -23,6 +24,7 @@ export class CreateUserDto {
     minNumbers: 1,
     minSymbols: 1,
   })
+  @IsOptional()
   password: string;
 
   @IsOptional()
@@ -30,6 +32,7 @@ export class CreateUserDto {
   role: string;
 
   @IsDateString()
+  @IsOptional()
   dateOfBirth: string;
 
   @IsEmpty()
@@ -39,14 +42,9 @@ export class CreateUserDto {
   dateUpdated?: string;
 
   @IsString()
-  @IsOptional()
   discordId: string;
 
   @IsString()
   @IsOptional()
-  accountLolId?: string;
-
-  @IsString()
-  @IsOptional()
-  accountValorantId?: string;
+  LeagueId?: string;
 }

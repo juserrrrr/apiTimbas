@@ -22,7 +22,13 @@ export class UserService {
     const userCreated = await this.prisma.user
       .create({
         data: createUserDto,
-        select: { id: true, name: true, email: true, role: true },
+        select: {
+          id: true,
+          email: true,
+          discordId: true,
+          name: true,
+          role: true,
+        },
       })
       .catch((err) => {
         if (err instanceof Prisma.PrismaClientKnownRequestError) {
@@ -56,9 +62,10 @@ export class UserService {
   }
 
   async update(id: string, updateUserDto: UpdateUserDto) {
-    const salt = await bcrypt.genSalt();
-
-    updateUserDto.password = await bcrypt.hash(updateUserDto.password, salt);
+    if (updateUserDto.password) {
+      const salt = await bcrypt.genSalt();
+      updateUserDto.password = await bcrypt.hash(updateUserDto.password, salt);
+    }
     await this.findOne(id); // SEE CHANGING THIS LOGIC LATER
     return this.prisma.user
       .update({
@@ -66,6 +73,7 @@ export class UserService {
           id,
         },
         data: updateUserDto,
+        select: { email: true, name: true, role: true, discordId: true },
       })
       .catch((err) => {
         if (err instanceof Prisma.PrismaClientKnownRequestError) {

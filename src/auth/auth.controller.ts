@@ -12,6 +12,8 @@ import { AuthRegisterDto } from './dto/auth-register.dto';
 import { AuthForgotDto } from './dto/auth-forgot.dto';
 import { AuthResetDto } from './dto/auth-reset.dto';
 import { AuthGuard } from './guards/auth.guard';
+import { Roles } from 'src/decorators/roles.decorator';
+import { Role } from 'src/enums/role.enum';
 
 @Controller('auth')
 export class AuthController {
@@ -20,6 +22,13 @@ export class AuthController {
   @Post('login')
   async login(@Body() { email, password }: AuthLoginDto) {
     return this.authService.login(email, password);
+  }
+
+  @UseGuards(AuthGuard)
+  @Roles(Role.Admin)
+  @Post('login-bot')
+  async loginBot(@Body() { botId }: { botId: string }) {
+    return this.authService.loginBot(botId);
   }
 
   @Post('register')
