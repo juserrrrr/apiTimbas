@@ -18,8 +18,8 @@ model User {
   dateOfBirth    DateTime?
   dateCreated    DateTime     @default(now())
   dateUpdated    DateTime     @updatedAt
-  teamsLeagueIDs String[]     @db.ObjectId
-  TeamsLeague    TeamLeague[] @relation(fields: [teamsLeagueIDs], references: [id])
+  teamLeagueIDs String[]     @db.ObjectId
+  TeamsLeague    TeamLeague[] @relation(fields: [teamLeagueIDs], references: [id])
 }
 
 enum Side {

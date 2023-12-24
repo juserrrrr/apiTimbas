@@ -13,6 +13,13 @@ export class CreateUserDto {
   @IsString()
   name: string;
 
+  @IsString()
+  discordId: string;
+
+  @IsString()
+  @IsOptional()
+  LeagueId?: string;
+
   @IsEmail()
   @IsOptional()
   email: string;
@@ -41,10 +48,7 @@ export class CreateUserDto {
   @IsEmpty()
   dateUpdated?: string;
 
-  @IsString()
-  discordId: string;
-
-  @IsString()
+  @IsEmpty()
   @IsOptional()
-  LeagueId?: string;
+  teamLeagueIDs?: string[];
 }
