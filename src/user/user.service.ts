@@ -44,7 +44,16 @@ export class UserService {
   }
 
   async findAll() {
-    return this.prisma.user.findMany();
+    return this.prisma.user.findMany({
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        discordId: true,
+        teamLeagueIDs: true,
+      },
+    });
   }
 
   async findOne(id: string) {
@@ -52,6 +61,14 @@ export class UserService {
       const user = await this.prisma.user.findUnique({
         where: {
           id,
+        },
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          role: true,
+          discordId: true,
+          teamLeagueIDs: true,
         },
       });
       if (user) {
@@ -73,7 +90,13 @@ export class UserService {
           id,
         },
         data: updateUserDto,
-        select: { email: true, name: true, role: true, discordId: true },
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          role: true,
+          discordId: true,
+        },
       })
       .catch((err) => {
         if (err instanceof Prisma.PrismaClientKnownRequestError) {
@@ -89,6 +112,13 @@ export class UserService {
       .delete({
         where: {
           id,
+        },
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          role: true,
+          discordId: true,
         },
       })
       .catch((err) => {
