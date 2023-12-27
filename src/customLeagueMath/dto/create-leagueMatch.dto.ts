@@ -1,16 +1,9 @@
-import { IsArray, IsEmpty, IsString } from 'class-validator';
+import { IsArray, IsEmpty, IsOptional, IsString } from 'class-validator';
 
 //create enum for side, BLUE and RED
-enum Side {
+export enum Side {
   BLUE = 'BLUE',
   RED = 'RED',
-}
-
-export interface TeamLeague {
-  id: string;
-  side: Side;
-  PlayerIDs: string;
-  customLeagueMatchId: string;
 }
 
 export class CreateCustomLeagueMatchDto {
@@ -18,9 +11,13 @@ export class CreateCustomLeagueMatchDto {
   id: string;
 
   @IsArray()
-  teams: TeamLeague[];
+  teamBlue: string[];
+
+  @IsArray()
+  teamRed: string[];
 
   @IsString()
+  @IsOptional()
   winnerId: string;
 
   @IsEmpty()
@@ -29,3 +26,20 @@ export class CreateCustomLeagueMatchDto {
   @IsEmpty()
   dateUpdated: Date;
 }
+
+// export class CreateCustomLeagueMatchDto {
+//   @IsEmpty()
+//   id: string;
+
+//   @IsArray()
+//   teams: TeamLeague[];
+
+//   @IsString()
+//   winnerId: string;
+
+//   @IsEmpty()
+//   dateCreated: Date;
+
+//   @IsEmpty()
+//   dateUpdated: Date;
+// }

@@ -78,6 +78,26 @@ export class UserService {
     throw new NotFoundException(`User with id ${id} not found`);
   }
 
+  async findOneByDiscordId(discordId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: {
+        discordId,
+      },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        discordId: true,
+        teamLeagueIDs: true,
+      },
+    });
+    if (user) {
+      return user;
+    }
+    throw new NotFoundException(`User with discordId ${discordId} not found`);
+  }
+
   async update(id: string, updateUserDto: UpdateUserDto) {
     if (updateUserDto.password) {
       const salt = await bcrypt.genSalt();

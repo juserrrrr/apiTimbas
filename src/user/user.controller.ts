@@ -37,6 +37,11 @@ export class UserController {
     return this.userService.findOne(id);
   }
 
+  @Get('discord/:discordId')
+  async findOneByDiscordId(@Param('discordId') discordId: string) {
+    return this.userService.findOneByDiscordId(discordId);
+  }
+
   @Patch(':id')
   async update(@Param('id') id: string, @Body() updateUserDto: UpdateUserDto) {
     return this.userService.update(id, updateUserDto);

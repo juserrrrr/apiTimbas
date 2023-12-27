@@ -1,10 +1,26 @@
-import { Body, Delete, Get, Param, Patch, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 import { CreateCustomLeagueMatchDto } from './dto/create-leagueMatch.dto';
 import { UpdateCustomLeagueMatchDto } from './dto/update-leagueMatch.dto';
-import { leagueMatchService } from './leagueMatch.service';
+import { LeagueMatchService } from './leagueMatch.service';
+import { AuthGuard } from 'src/auth/guards/auth.guard';
+import { RoleGuard } from 'src/auth/guards/role.guard';
+import { Role } from 'src/enums/role.enum';
+import { Roles } from 'src/decorators/roles.decorator';
 
+@UseGuards(AuthGuard, RoleGuard)
+@Roles(Role.Admin)
+@Controller('leagueMatch')
 export class LeagueMatchController {
-  constructor(private readonly leagueMatchService: leagueMatchService) {}
+  constructor(private readonly leagueMatchService: LeagueMatchService) {}
 
   @Post()
   async create(@Body() leagueMatchDto: CreateCustomLeagueMatchDto) {

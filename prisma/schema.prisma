@@ -8,18 +8,18 @@ datasource db {
 }
 
 model User {
-  id             String       @id @default(auto()) @map("_id") @db.ObjectId
-  discordId      String       @unique
-  leagueId       String?      @unique
-  name           String
-  email          String?      @unique
-  password       String?
-  role           String       @default("user")
-  dateOfBirth    DateTime?
-  dateCreated    DateTime     @default(now())
-  dateUpdated    DateTime     @updatedAt
+  id            String       @id @default(auto()) @map("_id") @db.ObjectId
+  discordId     String       @unique
+  leagueId      String?      @unique
+  name          String
+  email         String?      @unique
+  password      String?
+  role          String       @default("user")
+  dateOfBirth   DateTime?
+  dateCreated   DateTime     @default(now())
+  dateUpdated   DateTime     @updatedAt
   teamLeagueIDs String[]     @db.ObjectId
-  TeamsLeague    TeamLeague[] @relation(fields: [teamLeagueIDs], references: [id])
+  TeamsLeague   TeamLeague[] @relation(fields: [teamLeagueIDs], references: [id])
 }
 
 enum Side {
@@ -38,8 +38,10 @@ model TeamLeague {
 
 model CustomLeagueMatch {
   id          String       @id @default(auto()) @map("_id") @db.ObjectId
-  teams       TeamLeague[]
-  winnerId    String       @db.ObjectId
+  teamBlueId  String       @db.ObjectId
+  teamRedId   String       @db.ObjectId
+  winnerId    String?      @db.ObjectId
+  Teams  TeamLeague[]
   dateCreated DateTime     @default(now())
   dateUpdated DateTime     @updatedAt
 }
