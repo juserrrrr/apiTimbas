@@ -37,6 +37,14 @@ export class LeagueMatchController {
     return this.leagueMatchService.findOne(id);
   }
 
+  @Patch('winner/:id')
+  async updateWinner(
+    @Param('id') id: string,
+    @Body() leagueMatchDto: UpdateCustomLeagueMatchDto,
+  ) {
+    return this.leagueMatchService.setWinnerId(id, leagueMatchDto.winnerId);
+  }
+
   @Patch(':id')
   async update(
     @Param('id') id: string,

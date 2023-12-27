@@ -2,7 +2,8 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { UpdateCustomLeagueMatchDto } from './dto/update-leagueMatch.dto';
 import { CreateCustomLeagueMatchDto, Side } from './dto/create-leagueMatch.dto';
 import { UserService } from 'src/user/user.service';
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class LeagueMatchService {
@@ -59,6 +60,37 @@ export class LeagueMatchService {
     });
 
     return leagueMatch;
+  }
+
+  async setWinnerId(id: string, winnerId: string) {
+    //validate winnerId exits
+    const winner = await this.prisma.teamLeague.findUnique({
+      where: {
+        id: winnerId,
+      },
+    });
+
+    if (!winner) {
+      throw new NotFoundException(`Team with id ${winnerId} not found`);
+    }
+
+    return await this.prisma.customLeagueMatch
+      .update({
+        where: {
+          id,
+        },
+        data: {
+          winnerId: winnerId,
+        },
+      })
+      .catch((err) => {
+        console.log(err);
+        if (err instanceof Prisma.PrismaClientKnownRequestError) {
+          if (err.code === 'P2023') {
+            throw new NotFoundException(`League Match with id ${id} not found`);
+          }
+        }
+      });
   }
 
   async findAll() {}
