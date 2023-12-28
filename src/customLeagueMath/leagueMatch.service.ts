@@ -29,6 +29,11 @@ export class LeagueMatchService {
       data: {
         side: Side.BLUE,
         playerIDs: teamBlueUsers.map((user) => user.id),
+        players: {
+          connect: teamBlueUsers.map((user) => ({
+            id: user.id,
+          })),
+        },
       },
     });
 
@@ -36,6 +41,11 @@ export class LeagueMatchService {
       data: {
         side: Side.RED,
         playerIDs: teamRedUsers.map((user) => user.id),
+        players: {
+          connect: teamRedUsers.map((user) => ({
+            id: user.id,
+          })),
+        },
       },
     });
 
@@ -63,48 +73,69 @@ export class LeagueMatchService {
     return leagueMatch;
   }
 
-  async setWinnerId(id: string, winnerId: string) {
-    //validate winnerId exits
+  async findAll() {
+    return await this.prisma.customLeagueMatch.findMany({
+      include: {
+        Teams: true,
+      },
+    });
+  }
+
+  async findOne(id: string) {
+    const match = await this.prisma.customLeagueMatch.findUnique({
+      where: {
+        id,
+      },
+    });
+    if (match) {
+      return match;
+    }
+    throw new NotFoundException(`League Match with id ${id} not found`);
+  }
+
+  async update(id: string, updateLeagueMatchDto: UpdateCustomLeagueMatchDto) {
     const winner = await this.prisma.teamLeague.findUnique({
       where: {
-        id: winnerId,
+        id: updateLeagueMatchDto.winnerId,
       },
     });
 
     if (!winner) {
-      throw new NotFoundException(`Team with id ${winnerId} not found`);
+      throw new NotFoundException(
+        `Team with id ${updateLeagueMatchDto.winnerId} not found`,
+      );
     }
-
     return await this.prisma.customLeagueMatch
       .update({
         where: {
           id,
         },
-        data: {
-          winnerId: winnerId,
-        },
+        data: updateLeagueMatchDto,
       })
       .catch((err) => {
-        console.log(err);
         if (err instanceof Prisma.PrismaClientKnownRequestError) {
-          if (err.code === 'P2023') {
+          console.log(err);
+          if (err.code === 'P2025' || err.code === 'P2023') {
             throw new NotFoundException(`League Match with id ${id} not found`);
           }
         }
       });
   }
 
-  async findAll() {}
-
-  async findOne(id: string) {
-    return await this.prisma.customLeagueMatch.findUnique({
-      where: {
-        id,
-      },
-    });
+  async remove(id: string) {
+    return await this.prisma.customLeagueMatch
+      .delete({
+        where: {
+          id,
+        },
+      })
+      .catch((err) => {
+        if (err instanceof Prisma.PrismaClientKnownRequestError) {
+          console.log(err);
+          if (err.code === 'P2025' || err.code === 'P2023') {
+            throw new NotFoundException(`League Match with id ${id} not found`);
+          }
+        }
+      });
   }
-
-  async update(id: string, updateLeagueMatchDto: UpdateCustomLeagueMatchDto) {}
-
-  async remove(id: string) {}
 }

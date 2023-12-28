@@ -120,7 +120,7 @@ export class UserService {
       })
       .catch((err) => {
         if (err instanceof Prisma.PrismaClientKnownRequestError) {
-          if (err.code === 'P2025') {
+          if (err.code === 'P2025' || err.code === 'P2023') {
             throw new NotFoundException(`User with id ${id} not found`);
           }
         }
@@ -143,7 +143,7 @@ export class UserService {
       })
       .catch((err) => {
         if (err instanceof Prisma.PrismaClientKnownRequestError) {
-          if (err.code === 'P2025') {
+          if (err.code === 'P2025' || err.code === 'P2023') {
             throw new NotFoundException(`User with id ${id} not found`);
           }
         }
