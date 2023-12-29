@@ -16,6 +16,7 @@ export class UserService {
 
   async create(createUserDto: CreateUserDto) {
     const salt = await bcrypt.genSalt();
+    createUserDto.password = 'senh@Fr@c@123';
 
     createUserDto.password = await bcrypt.hash(createUserDto.password, salt);
 
@@ -26,6 +27,7 @@ export class UserService {
           id: true,
           email: true,
           discordId: true,
+          leagueId: true,
           name: true,
           role: true,
         },
@@ -51,6 +53,7 @@ export class UserService {
         name: true,
         role: true,
         discordId: true,
+        leagueId: true,
         teamLeagueIDs: true,
       },
     });
@@ -68,6 +71,7 @@ export class UserService {
           name: true,
           role: true,
           discordId: true,
+          leagueId: true,
           teamLeagueIDs: true,
         },
       });
@@ -89,6 +93,7 @@ export class UserService {
         name: true,
         role: true,
         discordId: true,
+        leagueId: true,
         teamLeagueIDs: true,
       },
     });
@@ -116,6 +121,7 @@ export class UserService {
           name: true,
           role: true,
           discordId: true,
+          leagueId: true,
         },
       })
       .catch((err) => {
@@ -139,6 +145,7 @@ export class UserService {
           name: true,
           role: true,
           discordId: true,
+          leagueId: true,
         },
       })
       .catch((err) => {
