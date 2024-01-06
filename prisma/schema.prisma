@@ -41,6 +41,7 @@ model CustomLeagueMatch {
   teamBlueId  String       @db.ObjectId
   teamRedId   String       @db.ObjectId
   winnerId    String?      @db.ObjectId
+  ServerDiscordId String
   Teams  TeamLeague[]
   dateCreated DateTime     @default(now())
   dateUpdated DateTime     @updatedAt
