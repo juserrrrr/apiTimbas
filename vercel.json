@@ -5,7 +5,7 @@
       "src": "/(.*)",
       "use": "@vercel/node",
       "config": {
-        "buildCommand": "npm install && nest build"
+        "buildCommand": "npm install && npm run build"
       }
     }
   ],
