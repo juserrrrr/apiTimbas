@@ -2,8 +2,11 @@
   "version": 2,
   "builds": [
     {
-      "src": "src/main.ts",
-      "use": "@vercel/node"
+      "src": "package.json",
+      "use": "@vercel/node",
+      "config": {
+        "buildCommand": "npm install && npx prisma generate && npm run build"
+      }
     }
   ],
   "routes": [
