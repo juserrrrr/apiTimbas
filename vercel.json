@@ -2,10 +2,10 @@
   "version": 2,
   "builds": [
     {
-      "src": "./.*",
+      "src": "/(.*)",
       "use": "@vercel/node",
       "config": {
-        "buildCommand": "npm install && npx prisma generate && nest build"
+        "buildCommand": "npm install && nest build"
       }
     }
   ],
