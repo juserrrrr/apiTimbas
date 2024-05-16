@@ -13,8 +13,8 @@ import { UpdateCustomLeagueMatchDto } from './dto/update-leagueMatch.dto';
 import { LeagueMatchService } from './leagueMatch.service';
 import { AuthGuard } from 'src/auth/guards/auth.guard';
 import { RoleGuard } from 'src/auth/guards/role.guard';
-import { Role } from 'src/enums/role.enum';
-import { Roles } from 'src/decorators/roles.decorator';
+import { Role } from '../enums/role.enum';
+import { Roles } from '../decorators/roles.decorator';
 
 @UseGuards(AuthGuard, RoleGuard)
 @Roles(Role.Admin)
