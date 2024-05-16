@@ -52,6 +52,7 @@ export class LeagueMatchService {
     const leagueMatch = await this.prisma.customLeagueMatch.create({
       data: {
         winnerId: null,
+        ServerDiscordId: createLeagueMatchDto.ServerDiscordId,
         Teams: {
           connect: [
             {

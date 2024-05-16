@@ -20,6 +20,9 @@ export class CreateCustomLeagueMatchDto {
   @IsOptional()
   winnerId: string;
 
+  @IsString()
+  ServerDiscordId: string;
+
   @IsEmpty()
   dateCreated: Date;
 
