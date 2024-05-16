@@ -2,10 +2,10 @@
   "version": 2,
   "builds": [
     {
-      "src": "package.json",
+      "src": "src/main.ts",
       "use": "@vercel/node",
       "config": {
-        "buildCommand": "npm install && npx prisma generate && npm run build"
+        "buildCommand": "npm install && npx prisma generate && nest build"
       }
     }
   ],
