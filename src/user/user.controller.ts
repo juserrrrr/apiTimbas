@@ -12,9 +12,9 @@ import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UserService } from './user.service';
 import { Roles } from 'src/decorators/roles.decorator';
-import { Role } from '../enums/role.enum';
-import { RoleGuard } from '../auth/guards/role.guard';
-import { AuthGuard } from '../auth/guards/auth.guard';
+import { Role } from 'src/enums/role.enum';
+import { RoleGuard } from 'src/auth/guards/role.guard';
+import { AuthGuard } from 'src/auth/guards/auth.guard';
 
 @UseGuards(AuthGuard, RoleGuard)
 @Roles(Role.Admin)
