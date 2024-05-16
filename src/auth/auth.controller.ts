@@ -12,8 +12,8 @@ import { AuthRegisterDto } from './dto/auth-register.dto';
 import { AuthForgotDto } from './dto/auth-forgot.dto';
 import { AuthResetDto } from './dto/auth-reset.dto';
 import { AuthGuard } from './guards/auth.guard';
-import { Roles } from 'src/decorators/roles.decorator';
-import { Role } from 'src/enums/role.enum';
+import { Role } from '../enums/role.enum';
+import { Roles } from '../decorators/roles.decorator';
 
 @Controller('auth')
 export class AuthController {

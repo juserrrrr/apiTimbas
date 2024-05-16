@@ -1,9 +1,9 @@
-import { PrismaService } from 'src/prisma/prisma.service';
 import { UpdateCustomLeagueMatchDto } from './dto/update-leagueMatch.dto';
 import { CreateCustomLeagueMatchDto, Side } from './dto/create-leagueMatch.dto';
-import { UserService } from 'src/user/user.service';
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { PrismaService } from '../prisma/prisma.service';
+import { UserService } from '../user/user.service';
 
 @Injectable()
 export class LeagueMatchService {
