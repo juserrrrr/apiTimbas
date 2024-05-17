@@ -6,7 +6,7 @@
       "use": "@vercel/node",
       "config": {
         "buildCommand": "npm run build" ,
-        "outputDirectory": "dist",
+        "outputDirectory": "dist/",
         "installCommand": "npm install"
       }
     }
