@@ -5,7 +5,7 @@
   "installCommand": "npm install",
   "routes": [
     {
-    "src": "/.*",
+    "src": "/(.*)",
     "dest": "main.js",
     "methods": ["GET", "POST", "PUT", "DELETE"]
   }
