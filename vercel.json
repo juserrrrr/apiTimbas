@@ -2,11 +2,12 @@
   "version": 2,
   "builds": [
     {
+      "src": "main.ts",
       "use": "@vercel/node",
       "config": {
+        "installCommand": "npm install",
         "buildCommand": "npm run build" ,
-        "output": "dist",
-        "installCommand": "npm install"
+        "output": "dist"
       }
     }
   ]
