@@ -115,7 +115,6 @@ export class LeagueMatchService {
       })
       .catch((err) => {
         if (err instanceof Prisma.PrismaClientKnownRequestError) {
-          console.log(err);
           if (err.code === 'P2025' || err.code === 'P2023') {
             throw new NotFoundException(`League Match with id ${id} not found`);
           }
@@ -132,7 +131,6 @@ export class LeagueMatchService {
       })
       .catch((err) => {
         if (err instanceof Prisma.PrismaClientKnownRequestError) {
-          console.log(err);
           if (err.code === 'P2025' || err.code === 'P2023') {
             throw new NotFoundException(`League Match with id ${id} not found`);
           }
