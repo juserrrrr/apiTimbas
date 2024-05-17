@@ -17,7 +17,7 @@ import { Roles } from '../decorators/roles.decorator';
 import { Role } from '../enums/role.enum';
 
 @UseGuards(AuthGuard, RoleGuard)
-@Roles(Role.Admin)
+@Roles(Role.Admin, Role.Bot)
 @Controller('leagueMatch')
 export class LeagueMatchController {
   constructor(private readonly leagueMatchService: LeagueMatchService) {}

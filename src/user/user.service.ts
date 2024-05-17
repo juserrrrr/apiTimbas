@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  InternalServerErrorException,
 } from '@nestjs/common';
 import { CreateUserDto } from './dto/create-user.dto';
 import { PrismaService } from 'src/prisma/prisma.service';
@@ -33,16 +34,23 @@ export class UserService {
       })
       .catch((err) => {
         if (err instanceof Prisma.PrismaClientKnownRequestError) {
-          if (err.code === 'P2002') {
-            throw new BadRequestException(
-              `User with email ${createUserDto.email} already exists`,
-            );
+          switch (err.code) {
+            case 'P2002':
+              throw new BadRequestException(
+                `User with ${err.meta?.target} already exists`,
+              );
           }
+        } else if (err instanceof Prisma.PrismaClientValidationError) {
+          throw new BadRequestException(
+            'One or more fields are invalid. Please check your input and try again.',
+          );
         }
+        console.log(err);
+        throw new InternalServerErrorException(
+          'An unexpected error occurred while trying to create the user',
+        );
       });
-    if (userCreated) {
-      return userCreated;
-    }
+    return userCreated;
   }
 
   async findAll() {
