@@ -2,7 +2,7 @@
   "version": 2,
   "builds": [
     {
-      "src": "src/", 
+      "src": "package.json", 
       "use": "@vercel/node",
       "config": {
         "buildCommand": "npm install && npm run build" 
