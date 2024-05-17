@@ -17,10 +17,6 @@ export class UserService {
   async create(createUserDto: CreateUserDto) {
     const salt = await bcrypt.genSalt();
 
-    // Essa linha não faz parte do código, apenas momentaneamente para testar e plataforma ainda não exige senha.
-    createUserDto.password = 'senh@Fr@c@123';
-    //=====================================================================================================
-
     createUserDto.password = await bcrypt.hash(createUserDto.password, salt);
 
     const userCreated = await this.prisma.user
@@ -44,7 +40,8 @@ export class UserService {
           }
         }
       });
-
+    console.log(userCreated);
+    console.log('User created');
     return userCreated;
   }
 
