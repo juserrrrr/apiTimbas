@@ -40,7 +40,9 @@ export class UserService {
           }
         }
       });
-    return userCreated;
+    if (userCreated) {
+      return userCreated;
+    }
   }
 
   async findAll() {
