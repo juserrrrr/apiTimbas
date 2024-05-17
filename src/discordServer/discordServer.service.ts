@@ -9,9 +9,20 @@ export class DiscordServerService {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(DiscordServerDto: CreateDiscordServerDto) {
-    return await this.prisma.discordServer.create({
-      data: DiscordServerDto,
-    });
+    const DiscordServer = await this.prisma.discordServer
+      .create({
+        data: DiscordServerDto,
+      })
+      .catch((err) => {
+        if (err instanceof Prisma.PrismaClientKnownRequestError) {
+          if (err.code === 'P2002') {
+            throw new NotFoundException(
+              `Discord server with id ${DiscordServerDto.discordServerId} already exists`,
+            );
+          }
+        }
+      });
+    return DiscordServer;
   }
 
   async findAll() {

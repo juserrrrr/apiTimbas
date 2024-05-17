@@ -1,9 +1,6 @@
 import { IsEmpty, IsOptional, IsString } from 'class-validator';
 
 export class CreateDiscordServerDto {
-  @IsEmpty()
-  id: string;
-
   @IsString()
   discordServerId: string;
 

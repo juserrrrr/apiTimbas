@@ -7,6 +7,16 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model DiscordServer {
+  id              String   @id @default(auto()) @map("_id") @db.ObjectId
+  discordServerId String   @unique
+  welcomeMessage  String?
+  goodbyeMessage  String?
+  banMessage      String?
+  dateCreated     DateTime @default(now())
+  dateUpdated     DateTime @updatedAt
+}
+
 model User {
   id            String       @id @default(auto()) @map("_id") @db.ObjectId
   discordId     String       @unique
@@ -37,24 +47,14 @@ model TeamLeague {
 }
 
 model CustomLeagueMatch {
-  id          String       @id @default(auto()) @map("_id") @db.ObjectId
-  teamBlueId  String       @db.ObjectId
-  teamRedId   String       @db.ObjectId
-  winnerId    String?      @db.ObjectId
+  id              String       @id @default(auto()) @map("_id") @db.ObjectId
+  teamBlueId      String       @db.ObjectId
+  teamRedId       String       @db.ObjectId
+  winnerId        String?      @db.ObjectId
   ServerDiscordId String
-  Teams  TeamLeague[]
-  dateCreated DateTime     @default(now())
-  dateUpdated DateTime     @updatedAt
+  Teams           TeamLeague[]
+  dateCreated     DateTime     @default(now())
+  dateUpdated     DateTime     @updatedAt
 }
-
 
 // modelo para o servidor no discord e sua configurações, como mensagem de boas vidas, mensagem de saída, de banimento, etc
-model DiscordServer {
-  id              String    @id @default(auto()) @map("_id") @db.ObjectId
-  discordServerId String    @unique
-  welcomeMessage  String?
-  goodbyeMessage  String?
-  banMessage      String?
-  dateCreated     DateTime  @default(now())
-  dateUpdated     DateTime  @updatedAt
-}
