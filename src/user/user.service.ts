@@ -40,8 +40,6 @@ export class UserService {
           }
         }
       });
-    console.log(userCreated);
-    console.log('User created');
     return userCreated;
   }
 
