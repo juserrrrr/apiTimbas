@@ -6,11 +6,18 @@ import {
   Param,
   Patch,
   Post,
+  UseGuards,
 } from '@nestjs/common';
 import { CreateDiscordServerDto } from './dto/create-discordServer.dto';
 import { UpdateDiscordServerDto } from './dto/update-discordServer.dto';
 import { DiscordServerService } from './discordServer.service';
+import { AuthGuard } from '../auth/guards/auth.guard';
+import { RoleGuard } from '../auth/guards/role.guard';
+import { Roles } from '../decorators/roles.decorator';
+import { Role } from '../enums/role.enum';
 
+@UseGuards(AuthGuard, RoleGuard)
+@Roles(Role.Admin, Role.Bot)
 @Controller('discordServer')
 export class DiscordServerController {
   constructor(private readonly discordServerService: DiscordServerService) {}
