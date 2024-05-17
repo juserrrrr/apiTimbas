@@ -3,6 +3,11 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "installCommand": "npm install",
-  "startCommand": "npm start"
+  "routes": [
+    {
+    "src": "/.*",
+    "dest": "dist/main.js"
+  }
+]
   
 }
