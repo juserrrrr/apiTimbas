@@ -8,13 +8,21 @@ datasource db {
 }
 
 model DiscordServer {
-  id              String   @id @default(auto()) @map("_id") @db.ObjectId
-  discordServerId String   @unique
-  welcomeMessage  String?
-  goodbyeMessage  String?
-  banMessage      String?
-  dateCreated     DateTime @default(now())
-  dateUpdated     DateTime @updatedAt
+  id              String       @id @default(auto()) @map("_id") @db.ObjectId
+  discordServerId String       @unique
+  doorMessageId   String       @unique @db.ObjectId
+  doorMessages    DoorMessages @relation(fields: [doorMessageId], references: [id])
+  dateCreated     DateTime     @default(now())
+  dateUpdated     DateTime     @updatedAt
+}
+
+model DoorMessages {
+  id            String         @id @default(auto()) @map("_id") @db.ObjectId
+  welcomeMsg    String?
+  goodbyeMsg    String?
+  banMsg        String?
+  channelId     String?
+  DiscordServer DiscordServer?
 }
 
 model User {
