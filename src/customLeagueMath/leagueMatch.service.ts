@@ -1,6 +1,11 @@
 import { UpdateCustomLeagueMatchDto } from './dto/update-leagueMatch.dto';
 import { CreateCustomLeagueMatchDto, Side } from './dto/create-leagueMatch.dto';
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  InternalServerErrorException,
+  NotFoundException,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { UserService } from '../user/user.service';
@@ -115,10 +120,21 @@ export class LeagueMatchService {
       })
       .catch((err) => {
         if (err instanceof Prisma.PrismaClientKnownRequestError) {
-          if (err.code === 'P2025' || err.code === 'P2023') {
-            throw new NotFoundException(`League Match with id ${id} not found`);
+          switch (err.code) {
+            case 'P2025' || 'P2023':
+              throw new NotFoundException(
+                `User with ${err.meta?.target} already exists`,
+              );
           }
+        } else if (err instanceof Prisma.PrismaClientValidationError) {
+          throw new BadRequestException(
+            'One or more fields are invalid. Please check your input and try again.',
+          );
         }
+        console.log(err);
+        throw new InternalServerErrorException(
+          'An unexpected error occurred while trying to create the user',
+        );
       });
   }
 
@@ -131,10 +147,21 @@ export class LeagueMatchService {
       })
       .catch((err) => {
         if (err instanceof Prisma.PrismaClientKnownRequestError) {
-          if (err.code === 'P2025' || err.code === 'P2023') {
-            throw new NotFoundException(`League Match with id ${id} not found`);
+          switch (err.code) {
+            case 'P2025' || 'P2023':
+              throw new NotFoundException(
+                `User with ${err.meta?.target} already exists`,
+              );
           }
+        } else if (err instanceof Prisma.PrismaClientValidationError) {
+          throw new BadRequestException(
+            'One or more fields are invalid. Please check your input and try again.',
+          );
         }
+        console.log(err);
+        throw new InternalServerErrorException(
+          'An unexpected error occurred while trying to create the user',
+        );
       });
   }
 }
