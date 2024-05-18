@@ -27,7 +27,6 @@ export class UserService {
           id: true,
           email: true,
           discordId: true,
-          leagueId: true,
           name: true,
           role: true,
         },
@@ -61,7 +60,6 @@ export class UserService {
         name: true,
         role: true,
         discordId: true,
-        leagueId: true,
         teamLeagueIDs: true,
       },
     });
@@ -79,7 +77,6 @@ export class UserService {
           name: true,
           role: true,
           discordId: true,
-          leagueId: true,
           teamLeagueIDs: true,
         },
       });
@@ -101,7 +98,6 @@ export class UserService {
         name: true,
         role: true,
         discordId: true,
-        leagueId: true,
         teamLeagueIDs: true,
       },
     });
@@ -129,7 +125,6 @@ export class UserService {
           name: true,
           role: true,
           discordId: true,
-          leagueId: true,
         },
       })
       .catch((err) => {
@@ -153,7 +148,6 @@ export class UserService {
           name: true,
           role: true,
           discordId: true,
-          leagueId: true,
         },
       })
       .catch((err) => {

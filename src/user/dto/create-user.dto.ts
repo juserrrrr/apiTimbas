@@ -16,10 +16,6 @@ export class CreateUserDto {
   @IsString()
   discordId: string;
 
-  @IsString()
-  @IsOptional()
-  LeagueId?: string;
-
   @IsEmail()
   @IsOptional()
   email: string;
