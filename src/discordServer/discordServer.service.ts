@@ -41,6 +41,51 @@ export class DiscordServerService {
     throw new NotFoundException(`Discord server with id ${serverId} not found`);
   }
 
+  async findWelcomeMsgByServerId(serverId: string) {
+    const discordServer = await this.prisma.discordServer.findUnique({
+      where: {
+        discordServerId: serverId,
+      },
+      select: {
+        welcomeMessage: true,
+      },
+    });
+    if (discordServer) {
+      return discordServer;
+    }
+    throw new NotFoundException(`Discord server with id ${serverId} not found`);
+  }
+
+  async findLeaveMsgByServerId(serverId: string) {
+    const discordServer = await this.prisma.discordServer.findUnique({
+      where: {
+        discordServerId: serverId,
+      },
+      select: {
+        goodbyeMessage: true,
+      },
+    });
+    if (discordServer) {
+      return discordServer;
+    }
+    throw new NotFoundException(`Discord server with id ${serverId} not found`);
+  }
+
+  async findBanMsgByServerId(serverId: string) {
+    const discordServer = await this.prisma.discordServer.findUnique({
+      where: {
+        discordServerId: serverId,
+      },
+      select: {
+        banMessage: true,
+      },
+    });
+    if (discordServer) {
+      return discordServer;
+    }
+    throw new NotFoundException(`Discord server with id ${serverId} not found`);
+  }
+
   async update(
     serverId: string,
     UpdateDiscordServerDto: UpdateDiscordServerDto,

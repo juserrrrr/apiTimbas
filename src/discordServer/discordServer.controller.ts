@@ -37,6 +37,21 @@ export class DiscordServerController {
     return this.discordServerService.findByServerId(serverId);
   }
 
+  @Get('welcomeMsg/:id')
+  async findWelcomeMsgByServerId(@Param('id') serverId: string) {
+    return this.discordServerService.findWelcomeMsgByServerId(serverId);
+  }
+
+  @Get('leaveMsg/:id')
+  async findLeaveMsgByServerId(@Param('id') serverId: string) {
+    return this.discordServerService.findLeaveMsgByServerId(serverId);
+  }
+
+  @Get('banMsg/:id')
+  async findBanMsgByServerId(@Param('id') serverId: string) {
+    return this.discordServerService.findBanMsgByServerId(serverId);
+  }
+
   @Patch(':id')
   async update(
     @Param('id') id: string,
