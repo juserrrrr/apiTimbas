@@ -139,7 +139,7 @@ export class UserService {
           discordId: true,
           name: true,
           role: true,
-          leagueId: true,
+          leaguePuuid: true,
         },
       })
       .catch((err) => {

@@ -119,7 +119,7 @@ model User {
   email       String?          @unique
   password    String?
   role        Role             @default(PLAYER)
-  leagueId    String?          @unique
+  leaguePuuid String?          @unique
   dateOfBirth DateTime?
   dateCreated DateTime         @default(now())
   dateUpdated DateTime         @updatedAt

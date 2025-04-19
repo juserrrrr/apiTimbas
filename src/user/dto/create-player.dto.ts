@@ -14,7 +14,7 @@ export class CreatePlayerDto {
   discordId: string;
 
   @IsString()
-  leagueId: string;
+  leaguePuuid: string;
 
   @IsEmail()
   @IsOptional()
