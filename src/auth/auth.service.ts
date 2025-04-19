@@ -4,6 +4,8 @@ import { AuthRegisterDto } from './dto/auth-register.dto';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
 import { UserService } from '../user/user.service';
+import { CreateBotDto } from './dto/create-bot.dto';
+import { Role } from '../enums/role.enum';
 
 @Injectable()
 export class AuthService {
@@ -113,5 +115,38 @@ export class AuthService {
         password,
       },
     });
+  }
+
+  async createBot(createBotDto: CreateBotDto) {
+    const bot = await this.prisma.user.create({
+      data: {
+        name: createBotDto.name,
+        discordId: createBotDto.discordId,
+        role: Role.BOT,
+      },
+      select: {
+        id: true,
+        name: true,
+        discordId: true,
+        role: true,
+      },
+    });
+
+    return bot;
+  }
+
+  async authenticateBot(botId: string) {
+    const bot = await this.prisma.user.findUnique({
+      where: {
+        discordId: botId,
+        role: Role.BOT,
+      },
+    });
+
+    if (!bot) {
+      throw new UnauthorizedException('Bot not found');
+    }
+
+    return this.createBotToken(botId);
   }
 }

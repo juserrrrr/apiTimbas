@@ -14,6 +14,8 @@ import { AuthResetDto } from './dto/auth-reset.dto';
 import { AuthGuard } from './guards/auth.guard';
 import { Role } from '../enums/role.enum';
 import { Roles } from '../decorators/roles.decorator';
+import { CreateBotDto } from './dto/create-bot.dto';
+import { AuthBotDto } from './dto/auth-bot.dto';
 
 @Controller('auth')
 export class AuthController {
@@ -22,13 +24,6 @@ export class AuthController {
   @Post('login')
   async login(@Body() { email, password }: AuthLoginDto) {
     return this.authService.login(email, password);
-  }
-
-  @UseGuards(AuthGuard)
-  @Roles(Role.ADMIN)
-  @Post('login-bot')
-  async loginBot(@Body() { botId }: { botId: string }) {
-    return this.authService.loginBot(botId);
   }
 
   @Post('register')
@@ -56,5 +51,19 @@ export class AuthController {
       message: 'token is valid',
       data: req.tokenPayload,
     };
+  }
+
+  @UseGuards(AuthGuard)
+  @Roles(Role.ADMIN)
+  @Post('create-bot')
+  async createBot(@Body() createBotDto: CreateBotDto) {
+    return this.authService.createBot(createBotDto);
+  }
+
+  @UseGuards(AuthGuard)
+  @Roles(Role.ADMIN)
+  @Post('authenticate-bot')
+  async authenticateBot(@Body() { botId }: AuthBotDto) {
+    return this.authService.authenticateBot(botId);
   }
 }
