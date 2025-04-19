@@ -3,40 +3,119 @@ generator client {
 }
 
 datasource db {
-  provider = "mongodb"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
 model DiscordServer {
-  id              String       @id @default(auto()) @map("_id") @db.ObjectId
+  id              Int          @id @default(autoincrement())
   discordServerId String       @unique
-  doorMessageId   String       @unique @db.ObjectId
+  doorMessageId   Int          @unique
   doorMessages    DoorMessages @relation(fields: [doorMessageId], references: [id])
   dateCreated     DateTime     @default(now())
   dateUpdated     DateTime     @updatedAt
 }
 
 model DoorMessages {
-  id            String         @id @default(auto()) @map("_id") @db.ObjectId
-  welcomeMsg    String?
-  goodbyeMsg    String?
-  banMsg        String?
-  channelId     String?
-  DiscordServer DiscordServer?
+  id               Int            @id @default(autoincrement())
+  welcomeMsg       Message?       @relation("WelcomeMessage", fields: [welcomeMessageId], references: [id])
+  welcomeMessageId Int?           @unique
+  goodbyeMsg       Message?       @relation("GoodbyeMessage", fields: [goodbyeMessageId], references: [id])
+  goodbyeMessageId Int?           @unique
+  banMsg           Message?       @relation("BanMessage", fields: [banMessageId], references: [id])
+  banMessageId     Int?           @unique
+  channelId        String?
+  DiscordServer    DiscordServer?
+}
+
+model Message {
+  id           Int           @id @default(autoincrement())
+  isEmbed      Boolean       @default(false)
+  content      String?
+  embed        Embed?
+  messageType  MessageType   @default(WELCOME)
+  asWelcomeMsg DoorMessages? @relation("WelcomeMessage")
+  asGoodbyeMsg DoorMessages? @relation("GoodbyeMessage")
+  asBanMsg     DoorMessages? @relation("BanMessage")
+}
+
+enum MessageType {
+  WELCOME
+  GOODBYE
+  BAN
+}
+
+model Embed {
+  id          Int             @id @default(autoincrement())
+  title       String?
+  description String?
+  color       String? // Cor em hexadecimal
+  url         String? // URL do embed
+  timestamp   Boolean?        @default(false)
+  footer      EmbedFooter?
+  image       EmbedImage?
+  thumbnail   EmbedThumbnail?
+  author      EmbedAuthor?
+  fields      EmbedField[]
+  message     Message         @relation(fields: [messageId], references: [id])
+  messageId   Int             @unique
+}
+
+model EmbedFooter {
+  id      Int     @id @default(autoincrement())
+  text    String?
+  iconUrl String?
+  embed   Embed   @relation(fields: [embedId], references: [id])
+  embedId Int     @unique
+}
+
+model EmbedImage {
+  id      Int     @id @default(autoincrement())
+  url     String?
+  height  Int?
+  width   Int?
+  embed   Embed   @relation(fields: [embedId], references: [id])
+  embedId Int     @unique
+}
+
+model EmbedThumbnail {
+  id      Int     @id @default(autoincrement())
+  url     String?
+  height  Int?
+  width   Int?
+  embed   Embed   @relation(fields: [embedId], references: [id])
+  embedId Int     @unique
+}
+
+model EmbedAuthor {
+  id      Int     @id @default(autoincrement())
+  name    String?
+  url     String?
+  iconUrl String?
+  embed   Embed   @relation(fields: [embedId], references: [id])
+  embedId Int     @unique
+}
+
+model EmbedField {
+  id      Int      @id @default(autoincrement())
+  name    String
+  value   String
+  inline  Boolean? @default(false)
+  embed   Embed    @relation(fields: [embedId], references: [id])
+  embedId Int
 }
 
 model User {
-  id            String       @id @default(auto()) @map("_id") @db.ObjectId
-  discordId     String       @unique
-  name          String
-  email         String?      @unique
-  password      String?
-  role          String       @default("user")
-  dateOfBirth   DateTime?
-  dateCreated   DateTime     @default(now())
-  dateUpdated   DateTime     @updatedAt
-  teamLeagueIDs String[]     @db.ObjectId
-  TeamsLeague   TeamLeague[] @relation(fields: [teamLeagueIDs], references: [id])
+  id          Int              @id @default(autoincrement())
+  discordId   String           @unique
+  name        String
+  email       String?          @unique
+  password    String?
+  role        String           @default("user")
+  dateOfBirth DateTime?
+  dateCreated DateTime         @default(now())
+  dateUpdated DateTime         @updatedAt
+  TeamsLeague UserTeamLeague[]
 }
 
 enum Side {
@@ -45,19 +124,28 @@ enum Side {
 }
 
 model TeamLeague {
-  id                  String             @id @default(auto()) @map("_id") @db.ObjectId
+  id                  Int                @id @default(autoincrement())
   side                Side
-  playerIDs           String[]           @db.ObjectId
-  players             User[]             @relation(fields: [playerIDs], references: [id])
-  customLeagueMatchId String?            @db.ObjectId
+  players             UserTeamLeague[]
+  customLeagueMatchId Int?
   CustomLeagueMatch   CustomLeagueMatch? @relation(fields: [customLeagueMatchId], references: [id])
 }
 
+model UserTeamLeague {
+  id           Int        @id @default(autoincrement())
+  userId       Int
+  teamLeagueId Int
+  user         User       @relation(fields: [userId], references: [id])
+  teamLeague   TeamLeague @relation(fields: [teamLeagueId], references: [id])
+
+  @@unique([userId, teamLeagueId])
+}
+
 model CustomLeagueMatch {
-  id              String       @id @default(auto()) @map("_id") @db.ObjectId
-  teamBlueId      String       @db.ObjectId
-  teamRedId       String       @db.ObjectId
-  winnerId        String?      @db.ObjectId
+  id              Int          @id @default(autoincrement())
+  teamBlueId      Int
+  teamRedId       Int
+  winnerId        Int?
   ServerDiscordId String
   Teams           TeamLeague[]
   dateCreated     DateTime     @default(now())
