@@ -15,9 +15,3 @@ services:
       - ADMIN_PASSWORD=${ADMIN_PASSWORD}
       - ADMIN_DISCORD_ID=${ADMIN_DISCORD_ID}
       - NODE_ENV=${NODE_ENV}
-    networks:
-      - minha-rede
-
-networks:
-  minha-rede:
-    external: true
