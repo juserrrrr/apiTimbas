@@ -7,6 +7,7 @@ import {
   Patch,
   Post,
   UseGuards,
+  ParseIntPipe,
 } from '@nestjs/common';
 import { CreateDiscordServerDto } from './dto/create-discordServer.dto';
 import { UpdateDiscordServerDto } from './dto/update-discordServer.dto';
@@ -23,8 +24,8 @@ export class DiscordServerController {
   constructor(private readonly discordServerService: DiscordServerService) {}
 
   @Post()
-  async create(@Body() DiscordServerDto: CreateDiscordServerDto) {
-    return this.discordServerService.create(DiscordServerDto);
+  async create(@Body() createDiscordServerDto: CreateDiscordServerDto) {
+    return this.discordServerService.create(createDiscordServerDto);
   }
 
   @Get()
@@ -33,35 +34,35 @@ export class DiscordServerController {
   }
 
   @Get(':id')
-  async findByServerId(@Param('id') serverId: string) {
+  async findByServerId(@Param('id', ParseIntPipe) serverId: number) {
     return this.discordServerService.findByServerId(serverId);
   }
 
   @Get('welcomeMsg/:id')
-  async findWelcomeMsgByServerId(@Param('id') serverId: string) {
+  async findWelcomeMsgByServerId(@Param('id', ParseIntPipe) serverId: number) {
     return this.discordServerService.findWelcomeMsgByServerId(serverId);
   }
 
   @Get('leaveMsg/:id')
-  async findLeaveMsgByServerId(@Param('id') serverId: string) {
+  async findLeaveMsgByServerId(@Param('id', ParseIntPipe) serverId: number) {
     return this.discordServerService.findLeaveMsgByServerId(serverId);
   }
 
   @Get('banMsg/:id')
-  async findBanMsgByServerId(@Param('id') serverId: string) {
+  async findBanMsgByServerId(@Param('id', ParseIntPipe) serverId: number) {
     return this.discordServerService.findBanMsgByServerId(serverId);
   }
 
   @Patch(':id')
   async update(
-    @Param('id') id: string,
-    @Body() DiscordServerDto: UpdateDiscordServerDto,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() updateDiscordServerDto: UpdateDiscordServerDto,
   ) {
-    return this.discordServerService.update(id, DiscordServerDto);
+    return this.discordServerService.update(id, updateDiscordServerDto);
   }
 
   @Delete(':id')
-  async remove(@Param('id') id: string) {
+  async remove(@Param('id', ParseIntPipe) id: number) {
     return this.discordServerService.remove(id);
   }
 }

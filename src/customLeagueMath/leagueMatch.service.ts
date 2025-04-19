@@ -33,7 +33,6 @@ export class LeagueMatchService {
     const teamBlue = await this.prisma.teamLeague.create({
       data: {
         side: Side.BLUE,
-        playerIDs: teamBlueUsers.map((user) => user.id),
         players: {
           connect: teamBlueUsers.map((user) => ({
             id: user.id,
@@ -45,7 +44,6 @@ export class LeagueMatchService {
     const teamRed = await this.prisma.teamLeague.create({
       data: {
         side: Side.RED,
-        playerIDs: teamRedUsers.map((user) => user.id),
         players: {
           connect: teamRedUsers.map((user) => ({
             id: user.id,
@@ -87,7 +85,7 @@ export class LeagueMatchService {
     });
   }
 
-  async findOne(id: string) {
+  async findOne(id: number) {
     const match = await this.prisma.customLeagueMatch.findUnique({
       where: {
         id,
@@ -99,10 +97,10 @@ export class LeagueMatchService {
     throw new NotFoundException(`League Match with id ${id} not found`);
   }
 
-  async update(id: string, updateLeagueMatchDto: UpdateCustomLeagueMatchDto) {
+  async update(id: number, updateLeagueMatchDto: UpdateCustomLeagueMatchDto) {
     const winner = await this.prisma.teamLeague.findUnique({
       where: {
-        id: updateLeagueMatchDto.winnerId,
+        id: Number(updateLeagueMatchDto.winnerId),
       },
     });
 
@@ -116,14 +114,17 @@ export class LeagueMatchService {
         where: {
           id,
         },
-        data: updateLeagueMatchDto,
+        data: {
+          winnerId: Number(updateLeagueMatchDto.winnerId),
+        },
       })
       .catch((err) => {
         if (err instanceof Prisma.PrismaClientKnownRequestError) {
           switch (err.code) {
-            case 'P2025' || 'P2023':
+            case 'P2025':
+            case 'P2023':
               throw new NotFoundException(
-                `User with ${err.meta?.target} already exists`,
+                `League Match with id ${id} not found`,
               );
           }
         } else if (err instanceof Prisma.PrismaClientValidationError) {
@@ -138,7 +139,7 @@ export class LeagueMatchService {
       });
   }
 
-  async remove(id: string) {
+  async remove(id: number) {
     return await this.prisma.customLeagueMatch
       .delete({
         where: {
@@ -148,9 +149,10 @@ export class LeagueMatchService {
       .catch((err) => {
         if (err instanceof Prisma.PrismaClientKnownRequestError) {
           switch (err.code) {
-            case 'P2025' || 'P2023':
+            case 'P2025':
+            case 'P2023':
               throw new NotFoundException(
-                `User with ${err.meta?.target} already exists`,
+                `League Match with id ${id} not found`,
               );
           }
         } else if (err instanceof Prisma.PrismaClientValidationError) {

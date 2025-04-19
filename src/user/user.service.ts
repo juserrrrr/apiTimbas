@@ -29,6 +29,7 @@ export class UserService {
           discordId: true,
           name: true,
           role: true,
+          TeamsLeague: true,
         },
       })
       .catch((err) => {
@@ -60,12 +61,12 @@ export class UserService {
         name: true,
         role: true,
         discordId: true,
-        teamLeagueIDs: true,
+        TeamsLeague: true,
       },
     });
   }
 
-  async findOne(id: string) {
+  async findOne(id: number) {
     if (isValidObjectId(id)) {
       const user = await this.prisma.user.findUnique({
         where: {
@@ -77,7 +78,7 @@ export class UserService {
           name: true,
           role: true,
           discordId: true,
-          teamLeagueIDs: true,
+          TeamsLeague: true,
         },
       });
       if (user) {
@@ -98,7 +99,7 @@ export class UserService {
         name: true,
         role: true,
         discordId: true,
-        teamLeagueIDs: true,
+        TeamsLeague: true,
       },
     });
     if (user) {
@@ -107,7 +108,7 @@ export class UserService {
     throw new NotFoundException(`User with discordId ${discordId} not found`);
   }
 
-  async update(id: string, updateUserDto: UpdateUserDto) {
+  async update(id: number, updateUserDto: UpdateUserDto) {
     if (updateUserDto.password) {
       const salt = await bcrypt.genSalt();
       updateUserDto.password = await bcrypt.hash(updateUserDto.password, salt);
@@ -125,6 +126,7 @@ export class UserService {
           name: true,
           role: true,
           discordId: true,
+          TeamsLeague: true,
         },
       })
       .catch((err) => {
@@ -136,7 +138,7 @@ export class UserService {
       });
   }
 
-  async remove(id: string) {
+  async remove(id: number) {
     return this.prisma.user
       .delete({
         where: {
@@ -148,6 +150,7 @@ export class UserService {
           name: true,
           role: true,
           discordId: true,
+          TeamsLeague: true,
         },
       })
       .catch((err) => {

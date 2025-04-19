@@ -60,10 +60,10 @@ export class AuthService {
   }
 
   async register(authRegisterDto: AuthRegisterDto) {
-    const user = await this.userService.create(authRegisterDto); // create user
+    const user = await this.userService.create(authRegisterDto);
     if (typeof user === 'object') {
       const { id, name, email, role } = user;
-      return this.createToken(id, name, email, role);
+      return this.createToken(id.toString(), name, email, role);
     }
   }
 
@@ -77,7 +77,7 @@ export class AuthService {
       throw new UnauthorizedException('email or password is incorrect');
     }
     const { id, name, email, role } = user;
-    return this.createToken(id, name, email, role);
+    return this.createToken(id.toString(), name, email, role);
   }
 
   //Verficar se a token do user no point é valida, se for, criar token do bot e também colocar rule de admin
@@ -104,11 +104,10 @@ export class AuthService {
 
   async resetPassword(password: string, token: string) {
     // validate token
-
-    // update password
+    const decoded = this.validateToken(token);
     await this.prisma.user.update({
       where: {
-        id: '', //Token decode and get user id
+        id: Number(decoded.sub),
       },
       data: {
         password,

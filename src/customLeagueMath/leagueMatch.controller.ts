@@ -7,6 +7,7 @@ import {
   Patch,
   Post,
   UseGuards,
+  ParseIntPipe,
 } from '@nestjs/common';
 import { CreateCustomLeagueMatchDto } from './dto/create-leagueMatch.dto';
 import { UpdateCustomLeagueMatchDto } from './dto/update-leagueMatch.dto';
@@ -33,20 +34,20 @@ export class LeagueMatchController {
   }
 
   @Get(':id')
-  async findOne(@Param('id') id: string) {
+  async findOne(@Param('id', ParseIntPipe) id: number) {
     return this.leagueMatchService.findOne(id);
   }
 
   @Patch(':id')
   async update(
-    @Param('id') id: string,
+    @Param('id', ParseIntPipe) id: number,
     @Body() leagueMatchDto: UpdateCustomLeagueMatchDto,
   ) {
     return this.leagueMatchService.update(id, leagueMatchDto);
   }
 
   @Delete(':id')
-  async remove(@Param('id') id: string) {
+  async remove(@Param('id', ParseIntPipe) id: number) {
     return this.leagueMatchService.remove(id);
   }
 }

@@ -1,24 +1,7 @@
-import { IsEmpty, IsOptional, IsString } from 'class-validator';
+import { IsNotEmpty, IsString } from 'class-validator';
 
 export class CreateDiscordServerDto {
   @IsString()
+  @IsNotEmpty()
   discordServerId: string;
-
-  @IsString()
-  @IsOptional()
-  welcomeMessage?: string;
-
-  @IsString()
-  @IsOptional()
-  goodbyeMessage?: string;
-
-  @IsString()
-  @IsOptional()
-  banMessage?: string;
-
-  @IsEmpty()
-  dateCreated: Date;
-
-  @IsEmpty()
-  dateUpdated: Date;
 }

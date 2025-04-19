@@ -8,121 +8,170 @@ import { Prisma } from '@prisma/client';
 export class DiscordServerService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async create(DiscordServerDto: CreateDiscordServerDto) {
-    const DiscordServer = await this.prisma.discordServer
+  async create(createDiscordServerDto: CreateDiscordServerDto) {
+    return this.prisma.discordServer
       .create({
-        data: DiscordServerDto,
+        data: {
+          discordServerId: createDiscordServerDto.discordServerId,
+          doorMessages: {
+            create: {
+              channelId: null,
+            },
+          },
+        },
+        include: {
+          doorMessages: true,
+        },
       })
       .catch((err) => {
         if (err instanceof Prisma.PrismaClientKnownRequestError) {
           if (err.code === 'P2002') {
             throw new NotFoundException(
-              `Discord server with id ${DiscordServerDto.discordServerId} already exists`,
+              `Discord server with id ${createDiscordServerDto.discordServerId} already exists`,
             );
           }
         }
+        throw err;
       });
-    return DiscordServer;
   }
 
   async findAll() {
-    return this.prisma.discordServer.findMany();
-  }
-
-  async findByServerId(serverId: string) {
-    const discordServer = await this.prisma.discordServer.findUnique({
-      where: {
-        discordServerId: serverId,
+    return this.prisma.discordServer.findMany({
+      include: {
+        doorMessages: true,
       },
     });
-    if (discordServer) {
-      return discordServer;
-    }
-    throw new NotFoundException(`Discord server with id ${serverId} not found`);
   }
 
-  async findWelcomeMsgByServerId(serverId: string) {
+  async findByServerId(serverId: number) {
     const discordServer = await this.prisma.discordServer.findUnique({
       where: {
-        discordServerId: serverId,
+        id: serverId,
       },
-      select: {
-        welcomeMessage: true,
+      include: {
+        doorMessages: true,
       },
     });
-    if (discordServer) {
-      return discordServer;
+    if (!discordServer) {
+      throw new NotFoundException(
+        `Discord server with id ${serverId} not found`,
+      );
     }
-    throw new NotFoundException(`Discord server with id ${serverId} not found`);
+    return discordServer;
   }
 
-  async findLeaveMsgByServerId(serverId: string) {
+  async findWelcomeMsgByServerId(serverId: number) {
     const discordServer = await this.prisma.discordServer.findUnique({
       where: {
-        discordServerId: serverId,
+        id: serverId,
       },
-      select: {
-        goodbyeMessage: true,
+      include: {
+        doorMessages: {
+          include: {
+            welcomeMsg: true,
+          },
+        },
       },
     });
-    if (discordServer) {
-      return discordServer;
+    if (!discordServer) {
+      throw new NotFoundException(
+        `Discord server with id ${serverId} not found`,
+      );
     }
-    throw new NotFoundException(`Discord server with id ${serverId} not found`);
+    return discordServer;
   }
 
-  async findBanMsgByServerId(serverId: string) {
+  async findLeaveMsgByServerId(serverId: number) {
     const discordServer = await this.prisma.discordServer.findUnique({
       where: {
-        discordServerId: serverId,
+        id: serverId,
       },
-      select: {
-        banMessage: true,
+      include: {
+        doorMessages: {
+          include: {
+            goodbyeMsg: true,
+          },
+        },
       },
     });
-    if (discordServer) {
-      return discordServer;
+    if (!discordServer) {
+      throw new NotFoundException(
+        `Discord server with id ${serverId} not found`,
+      );
     }
-    throw new NotFoundException(`Discord server with id ${serverId} not found`);
+    return discordServer;
+  }
+
+  async findBanMsgByServerId(serverId: number) {
+    const discordServer = await this.prisma.discordServer.findUnique({
+      where: {
+        id: serverId,
+      },
+      include: {
+        doorMessages: {
+          include: {
+            banMsg: true,
+          },
+        },
+      },
+    });
+    if (!discordServer) {
+      throw new NotFoundException(
+        `Discord server with id ${serverId} not found`,
+      );
+    }
+    return discordServer;
   }
 
   async update(
-    serverId: string,
-    UpdateDiscordServerDto: UpdateDiscordServerDto,
+    serverId: number,
+    updateDiscordServerDto: UpdateDiscordServerDto,
   ) {
-    return await this.prisma.discordServer
+    return this.prisma.discordServer
       .update({
         where: {
-          discordServerId: serverId,
+          id: serverId,
         },
-        data: UpdateDiscordServerDto,
+        data: {
+          discordServerId: updateDiscordServerDto.discordServerId,
+          doorMessages: {
+            update: {
+              channelId: updateDiscordServerDto.channelId,
+            },
+          },
+        },
+        include: {
+          doorMessages: true,
+        },
       })
       .catch((err) => {
         if (err instanceof Prisma.PrismaClientKnownRequestError) {
-          if (err.code === 'P2025' || err.code === 'P2023') {
+          if (err.code === 'P2025') {
             throw new NotFoundException(
               `Discord server with id ${serverId} not found`,
             );
           }
         }
+        throw err;
       });
   }
 
-  async remove(serverId: string) {
-    return await this.prisma.discordServer
+  async remove(serverId: number) {
+    return this.prisma.discordServer
       .delete({
         where: {
-          discordServerId: serverId,
+          id: serverId,
         },
       })
       .catch((err) => {
         if (err instanceof Prisma.PrismaClientKnownRequestError) {
-          if (err.code === 'P2025' || err.code === 'P2023') {
+          if (err.code === 'P2025') {
             throw new NotFoundException(
               `Discord server with id ${serverId} not found`,
             );
           }
         }
+        throw err;
       });
   }
 }
