@@ -10,7 +10,12 @@ import { DiscordServerModule } from './discordServer/discordServer.module';
 @Module({
   imports: [
     ConfigModule.forRoot(),
-    ThrottlerModule.forRoot({ ttl: 60, limit: 50 }),
+    ThrottlerModule.forRoot([
+      {
+        ttl: 60000,
+        limit: 50,
+      },
+    ]),
     UserModule,
     AuthModule,
     LeagueMatchModule,
