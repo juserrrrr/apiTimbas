@@ -47,7 +47,7 @@ export class UserController {
     return this.userService.findOne(id);
   }
 
-  @Roles(Role.ADMIN)
+  @Roles(Role.ADMIN, Role.BOT)
   @Get('discord/:discordId')
   async findOneByDiscordId(@Param('discordId') discordId: string) {
     return this.userService.findOneByDiscordId(discordId);

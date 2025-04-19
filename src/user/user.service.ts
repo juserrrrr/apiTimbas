@@ -59,11 +59,10 @@ export class UserService {
       },
       select: {
         id: true,
-        email: true,
         name: true,
         role: true,
         discordId: true,
-        TeamsLeague: true,
+        leaguePuuid: true,
       },
     });
     if (user) {
