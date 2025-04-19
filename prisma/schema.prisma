@@ -8,12 +8,13 @@ datasource db {
 }
 
 model DiscordServer {
-  id              Int          @id @default(autoincrement())
-  discordServerId String       @unique
-  doorMessageId   Int          @unique
-  doorMessages    DoorMessages @relation(fields: [doorMessageId], references: [id])
-  dateCreated     DateTime     @default(now())
-  dateUpdated     DateTime     @updatedAt
+  id                Int                 @id @default(autoincrement())
+  discordServerId   String              @unique
+  doorMessageId     Int?                @unique
+  doorMessages      DoorMessages?       @relation(fields: [doorMessageId], references: [id])
+  dateCreated       DateTime            @default(now())
+  dateUpdated       DateTime            @updatedAt
+  CustomLeagueMatch CustomLeagueMatch[]
 }
 
 model DoorMessages {
@@ -150,14 +151,15 @@ model UserTeamLeague {
 }
 
 model CustomLeagueMatch {
-  id              Int          @id @default(autoincrement())
+  id              Int           @id @default(autoincrement())
   teamBlueId      Int
   teamRedId       Int
   winnerId        Int?
   ServerDiscordId String
+  discordServer   DiscordServer @relation(fields: [ServerDiscordId], references: [discordServerId])
   Teams           TeamLeague[]
-  dateCreated     DateTime     @default(now())
-  dateUpdated     DateTime     @updatedAt
+  dateCreated     DateTime      @default(now())
+  dateUpdated     DateTime      @updatedAt
 }
 
 // modelo para o servidor no discord e sua configurações, como mensagem de boas vidas, mensagem de saída, de banimento, etc

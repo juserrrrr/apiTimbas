@@ -1,169 +1,232 @@
 import { UpdateCustomLeagueMatchDto } from './dto/update-leagueMatch.dto';
-import { CreateCustomLeagueMatchDto, Side } from './dto/create-leagueMatch.dto';
+import { CreateCustomLeagueMatchDto } from './dto/create-leagueMatch.dto';
 import {
   BadRequestException,
   Injectable,
   InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma, Side } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { UserService } from '../user/user.service';
-
 @Injectable()
 export class LeagueMatchService {
-  constructor(
-    private readonly prisma: PrismaService,
-    private readonly userService: UserService,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   async create(createLeagueMatchDto: CreateCustomLeagueMatchDto) {
-    const teamBlueUsers = await Promise.all(
-      createLeagueMatchDto.teamBlue.map((discordId) =>
-        this.userService.findOneByDiscordId(discordId),
-      ),
-    );
-
-    const teamRedUsers = await Promise.all(
-      createLeagueMatchDto.teamRed.map((discordId) =>
-        this.userService.findOneByDiscordId(discordId),
-      ),
-    );
-
-    const teamBlue = await this.prisma.teamLeague.create({
-      data: {
-        side: Side.BLUE,
-        players: {
-          connect: teamBlueUsers.map((user) => ({
-            id: user.id,
-          })),
-        },
-      },
-    });
-
-    const teamRed = await this.prisma.teamLeague.create({
-      data: {
-        side: Side.RED,
-        players: {
-          connect: teamRedUsers.map((user) => ({
-            id: user.id,
-          })),
-        },
-      },
-    });
-
-    const leagueMatch = await this.prisma.customLeagueMatch.create({
-      data: {
-        winnerId: null,
-        ServerDiscordId: createLeagueMatchDto.ServerDiscordId,
-        Teams: {
-          connect: [
-            {
-              id: teamBlue.id,
+    try {
+      return await this.prisma.$transaction(async (prisma) => {
+        // Criar o time azul
+        const teamBlue = await prisma.teamLeague.create({
+          data: {
+            side: Side.BLUE,
+            players: {
+              create: createLeagueMatchDto.teamBlue.players.map((player) => ({
+                user: {
+                  connect: {
+                    id: player.userId,
+                  },
+                },
+              })),
             },
-            {
-              id: teamRed.id,
-            },
-          ],
-        },
-        teamBlueId: teamBlue.id,
-        teamRedId: teamRed.id,
-      },
-      include: {
-        Teams: true,
-      },
-    });
+          },
+          include: {
+            players: true,
+          },
+        });
 
-    return leagueMatch;
+        // Criar o time vermelho
+        const teamRed = await prisma.teamLeague.create({
+          data: {
+            side: Side.RED,
+            players: {
+              create: createLeagueMatchDto.teamRed.players.map((player) => ({
+                user: {
+                  connect: {
+                    id: player.userId,
+                  },
+                },
+              })),
+            },
+          },
+          include: {
+            players: true,
+          },
+        });
+
+        // Criar a partida
+        const leagueMatch = await prisma.customLeagueMatch.create({
+          data: {
+            winnerId: null,
+            ServerDiscordId: createLeagueMatchDto.ServerDiscordId,
+            teamBlueId: teamBlue.id,
+            teamRedId: teamRed.id,
+            Teams: {
+              connect: [{ id: teamBlue.id }, { id: teamRed.id }],
+            },
+          },
+          include: {
+            Teams: {
+              include: {
+                players: {
+                  include: {
+                    user: {
+                      select: {
+                        id: true,
+                        name: true,
+                        discordId: true,
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        });
+
+        return leagueMatch;
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError) {
+        switch (error.code) {
+          case 'P2002':
+            throw new BadRequestException(
+              'Já existe uma partida com esses times',
+            );
+          case 'P2003':
+            throw new BadRequestException(
+              'Um ou mais jogadores não foram encontrados',
+            );
+        }
+      }
+      throw new InternalServerErrorException('Erro ao criar a partida');
+    }
   }
 
   async findAll() {
     return await this.prisma.customLeagueMatch.findMany({
       include: {
-        Teams: true,
+        Teams: {
+          include: {
+            players: {
+              include: {
+                user: true,
+              },
+            },
+          },
+        },
       },
     });
   }
 
   async findOne(id: number) {
     const match = await this.prisma.customLeagueMatch.findUnique({
-      where: {
-        id,
+      where: { id },
+      include: {
+        Teams: {
+          include: {
+            players: {
+              include: {
+                user: true,
+              },
+            },
+          },
+        },
       },
     });
-    if (match) {
-      return match;
+
+    if (!match) {
+      throw new NotFoundException(`Partida com id ${id} não encontrada`);
     }
-    throw new NotFoundException(`League Match with id ${id} not found`);
+
+    return match;
   }
 
   async update(id: number, updateLeagueMatchDto: UpdateCustomLeagueMatchDto) {
-    const winner = await this.prisma.teamLeague.findUnique({
-      where: {
-        id: Number(updateLeagueMatchDto.winnerId),
-      },
-    });
-
-    if (!winner) {
-      throw new NotFoundException(
-        `Team with id ${updateLeagueMatchDto.winnerId} not found`,
-      );
-    }
-    return await this.prisma.customLeagueMatch
-      .update({
-        where: {
-          id,
-        },
-        data: {
-          winnerId: Number(updateLeagueMatchDto.winnerId),
-        },
-      })
-      .catch((err) => {
-        if (err instanceof Prisma.PrismaClientKnownRequestError) {
-          switch (err.code) {
-            case 'P2025':
-            case 'P2023':
-              throw new NotFoundException(
-                `League Match with id ${id} not found`,
-              );
-          }
-        } else if (err instanceof Prisma.PrismaClientValidationError) {
-          throw new BadRequestException(
-            'One or more fields are invalid. Please check your input and try again.',
-          );
-        }
-        console.log(err);
-        throw new InternalServerErrorException(
-          'An unexpected error occurred while trying to create the user',
-        );
+    try {
+      return await this.prisma.$transaction(async (prisma) => {
+        return await prisma.customLeagueMatch.update({
+          where: { id },
+          data: {
+            winnerId: updateLeagueMatchDto.winnerId
+              ? Number(updateLeagueMatchDto.winnerId)
+              : null,
+          },
+          include: {
+            Teams: {
+              include: {
+                players: {
+                  include: {
+                    user: true,
+                  },
+                },
+              },
+            },
+          },
+        });
       });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError) {
+        switch (error.code) {
+          case 'P2025':
+            throw new NotFoundException(`Partida com id ${id} não encontrada`);
+        }
+      }
+      throw new InternalServerErrorException('Erro ao atualizar a partida');
+    }
   }
 
   async remove(id: number) {
-    return await this.prisma.customLeagueMatch
-      .delete({
-        where: {
-          id,
-        },
-      })
-      .catch((err) => {
-        if (err instanceof Prisma.PrismaClientKnownRequestError) {
-          switch (err.code) {
-            case 'P2025':
-            case 'P2023':
-              throw new NotFoundException(
-                `League Match with id ${id} not found`,
-              );
-          }
-        } else if (err instanceof Prisma.PrismaClientValidationError) {
-          throw new BadRequestException(
-            'One or more fields are invalid. Please check your input and try again.',
-          );
+    try {
+      return await this.prisma.$transaction(async (prisma) => {
+        // Primeiro, encontrar a partida e seus times
+        const match = await prisma.customLeagueMatch.findUnique({
+          where: { id },
+          include: {
+            Teams: {
+              include: {
+                players: true,
+              },
+            },
+          },
+        });
+
+        if (!match) {
+          throw new NotFoundException(`Partida com id ${id} não encontrada`);
         }
-        console.log(err);
-        throw new InternalServerErrorException(
-          'An unexpected error occurred while trying to create the user',
+
+        // Deletar os times e suas relações
+        await Promise.all(
+          match.Teams.map((team) =>
+            prisma.teamLeague.delete({
+              where: { id: team.id },
+            }),
+          ),
         );
+
+        // Deletar a partida
+        return await prisma.customLeagueMatch.delete({
+          where: { id },
+          include: {
+            Teams: {
+              include: {
+                players: {
+                  include: {
+                    user: true,
+                  },
+                },
+              },
+            },
+          },
+        });
       });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError) {
+        switch (error.code) {
+          case 'P2025':
+            throw new NotFoundException(`Partida com id ${id} não encontrada`);
+        }
+      }
+      throw new InternalServerErrorException('Erro ao remover a partida');
+    }
   }
 }

@@ -36,13 +36,13 @@ describe('LeagueMatchController', () => {
   describe('create', () => {
     it('should create a new league match', async () => {
       const createDto: CreateCustomLeagueMatchDto = {
-        id: '',
-        teamBlue: ['discord1', 'discord2'],
-        teamRed: ['discord3', 'discord4'],
+        teamBlue: {
+          players: [{ userId: 1 }, { userId: 2 }],
+        },
+        teamRed: {
+          players: [{ userId: 3 }, { userId: 4 }],
+        },
         ServerDiscordId: 'server123',
-        winnerId: '',
-        dateCreated: new Date(),
-        dateUpdated: new Date(),
       };
 
       const expectedResult = {
@@ -101,7 +101,7 @@ describe('LeagueMatchController', () => {
   describe('update', () => {
     it('should update a league match', async () => {
       const updateDto: UpdateCustomLeagueMatchDto = {
-        winnerId: '1',
+        winnerId: 1,
       };
 
       const expectedResult = {

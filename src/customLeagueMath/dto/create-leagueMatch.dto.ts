@@ -1,48 +1,34 @@
-import { IsArray, IsEmpty, IsOptional, IsString } from 'class-validator';
+import {
+  IsArray,
+  IsEmpty,
+  IsNotEmpty,
+  IsNumber,
+  IsString,
+} from 'class-validator';
 
-//create enum for side, BLUE and RED
-export enum Side {
-  BLUE = 'BLUE',
-  RED = 'RED',
+export class UserTeamLeagueDto {
+  @IsNumber()
+  @IsNotEmpty()
+  userId: number;
+}
+
+export class TeamLeagueDto {
+  @IsArray()
+  @IsNotEmpty()
+  players: UserTeamLeagueDto[];
 }
 
 export class CreateCustomLeagueMatchDto {
   @IsEmpty()
-  id: string;
+  id?: string;
 
-  @IsArray()
-  teamBlue: string[];
+  @IsNotEmpty()
+  teamBlue: TeamLeagueDto;
 
-  @IsArray()
-  teamRed: string[];
-
-  @IsString()
-  @IsOptional()
-  winnerId: string;
+  @IsNotEmpty()
+  teamRed: TeamLeagueDto;
 
   @IsString()
+  @IsNotEmpty()
   ServerDiscordId: string;
-
-  @IsEmpty()
-  dateCreated: Date;
-
-  @IsEmpty()
-  dateUpdated: Date;
 }
-
-// export class CreateCustomLeagueMatchDto {
-//   @IsEmpty()
-//   id: string;
-
-//   @IsArray()
-//   teams: TeamLeague[];
-
-//   @IsString()
-//   winnerId: string;
-
-//   @IsEmpty()
-//   dateCreated: Date;
-
-//   @IsEmpty()
-//   dateUpdated: Date;
-// }
