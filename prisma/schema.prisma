@@ -15,6 +15,8 @@ model DiscordServer {
   dateCreated       DateTime            @default(now())
   dateUpdated       DateTime            @updatedAt
   CustomLeagueMatch CustomLeagueMatch[]
+
+  @@index([discordServerId])
 }
 
 model DoorMessages {
@@ -125,6 +127,8 @@ model User {
   dateCreated DateTime         @default(now())
   dateUpdated DateTime         @updatedAt
   TeamsLeague UserTeamLeague[]
+
+  @@index([leaguePuuid])
 }
 
 enum Side {
@@ -138,6 +142,9 @@ model TeamLeague {
   players             UserTeamLeague[]
   customLeagueMatchId Int?
   CustomLeagueMatch   CustomLeagueMatch? @relation(fields: [customLeagueMatchId], references: [id])
+
+  @@index([side])
+  @@index([customLeagueMatchId])
 }
 
 model UserTeamLeague {
@@ -148,6 +155,8 @@ model UserTeamLeague {
   teamLeague   TeamLeague @relation(fields: [teamLeagueId], references: [id])
 
   @@unique([userId, teamLeagueId])
+  @@index([userId])
+  @@index([teamLeagueId])
 }
 
 model CustomLeagueMatch {
@@ -160,6 +169,7 @@ model CustomLeagueMatch {
   Teams           TeamLeague[]
   dateCreated     DateTime      @default(now())
   dateUpdated     DateTime      @updatedAt
+  @@index([winnerId])
+  @@index([ServerDiscordId])
 }
 
-// modelo para o servidor no discord e sua configurações, como mensagem de boas vidas, mensagem de saída, de banimento, etc
