@@ -4,16 +4,19 @@ FROM node:20
 # Set the working directory inside the container
 WORKDIR /usr/src/app
 
-# Copy Prisma schema first
-COPY prisma ./prisma/
-
 # Copy package.json and package-lock.json to the working directory
 COPY package*.json ./
 
 # Install the application dependencies
 RUN npm install -g npm@latest && \
-    npm install && \
-    npx prisma generate
+    npm install -g ts-node && \
+    npm install
+
+# Copy Prisma schema
+COPY prisma ./prisma/
+
+# Generate Prisma Client
+RUN npx prisma generate
 
 # Copy the rest of the application files
 COPY . .
