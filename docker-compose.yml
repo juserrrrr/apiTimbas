@@ -15,7 +15,9 @@ services:
       - ADMIN_PASSWORD=${ADMIN_PASSWORD}
       - ADMIN_DISCORD_ID=${ADMIN_DISCORD_ID}
       - NODE_ENV=${NODE_ENV}
-    volumes:
-      - .:/usr/src/app
-      - /usr/src/app/node_modules
-      - ./prisma:/usr/src/app/prisma
+    networks:
+      - minha-rede
+
+networks:
+  minha-rede:
+    external: true
