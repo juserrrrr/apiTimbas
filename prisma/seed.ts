@@ -1,7 +1,6 @@
-import { NestFactory } from '@nestjs/core';
-import { AppModule } from '../src/app.module';
-import { UserService } from '../src/user/user.service';
+import { PrismaClient } from '@prisma/client';
 import { Role } from '../src/enums/role.enum';
+import * as bcrypt from 'bcrypt';
 
 if (
   !process.env.ADMIN_NAME ||
@@ -15,17 +14,29 @@ if (
 }
 
 async function bootstrap() {
-  const app = await NestFactory.createApplicationContext(AppModule);
-  const userService = app.get(UserService);
+  const prisma = new PrismaClient();
 
   try {
-    const admin = await userService.create({
-      name: process.env.ADMIN_NAME,
-      email: process.env.ADMIN_EMAIL,
-      password: process.env.ADMIN_PASSWORD,
-      discordId: process.env.ADMIN_DISCORD_ID,
-      role: Role.ADMIN,
-      dateOfBirth: null,
+    const salt = await bcrypt.genSalt();
+    const hashedPassword = await bcrypt.hash(process.env.ADMIN_PASSWORD, salt);
+
+    const admin = await prisma.user.upsert({
+      where: {
+        email: process.env.ADMIN_EMAIL,
+      },
+      update: {
+        name: process.env.ADMIN_NAME,
+        discordId: process.env.ADMIN_DISCORD_ID,
+        password: hashedPassword,
+        role: Role.ADMIN,
+      },
+      create: {
+        name: process.env.ADMIN_NAME,
+        email: process.env.ADMIN_EMAIL,
+        discordId: process.env.ADMIN_DISCORD_ID,
+        password: hashedPassword,
+        role: Role.ADMIN,
+      },
     });
 
     console.log('Admin criado/atualizado:', {
@@ -39,7 +50,7 @@ async function bootstrap() {
     console.error('Erro ao criar admin:', error);
     throw error;
   } finally {
-    await app.close();
+    await prisma.$disconnect();
   }
 }
 
