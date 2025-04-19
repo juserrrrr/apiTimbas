@@ -9,4 +9,4 @@ npx prisma db seed
 
 # Inicia a aplicação
 echo "Iniciando a aplicação..."
-node dist/main 
+node dist/main.js 
