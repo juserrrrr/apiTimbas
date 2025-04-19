@@ -25,7 +25,6 @@ export class CreateUserDto {
     minNumbers: 1,
     minSymbols: 1,
   })
-  @IsOptional()
   password: string;
 
   @IsDateString()

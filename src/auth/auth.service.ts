@@ -38,6 +38,7 @@ export class AuthService {
     const acessToken = this.jwtService.sign(
       {
         botId,
+        role: Role.BOT,
       },
       {
         expiresIn: '1y',
@@ -62,7 +63,7 @@ export class AuthService {
   }
 
   async register(authRegisterDto: AuthRegisterDto) {
-    const user = await this.userService.create(authRegisterDto);
+    const user = await this.userService.createUser(authRegisterDto);
     if (typeof user === 'object') {
       const { id, name, email, role } = user;
       return this.createToken(id.toString(), name, email, role);
@@ -75,9 +76,15 @@ export class AuthService {
         email: emailLogin,
       },
     });
+
     if (!user || !(await bcrypt.compare(password, user.password))) {
-      throw new UnauthorizedException('email or password is incorrect');
+      throw new UnauthorizedException('Email or password is incorrect');
     }
+
+    if (user.role !== Role.USER && user.role !== Role.ADMIN) {
+      throw new UnauthorizedException('Only users and admins can login');
+    }
+
     const { id, name, email, role } = user;
     return this.createToken(id.toString(), name, email, role);
   }

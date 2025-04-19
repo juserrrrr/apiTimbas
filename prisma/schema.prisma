@@ -118,7 +118,8 @@ model User {
   name        String
   email       String?          @unique
   password    String?
-  role        Role             @default(USER)
+  role        Role             @default(PLAYER)
+  leagueId    String?          @unique
   dateOfBirth DateTime?
   dateCreated DateTime         @default(now())
   dateUpdated DateTime         @updatedAt

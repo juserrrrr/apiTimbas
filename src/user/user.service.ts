@@ -5,53 +5,17 @@ import {
   InternalServerErrorException,
 } from '@nestjs/common';
 import { CreateUserDto } from './dto/create-user.dto';
+import { CreatePlayerDto } from './dto/create-player.dto';
 import { PrismaService } from '../prisma/prisma.service';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { isValidObjectId } from 'mongoose';
 import { Prisma } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
+import { Role } from '../enums/role.enum';
 
 @Injectable()
 export class UserService {
   constructor(private readonly prisma: PrismaService) {}
-
-  async create(createUserDto: CreateUserDto) {
-    const salt = await bcrypt.genSalt();
-
-    createUserDto.password = await bcrypt.hash(createUserDto.password, salt);
-
-    const userCreated = await this.prisma.user
-      .create({
-        data: createUserDto,
-        select: {
-          id: true,
-          email: true,
-          discordId: true,
-          name: true,
-          role: true,
-          TeamsLeague: true,
-        },
-      })
-      .catch((err) => {
-        if (err instanceof Prisma.PrismaClientKnownRequestError) {
-          switch (err.code) {
-            case 'P2002':
-              throw new BadRequestException(
-                `User with ${err.meta?.target} already exists`,
-              );
-          }
-        } else if (err instanceof Prisma.PrismaClientValidationError) {
-          throw new BadRequestException(
-            'One or more fields are invalid. Please check your input and try again.',
-          );
-        }
-        console.log(err);
-        throw new InternalServerErrorException(
-          'An unexpected error occurred while trying to create the user',
-        );
-      });
-    return userCreated;
-  }
 
   async findAll() {
     return this.prisma.user.findMany({
@@ -160,5 +124,81 @@ export class UserService {
           }
         }
       });
+  }
+
+  async createPlayer(createPlayerDto: CreatePlayerDto) {
+    const userCreated = await this.prisma.user
+      .create({
+        data: {
+          ...createPlayerDto,
+          role: Role.PLAYER,
+        },
+        select: {
+          id: true,
+          email: true,
+          discordId: true,
+          name: true,
+          role: true,
+          leagueId: true,
+        },
+      })
+      .catch((err) => {
+        if (err instanceof Prisma.PrismaClientKnownRequestError) {
+          switch (err.code) {
+            case 'P2002':
+              throw new BadRequestException(
+                `User with ${err.meta?.target} already exists`,
+              );
+          }
+        } else if (err instanceof Prisma.PrismaClientValidationError) {
+          throw new BadRequestException(
+            'One or more fields are invalid. Please check your input and try again.',
+          );
+        }
+        console.log(err);
+        throw new InternalServerErrorException(
+          'An unexpected error occurred while trying to create the user',
+        );
+      });
+
+    return userCreated;
+  }
+
+  async createUser(createUserDto: CreateUserDto) {
+    const salt = await bcrypt.genSalt();
+    createUserDto.password = await bcrypt.hash(createUserDto.password, salt);
+
+    const userCreated = await this.prisma.user
+      .create({
+        data: { ...createUserDto, role: Role.USER },
+        select: {
+          id: true,
+          email: true,
+          discordId: true,
+          name: true,
+          role: true,
+          TeamsLeague: true,
+        },
+      })
+      .catch((err) => {
+        if (err instanceof Prisma.PrismaClientKnownRequestError) {
+          switch (err.code) {
+            case 'P2002':
+              throw new BadRequestException(
+                `User with ${err.meta?.target} already exists`,
+              );
+          }
+        } else if (err instanceof Prisma.PrismaClientValidationError) {
+          throw new BadRequestException(
+            'One or more fields are invalid. Please check your input and try again.',
+          );
+        }
+        console.log(err);
+        throw new InternalServerErrorException(
+          'An unexpected error occurred while trying to create the user',
+        );
+      });
+
+    return userCreated;
   }
 }
