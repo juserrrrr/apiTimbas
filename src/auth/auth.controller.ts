@@ -25,7 +25,7 @@ export class AuthController {
   }
 
   @UseGuards(AuthGuard)
-  @Roles(Role.Admin)
+  @Roles(Role.ADMIN)
   @Post('login-bot')
   async loginBot(@Body() { botId }: { botId: string }) {
     return this.authService.loginBot(botId);

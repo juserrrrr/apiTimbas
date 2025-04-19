@@ -105,13 +105,20 @@ model EmbedField {
   embedId Int
 }
 
+enum Role {
+  ADMIN
+  BOT
+  USER
+  PLAYER
+}
+
 model User {
   id          Int              @id @default(autoincrement())
   discordId   String           @unique
   name        String
   email       String?          @unique
   password    String?
-  role        String           @default("user")
+  role        Role             @default(USER)
   dateOfBirth DateTime?
   dateCreated DateTime         @default(now())
   dateUpdated DateTime         @updatedAt

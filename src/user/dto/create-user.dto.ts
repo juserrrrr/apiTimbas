@@ -32,7 +32,7 @@ export class CreateUserDto {
 
   @IsOptional()
   @IsEnum(Role)
-  role: string;
+  role: Role;
 
   @IsDateString()
   @IsOptional()

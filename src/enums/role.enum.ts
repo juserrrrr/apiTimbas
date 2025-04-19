@@ -1,6 +1,6 @@
 export enum Role {
-  Admin = 'admin',
-  Friend = 'friend',
-  Bot = 'bot',
-  User = 'user',
+  ADMIN = 'ADMIN',
+  BOT = 'BOT',
+  USER = 'USER',
+  PLAYER = 'PLAYER',
 }

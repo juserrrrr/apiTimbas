@@ -12,13 +12,13 @@ import {
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UserService } from './user.service';
-import { Roles } from 'src/decorators/roles.decorator';
-import { Role } from 'src/enums/role.enum';
-import { RoleGuard } from 'src/auth/guards/role.guard';
-import { AuthGuard } from 'src/auth/guards/auth.guard';
+import { Roles } from '../../src/decorators/roles.decorator';
+import { Role } from '../../src/enums/role.enum';
+import { RoleGuard } from '../../src/auth/guards/role.guard';
+import { AuthGuard } from '../../src/auth/guards/auth.guard';
 
 @UseGuards(AuthGuard, RoleGuard)
-@Roles(Role.Admin)
+@Roles(Role.ADMIN)
 @Controller('users')
 export class UserController {
   constructor(private readonly userService: UserService) {}

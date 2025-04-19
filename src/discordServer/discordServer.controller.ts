@@ -18,7 +18,7 @@ import { Roles } from '../decorators/roles.decorator';
 import { Role } from '../enums/role.enum';
 
 @UseGuards(AuthGuard, RoleGuard)
-@Roles(Role.Admin, Role.Bot)
+@Roles(Role.ADMIN, Role.BOT)
 @Controller('discordServer')
 export class DiscordServerController {
   constructor(private readonly discordServerService: DiscordServerService) {}
