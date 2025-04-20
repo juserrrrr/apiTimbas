@@ -15,3 +15,4 @@ services:
       - ADMIN_PASSWORD=${ADMIN_PASSWORD}
       - ADMIN_DISCORD_ID=${ADMIN_DISCORD_ID}
       - NODE_ENV=${NODE_ENV}
+      - PORT=${PORT}
