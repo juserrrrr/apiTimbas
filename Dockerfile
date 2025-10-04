@@ -36,5 +36,5 @@ COPY --from=builder /usr/src/app/prisma ./prisma
 EXPOSE 3000
 
 # Comando para iniciar a aplicação.
-CMD ["node", "dist/src/main"]
+CMD ["npm", "run", "start:migrate:prod"]
 
