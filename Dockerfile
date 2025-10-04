@@ -32,8 +32,5 @@ COPY --from=builder /usr/src/app/node_modules ./node_modules
 COPY --from=builder /usr/src/app/dist ./dist
 COPY --from=builder /usr/src/app/prisma ./prisma
 
-# Expõe a porta que a aplicação irá rodar.
-EXPOSE 3000
-
 # Comando para iniciar a aplicação.
 CMD ["npm", "run", "start:migrate:prod"]
