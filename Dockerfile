@@ -15,9 +15,6 @@ COPY . .
 RUN npx prisma generate
 RUN npm run build
 
-# Remove as dependências de desenvolvimento para otimizar o estágio final.
-RUN npm prune --production
-
 
 # ---- Estágio 2: Produção ----
 FROM node:20
@@ -26,9 +23,13 @@ WORKDIR /usr/src/app
 # Configura o ambiente para produção, otimizando performance e segurança.
 ENV NODE_ENV production
 
-# Copia os artefatos do estágio de build.
+# Copia os package.json e package-lock.json do estágio de build.
 COPY --from=builder /usr/src/app/package*.json ./
-COPY --from=builder /usr/src/app/node_modules ./node_modules
+
+# Instala apenas as dependências de produção.
+RUN npm install --only=production
+
+# Copia o código compilado e o schema do prisma.
 COPY --from=builder /usr/src/app/dist ./dist
 COPY --from=builder /usr/src/app/prisma ./prisma
 
