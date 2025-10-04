@@ -37,4 +37,3 @@ EXPOSE 3000
 
 # Comando para iniciar a aplicação.
 CMD ["npm", "run", "start:migrate:prod"]
-
