@@ -1,27 +1,32 @@
-FROM node:20
+FROM node:20 AS builder
 
-# Set working directory
 WORKDIR /app
 
-# Copy package.json and package-lock.json
+ENV NODE_ENV=production
+
 COPY package*.json ./
 COPY prisma ./prisma/
 
-# Install dependencies
-RUN npm cache clean --force
-RUN npm install
+RUN npm install --include=dev
 
-# Copy the rest of the application code
 COPY . .
 
-# Generate Prisma Client code
-RUN npx prisma generate
+RUN npx nest build
 
-# Build the NestJS application
-RUN npm run build
+FROM node:20-slim AS production
 
-# Expose the port the app runs on, here, I was using port 3333
+WORKDIR /app
+
+ENV NODE_ENV=production
+
+COPY package*.json ./
+COPY prisma ./prisma/
+
+RUN npm install --omit=dev
+
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
+
 EXPOSE 3333
 
-# Command to run the app
-CMD [  "npm", "run", "start:migrate:prod" ]
+CMD ["npm", "run", "start:migrate:prod"]
