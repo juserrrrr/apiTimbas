@@ -1,28 +1,37 @@
-# Use the official Node.js image as the base image
-FROM node:20
-
-# Set the working directory inside the container
+# ---- Estágio 1: Build ----
+FROM node:20 AS builder
 WORKDIR /usr/src/app
 
-# Copy package.json and package-lock.json to the working directory
-COPY package*.json ./
+# Define o ambiente como 'development' para garantir a instalação das devDependencies.
+ENV NODE_ENV development
 
-# Copy the prisma schema first to leverage Docker cache
+COPY package*.json ./
 COPY prisma ./prisma/
 
-# Install the application dependencies
-RUN npm install --include=dev
+# Instala todas as dependências, incluindo as de desenvolvimento.
+RUN npm install
 
-
-# Copy the rest of the application files
 COPY . .
-
 RUN npx prisma generate
-
-# Build the NestJS application
 RUN npm run build
 
+# Remove as dependências de desenvolvimento para otimizar o estágio final.
+RUN npm prune --production
 
-# Command to run the application
+
+# ---- Estágio 2: Produção ----
+FROM node:20
+WORKDIR /usr/src/app
+
+# Configura o ambiente para produção, otimizando performance e segurança.
+ENV NODE_ENV production
+
+# Copia os artefatos do estágio de build.
+COPY --from=builder /usr/src/app/package*.json ./
+COPY --from=builder /usr/src/app/node_modules ./node_modules
+COPY --from=builder /usr/src/app/dist ./dist
+COPY --from=builder /usr/src/app/prisma ./prisma
+
+# Comando para iniciar a aplicação.
 CMD ["node", "dist/main"]
 
