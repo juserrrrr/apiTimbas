@@ -36,6 +36,7 @@ describe('LeagueMatchController', () => {
   describe('create', () => {
     it('should create a new league match', async () => {
       const createDto: CreateCustomLeagueMatchDto = {
+        riotMatchId: 'BR1_12345',
         teamBlue: {
           players: [{ userId: 1 }, { userId: 2 }],
         },

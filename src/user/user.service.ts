@@ -26,6 +26,7 @@ export class UserService {
         role: true,
         discordId: true,
         TeamsLeague: true,
+        leagueAccounts: true,
       },
     });
   }
@@ -43,6 +44,7 @@ export class UserService {
           role: true,
           discordId: true,
           TeamsLeague: true,
+          leagueAccounts: true,
         },
       });
       if (user) {
@@ -62,7 +64,7 @@ export class UserService {
         name: true,
         role: true,
         discordId: true,
-        leaguePuuid: true,
+        leagueAccounts: true,
       },
     });
     if (user) {
@@ -90,6 +92,7 @@ export class UserService {
           role: true,
           discordId: true,
           TeamsLeague: true,
+          leagueAccounts: true,
         },
       })
       .catch((err) => {
@@ -114,6 +117,7 @@ export class UserService {
           role: true,
           discordId: true,
           TeamsLeague: true,
+          leagueAccounts: true,
         },
       })
       .catch((err) => {
@@ -126,11 +130,37 @@ export class UserService {
   }
 
   async createPlayer(createPlayerDto: CreatePlayerDto) {
-    const userCreated = await this.prisma.user
-      .create({
+    const { leaguePuuid, ...rest } = createPlayerDto;
+
+    const user = await this.prisma.user.findUnique({
+      where: {
+        discordId: createPlayerDto.discordId,
+      },
+    });
+
+    if (user) {
+      // User exists, create a new league account and connect it
+      return this.prisma.leagueAccount.create({
         data: {
-          ...createPlayerDto,
+          puuid: leaguePuuid,
+          user: {
+            connect: {
+              id: user.id,
+            },
+          },
+        },
+      });
+    } else {
+      // User does not exist, create a new user and a new league account
+      return this.prisma.user.create({
+        data: {
+          ...rest,
           role: Role.PLAYER,
+          leagueAccounts: {
+            create: {
+              puuid: leaguePuuid,
+            },
+          },
         },
         select: {
           id: true,
@@ -138,29 +168,10 @@ export class UserService {
           discordId: true,
           name: true,
           role: true,
-          leaguePuuid: true,
+          leagueAccounts: true,
         },
-      })
-      .catch((err) => {
-        if (err instanceof Prisma.PrismaClientKnownRequestError) {
-          switch (err.code) {
-            case 'P2002':
-              throw new BadRequestException(
-                `User with ${err.meta?.target} already exists`,
-              );
-          }
-        } else if (err instanceof Prisma.PrismaClientValidationError) {
-          throw new BadRequestException(
-            'One or more fields are invalid. Please check your input and try again.',
-          );
-        }
-        console.log(err);
-        throw new InternalServerErrorException(
-          'An unexpected error occurred while trying to create the user',
-        );
       });
-
-    return userCreated;
+    }
   }
 
   async createUser(createUserDto: CreateUserDto) {
@@ -177,6 +188,7 @@ export class UserService {
           name: true,
           role: true,
           TeamsLeague: true,
+          leagueAccounts: true,
         },
       })
       .catch((err) => {

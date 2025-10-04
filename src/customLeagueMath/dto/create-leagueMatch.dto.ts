@@ -22,6 +22,10 @@ export class CreateCustomLeagueMatchDto {
   @IsEmpty()
   id?: string;
 
+  @IsString()
+  @IsNotEmpty()
+  riotMatchId: string;
+
   @IsNotEmpty()
   teamBlue: TeamLeagueDto;
 

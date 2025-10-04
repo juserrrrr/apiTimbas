@@ -6,6 +6,7 @@ import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { ConfigModule } from '@nestjs/config';
 import { LeagueMatchModule } from './customLeagueMath/leagueMatch.module';
 import { DiscordServerModule } from './discordServer/discordServer.module';
+import { RiotModule } from './riot/riot.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { DiscordServerModule } from './discordServer/discordServer.module';
     AuthModule,
     LeagueMatchModule,
     DiscordServerModule,
+    RiotModule,
   ],
   controllers: [],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],

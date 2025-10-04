@@ -116,20 +116,30 @@ enum Role {
 }
 
 model User {
-  id          Int              @id @default(autoincrement())
-  discordId   String           @unique
-  name        String
-  email       String?          @unique
-  password    String?
-  role        Role             @default(PLAYER)
-  leaguePuuid String?          @unique
-  dateOfBirth DateTime?
-  dateCreated DateTime         @default(now())
-  dateUpdated DateTime         @updatedAt
-  TeamsLeague UserTeamLeague[]
-
-  @@index([leaguePuuid])
+  id             Int              @id @default(autoincrement())
+  discordId      String           @unique
+  name           String
+  email          String?          @unique
+  password       String?
+  role           Role             @default(PLAYER)
+  dateOfBirth    DateTime?
+  dateCreated    DateTime         @default(now())
+  dateUpdated    DateTime         @updatedAt
+  TeamsLeague    UserTeamLeague[]
+  leagueAccounts LeagueAccount[]
 }
+
+model LeagueAccount {
+  id        Int      @id @default(autoincrement())
+  puuid     String   @unique
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+}
+
 
 enum Side {
   BLUE
@@ -161,6 +171,7 @@ model UserTeamLeague {
 
 model CustomLeagueMatch {
   id              Int           @id @default(autoincrement())
+  riotMatchId     String        @unique
   teamBlueId      Int
   teamRedId       Int
   winnerId        Int?

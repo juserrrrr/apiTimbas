@@ -57,6 +57,7 @@ export class LeagueMatchService {
         const leagueMatch = await prisma.customLeagueMatch.create({
           data: {
             winnerId: null,
+            riotMatchId: createLeagueMatchDto.riotMatchId,
             ServerDiscordId: createLeagueMatchDto.ServerDiscordId,
             teamBlueId: teamBlue.id,
             teamRedId: teamRed.id,
@@ -150,6 +151,7 @@ export class LeagueMatchService {
             winnerId: updateLeagueMatchDto.winnerId
               ? Number(updateLeagueMatchDto.winnerId)
               : null,
+            riotMatchId: updateLeagueMatchDto.riotMatchId,
           },
           include: {
             Teams: {

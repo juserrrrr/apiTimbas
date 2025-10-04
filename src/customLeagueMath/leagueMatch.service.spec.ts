@@ -44,6 +44,7 @@ describe('LeagueMatchService', () => {
   describe('create', () => {
     it('should create a new league match', async () => {
       const createLeagueMatchDto = {
+        riotMatchId: 'BR1_12345',
         teamBlue: {
           players: [{ userId: 1 }, { userId: 2 }],
         },
@@ -86,6 +87,7 @@ describe('LeagueMatchService', () => {
 
     it('should throw BadRequestException if match already exists', async () => {
       const createLeagueMatchDto = {
+        riotMatchId: 'BR1_12345',
         teamBlue: {
           players: [{ userId: 1 }],
         },
@@ -113,6 +115,7 @@ describe('LeagueMatchService', () => {
 
     it('should throw BadRequestException if user not found', async () => {
       const createLeagueMatchDto = {
+        riotMatchId: 'BR1_12345',
         teamBlue: {
           players: [{ userId: 1 }],
         },

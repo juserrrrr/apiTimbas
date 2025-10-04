@@ -1,6 +1,6 @@
 import { PartialType } from '@nestjs/mapped-types';
 import { CreateCustomLeagueMatchDto } from './create-leagueMatch.dto';
-import { IsNumber, IsOptional } from 'class-validator';
+import { IsNumber, IsOptional, IsString } from 'class-validator';
 
 export class UpdateCustomLeagueMatchDto extends PartialType(
   CreateCustomLeagueMatchDto,
@@ -8,4 +8,8 @@ export class UpdateCustomLeagueMatchDto extends PartialType(
   @IsNumber()
   @IsOptional()
   winnerId?: number;
+
+  @IsString()
+  @IsOptional()
+  riotMatchId?: string;
 }
