@@ -2,14 +2,19 @@ import {
   IsArray,
   IsEmpty,
   IsNotEmpty,
-  IsNumber,
+  IsInt,
+  IsOptional,
   IsString,
 } from 'class-validator';
 
 export class UserTeamLeagueDto {
-  @IsNumber()
-  @IsNotEmpty()
-  userId: number;
+  @IsOptional()
+  @IsInt()
+  userId?: number;
+
+  @IsOptional()
+  @IsString()
+  discordId?: string;
 }
 
 export class TeamLeagueDto {

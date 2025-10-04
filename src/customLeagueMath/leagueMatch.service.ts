@@ -15,18 +15,48 @@ export class LeagueMatchService {
   async create(createLeagueMatchDto: CreateCustomLeagueMatchDto) {
     try {
       return await this.prisma.$transaction(async (prisma) => {
+        const mapPlayersToConnect = async (
+          players: { userId?: number; discordId?: string }[],
+        ) => {
+          return Promise.all(
+            players.map(async (player) => {
+              if (player.userId) {
+                return { user: { connect: { id: player.userId } } };
+              }
+
+              if (player.discordId) {
+                const user = await prisma.user.findUnique({
+                  where: { discordId: player.discordId },
+                  select: { id: true },
+                });
+                if (!user) {
+                  throw new NotFoundException(
+                    `Usuário com discordId ${player.discordId} não encontrado`,
+                  );
+                }
+                return { user: { connect: { id: user.id } } };
+              }
+
+              throw new BadRequestException(
+                'Cada jogador deve ter um userId ou discordId.',
+              );
+            }),
+          );
+        };
+
+        const teamBluePlayersConnect = await mapPlayersToConnect(
+          createLeagueMatchDto.teamBlue.players,
+        );
+        const teamRedPlayersConnect = await mapPlayersToConnect(
+          createLeagueMatchDto.teamRed.players,
+        );
+
         // Criar o time azul
         const teamBlue = await prisma.teamLeague.create({
           data: {
             side: Side.BLUE,
             players: {
-              create: createLeagueMatchDto.teamBlue.players.map((player) => ({
-                user: {
-                  connect: {
-                    id: player.userId,
-                  },
-                },
-              })),
+              create: teamBluePlayersConnect,
             },
           },
           include: {
@@ -39,13 +69,7 @@ export class LeagueMatchService {
           data: {
             side: Side.RED,
             players: {
-              create: createLeagueMatchDto.teamRed.players.map((player) => ({
-                user: {
-                  connect: {
-                    id: player.userId,
-                  },
-                },
-              })),
+              create: teamRedPlayersConnect,
             },
           },
           include: {
@@ -87,6 +111,12 @@ export class LeagueMatchService {
         return leagueMatch;
       });
     } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
       if (error instanceof Prisma.PrismaClientKnownRequestError) {
         switch (error.code) {
           case 'P2002':
@@ -94,6 +124,10 @@ export class LeagueMatchService {
               'Já existe uma partida com esses times',
             );
           case 'P2003':
+            throw new BadRequestException(
+              'Um ou mais jogadores não foram encontrados',
+            );
+          case 'P2025':
             throw new BadRequestException(
               'Um ou mais jogadores não foram encontrados',
             );
