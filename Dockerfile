@@ -1,45 +1,16 @@
-FROM node:20 AS builder
-
-WORKDIR /app
-
-ENV NODE_ENV=production
-
+# Use the official Node.js image as the base image
+FROM node:20
+# Set the working directory inside the container
+WORKDIR /usr/src/app
+# Copy package.json and package-lock.json to the working directory
 COPY package*.json ./
 COPY prisma ./prisma/
-
-RUN npm install --include=dev
-
+# Install the application dependencies
+RUN npm install
+# Copy the rest of the application files
 COPY . .
+# Build the NestJS application
+RUN npm run build
 
-RUN npx nest build
-
-FROM node:20-slim AS production
-
-WORKDIR /app
-
-ENV NODE_ENV=production
-
-# Install OpenSSL for Prisma
-RUN apt-get update -y && apt-get install -y openssl --no-install-recommends
-
-# Copy package.json and package-lock.json
-COPY package*.json ./
-COPY prisma ./prisma/
-
-# Install production dependencies and ts-node
-RUN npm install --omit=dev
-
-# Install @types/bcrypt for seed.ts compilation
-RUN npm install --omit=dev @types/bcrypt
-
-COPY --from=builder /app/dist ./dist
-RUN npm install -g ts-node
-
-COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
-
-RUN ls -la node_modules/.bin
-RUN which ts-node || echo "ts-node not found in PATH"
-
-EXPOSE 3333
-
-CMD ["npm", "run", "start:migrate:prod"]
+# Command to run the application
+CMD ["node", "dist/main"]
