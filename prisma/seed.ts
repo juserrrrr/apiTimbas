@@ -18,22 +18,22 @@ async function bootstrap() {
 
   try {
     const salt = await bcrypt.genSalt();
-    const hashedPassword = await bcrypt.hash(process.env.ADMIN_PASSWORD, salt);
+    const hashedPassword = await bcrypt.hash(process.env.ADMIN_PASSWORD!, salt);
 
     const admin = await prisma.user.upsert({
       where: {
-        email: process.env.ADMIN_EMAIL,
+        email: process.env.ADMIN_EMAIL!,
       },
       update: {
-        name: process.env.ADMIN_NAME,
-        discordId: process.env.ADMIN_DISCORD_ID,
+        name: process.env.ADMIN_NAME!,
+        discordId: process.env.ADMIN_DISCORD_ID!,
         password: hashedPassword,
         role: Role.ADMIN,
       },
       create: {
-        name: process.env.ADMIN_NAME,
-        email: process.env.ADMIN_EMAIL,
-        discordId: process.env.ADMIN_DISCORD_ID,
+        name: process.env.ADMIN_NAME!,
+        email: process.env.ADMIN_EMAIL!,
+        discordId: process.env.ADMIN_DISCORD_ID!,
         password: hashedPassword,
         role: Role.ADMIN,
       },

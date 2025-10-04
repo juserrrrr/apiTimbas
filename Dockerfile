@@ -29,6 +29,9 @@ COPY prisma ./prisma/
 # Install production dependencies and ts-node
 RUN npm install --omit=dev
 
+# Install @types/bcrypt for seed.ts compilation
+RUN npm install --omit=dev @types/bcrypt
+
 COPY --from=builder /app/dist ./dist
 RUN npm install -g ts-node
 
