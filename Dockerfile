@@ -27,10 +27,15 @@ COPY package*.json ./
 COPY prisma ./prisma/
 
 # Install production dependencies and ts-node
-RUN npm install --omit=dev && npm install ts-node
+RUN npm install --omit=dev
 
 COPY --from=builder /app/dist ./dist
+RUN npm install -g ts-node
+
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
+
+RUN ls -la node_modules/.bin
+RUN which ts-node || echo "ts-node not found in PATH"
 
 EXPOSE 3333
 
