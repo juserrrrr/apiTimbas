@@ -7,7 +7,7 @@ import { PrismaModule } from '../prisma/prisma.module';
 import { UserService } from '../user/user.service';
 
 @Module({
-  imports: [PrismaModule, forwardRef(() => AuthModule), UserModule],
+  imports: [PrismaModule, UserModule, AuthModule],
   controllers: [LeagueMatchController],
   providers: [LeagueMatchService, UserService],
   exports: [LeagueMatchService],

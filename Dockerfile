@@ -15,6 +15,7 @@ COPY . .
 RUN npx prisma generate
 RUN npm run build
 
+# Debugging: List contents of dist folder
 # Remove as dependências de desenvolvimento da pasta node_modules.
 RUN npm prune --production
 
@@ -35,5 +36,5 @@ COPY --from=builder /usr/src/app/prisma ./prisma
 EXPOSE 3000
 
 # Comando para iniciar a aplicação.
-CMD ["node", "dist/main"]
+CMD ["node", "dist/src/main"]
 
