@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { DiscordServerService } from '../discordServer/discordServer.service';
 
 export interface PlayerStats {
   rank: number;
@@ -14,18 +15,13 @@ export interface PlayerStats {
 
 @Injectable()
 export class LeaderboardService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly discordServerService: DiscordServerService,
+  ) {}
 
   async getLeaderboardForServer(discordServerId: string): Promise<PlayerStats[]> {
-    const serverExists = await this.prisma.discordServer.findUnique({
-      where: { discordServerId },
-    });
-
-    if (!serverExists) {
-      throw new NotFoundException(
-        `Servidor com ID ${discordServerId} não encontrado.`,
-      );
-    }
+    await this.discordServerService.findOrCreate(discordServerId);
 
     const results: any[] = await this.prisma.$queryRaw`
       SELECT

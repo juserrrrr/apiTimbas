@@ -174,4 +174,27 @@ export class DiscordServerService {
         throw err;
       });
   }
+
+  async findOrCreate(discordServerId: string) {
+    let server = await this.prisma.discordServer.findUnique({
+      where: { discordServerId },
+    });
+
+    if (!server) {
+      server = await this.prisma.discordServer.create({
+        data: {
+          discordServerId,
+          doorMessages: {
+            create: {
+              channelId: null,
+            },
+          },
+        },
+        include: {
+          doorMessages: true,
+        },
+      });
+    }
+    return server;
+  }
 }

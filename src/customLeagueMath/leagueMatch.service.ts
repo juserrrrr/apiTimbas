@@ -8,12 +8,18 @@ import {
 } from '@nestjs/common';
 import { Prisma, Side } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { DiscordServerService } from '../discordServer/discordServer.service';
+
 @Injectable()
 export class LeagueMatchService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly discordServerService: DiscordServerService,
+  ) {}
 
   async create(createLeagueMatchDto: CreateCustomLeagueMatchDto) {
     try {
+      await this.discordServerService.findOrCreate(createLeagueMatchDto.ServerDiscordId);
       return await this.prisma.$transaction(async (prisma) => {
         const mapPlayersToConnect = async (
           players: { userId?: number; discordId?: string }[],
