@@ -130,8 +130,6 @@ export class UserService {
   }
 
   async createPlayer(createPlayerDto: CreatePlayerDto) {
-    const { leaguePuuid, ...rest } = createPlayerDto;
-
     const user = await this.prisma.user.findUnique({
       where: {
         discordId: createPlayerDto.discordId,
@@ -139,28 +137,14 @@ export class UserService {
     });
 
     if (user) {
-      // User exists, create a new league account and connect it
-      return this.prisma.leagueAccount.create({
-        data: {
-          puuid: leaguePuuid,
-          user: {
-            connect: {
-              id: user.id,
-            },
-          },
-        },
-      });
+      // User exists, return the existing user
+      return user;
     } else {
-      // User does not exist, create a new user and a new league account
+      // User does not exist, create a new user
       return this.prisma.user.create({
         data: {
-          ...rest,
+          ...createPlayerDto,
           role: Role.PLAYER,
-          leagueAccounts: {
-            create: {
-              puuid: leaguePuuid,
-            },
-          },
         },
         select: {
           id: true,
