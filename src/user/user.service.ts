@@ -130,6 +130,8 @@ export class UserService {
   }
 
   async createPlayer(createPlayerDto: CreatePlayerDto) {
+    const { leaguePuuid, ...rest } = createPlayerDto;
+
     const user = await this.prisma.user.findUnique({
       where: {
         discordId: createPlayerDto.discordId,
@@ -137,24 +139,60 @@ export class UserService {
     });
 
     if (user) {
-      // User exists, return the existing user
-      return user;
+      // User exists, create a new league account and connect it if leaguePuuid is provided
+      if (leaguePuuid) {
+        return this.prisma.leagueAccount.create({
+          data: {
+            puuid: leaguePuuid,
+            user: {
+              connect: {
+                id: user.id,
+              },
+            },
+          },
+        });
+      } else {
+        return user; // Return existing user if no leaguePuuid to add
+      }
     } else {
-      // User does not exist, create a new user
-      return this.prisma.user.create({
-        data: {
-          ...createPlayerDto,
-          role: Role.PLAYER,
-        },
-        select: {
-          id: true,
-          email: true,
-          discordId: true,
-          name: true,
-          role: true,
-          leagueAccounts: true,
-        },
-      });
+      // User does not exist, create a new user and a new league account if leaguePuuid is provided
+      if (leaguePuuid) {
+        return this.prisma.user.create({
+          data: {
+            ...rest,
+            role: Role.PLAYER,
+            leagueAccounts: {
+              create: {
+                puuid: leaguePuuid,
+              },
+            },
+          },
+          select: {
+            id: true,
+            email: true,
+            discordId: true,
+            name: true,
+            role: true,
+            leagueAccounts: true,
+          },
+        });
+      } else {
+        // Create user without league account if no leaguePuuid
+        return this.prisma.user.create({
+          data: {
+            ...rest,
+            role: Role.PLAYER,
+          },
+          select: {
+            id: true,
+            email: true,
+            discordId: true,
+            name: true,
+            role: true,
+            leagueAccounts: true,
+          },
+        });
+      }
     }
   }
 
