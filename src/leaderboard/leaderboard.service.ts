@@ -25,34 +25,47 @@ export class LeaderboardService {
     await this.discordServerService.findOrCreate(discordServerId);
 
     const results: any[] = await this.prisma.$queryRaw`
+      WITH "PlayerRawStats" AS (
+        SELECT
+            u.id AS "userId",
+            CAST(COUNT(CASE WHEN ctm."winnerId" = tl.id THEN 1 END) AS INT) AS wins,
+            CAST(COUNT(CASE WHEN ctm."winnerId" IS NOT NULL AND ctm."winnerId" != tl.id THEN 1 END) AS INT) AS losses,
+            CAST(COUNT(ctm.id) AS INT) AS "totalGames"
+        FROM
+            "User" u
+        JOIN "UserTeamLeague" utl ON u.id = utl."userId"
+        JOIN "TeamLeague" tl ON utl."teamLeagueId" = tl.id
+        JOIN "CustomLeagueMatch" ctm ON tl."customLeagueMatchId" = ctm.id
+        WHERE
+            ctm."ServerDiscordId" = ${discordServerId}
+            AND ctm."winnerId" IS NOT NULL
+        GROUP BY
+            u.id
+      )
       SELECT
-          u.id AS "userId",
+          prs."userId",
           u.name,
           u."discordId",
-          CAST(COUNT(CASE WHEN ctm."winnerId" = tl.id THEN 1 END) AS INT) AS wins,
-          CAST(COUNT(CASE WHEN ctm."winnerId" IS NOT NULL AND ctm."winnerId" != tl.id THEN 1 END) AS INT) AS losses,
-          (CAST(COUNT(CASE WHEN ctm."winnerId" = tl.id THEN 1 END) AS INT) * 2) - CAST(COUNT(CASE WHEN ctm."winnerId" IS NOT NULL AND ctm."winnerId" != tl.id THEN 1 END) AS INT) AS score
+          prs.wins,
+          prs.losses,
+          prs."totalGames",
+          -- Balanced Score: ( (wins * 2) - losses ) * winRate
+          ( (prs.wins * 2) - prs.losses ) * (CAST(prs.wins AS REAL) / NULLIF(prs."totalGames", 0)) AS score
       FROM
-          "User" u
-      JOIN "UserTeamLeague" utl ON u.id = utl."userId"
-      JOIN "TeamLeague" tl ON utl."teamLeagueId" = tl.id
-      JOIN "CustomLeagueMatch" ctm ON tl."customLeagueMatchId" = ctm.id
+          "PlayerRawStats" prs
+      JOIN
+          "User" u ON prs."userId" = u.id
       WHERE
-          ctm."ServerDiscordId" = ${discordServerId}
-          AND ctm."winnerId" IS NOT NULL
-      GROUP BY
-          u.id
-    ORDER BY
-        score DESC,
-        wins DESC,
-        -- Win Rate DESC
-        (CAST(COUNT(CASE WHEN ctm."winnerId" = tl.id THEN 1 END) AS REAL) / NULLIF(COUNT(*), 0)) DESC,
-        u.name ASC;
+          prs."totalGames" > 0
+      ORDER BY
+          score DESC,
+          wins DESC,
+          "totalGames" DESC,
+          u.name ASC;
     `;
 
     const leaderboard = results.map((player, index) => {
-      const totalGames = player.wins + player.losses;
-      const winRate = totalGames > 0 ? player.wins / totalGames : 0;
+      const winRate = player.totalGames > 0 ? player.wins / player.totalGames : 0;
 
       return {
         rank: index + 1,
@@ -61,8 +74,8 @@ export class LeaderboardService {
         discordId: player.discordId,
         wins: player.wins,
         losses: player.losses,
-        score: player.score,
-        totalGames: totalGames,
+        score: parseFloat(player.score.toFixed(2)),
+        totalGames: player.totalGames,
         winRate: parseFloat(winRate.toFixed(2)),
       };
     });
