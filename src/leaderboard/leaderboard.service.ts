@@ -7,6 +7,7 @@ export interface PlayerStats {
   userId: number;
   name: string;
   discordId: string;
+  score: number;
   wins: number;
   losses: number;
   totalGames: number;
@@ -28,8 +29,9 @@ export class LeaderboardService {
           u.id AS "userId",
           u.name,
           u."discordId",
-          CAST(COUNT(CASE WHEN ctm."winnerId" = tl.id THEN 1 END) AS INTEGER) AS wins,
-          CAST(COUNT(CASE WHEN ctm."winnerId" IS NOT NULL AND ctm."winnerId" != tl.id THEN 1 END) AS INTEGER) AS losses
+          CAST(COUNT(CASE WHEN ctm."winnerId" = tl.id THEN 1 END) AS INT) AS wins,
+          CAST(COUNT(CASE WHEN ctm."winnerId" IS NOT NULL AND ctm."winnerId" != tl.id THEN 1 END) AS INT) AS losses,
+          (CAST(COUNT(CASE WHEN ctm."winnerId" = tl.id THEN 1 END) AS INT) * 2) - CAST(COUNT(CASE WHEN ctm."winnerId" IS NOT NULL AND ctm."winnerId" != tl.id THEN 1 END) AS INT) AS score
       FROM
           "User" u
       JOIN "UserTeamLeague" utl ON u.id = utl."userId"
@@ -40,10 +42,12 @@ export class LeaderboardService {
           AND ctm."winnerId" IS NOT NULL
       GROUP BY
           u.id
-      ORDER BY
-          wins DESC,
-          (CAST(COUNT(CASE WHEN ctm."winnerId" = tl.id THEN 1 END) AS REAL) / COUNT(*)) DESC,
-          COUNT(*) DESC;
+    ORDER BY
+        score DESC,
+        wins DESC,
+        -- Win Rate DESC
+        (CAST(COUNT(CASE WHEN ctm."winnerId" = tl.id THEN 1 END) AS REAL) / NULLIF(COUNT(*), 0)) DESC,
+        u.name ASC;
     `;
 
     const leaderboard = results.map((player, index) => {
@@ -57,8 +61,9 @@ export class LeaderboardService {
         discordId: player.discordId,
         wins: player.wins,
         losses: player.losses,
+        score: player.score,
         totalGames: totalGames,
-        winRate: parseFloat(winRate.toFixed(2)), // Arredonda para 2 casas decimais
+        winRate: parseFloat(winRate.toFixed(2)),
       };
     });
 
