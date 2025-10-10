@@ -49,8 +49,8 @@ export class LeaderboardService {
           prs.wins,
           prs.losses,
           prs."totalGames",
-          -- Balanced Score: ( (wins * 2) - losses ) * winRate
-          ( (prs.wins * 2) - prs.losses ) * (CAST(prs.wins AS REAL) / NULLIF(prs."totalGames", 0)) AS score
+          -- Balanced Score: ( (wins * 2) - losses ) * winRate * 10 (rounded)
+          ROUND(( (prs.wins * 2) - prs.losses ) * (CAST(prs.wins AS REAL) / NULLIF(prs."totalGames", 0)) * 10) AS score
       FROM
           "PlayerRawStats" prs
       JOIN
@@ -74,7 +74,7 @@ export class LeaderboardService {
         discordId: player.discordId,
         wins: player.wins,
         losses: player.losses,
-        score: parseFloat(player.score.toFixed(2)),
+        score: player.score,
         totalGames: player.totalGames,
         winRate: parseFloat(winRate.toFixed(2)),
       };
