@@ -50,7 +50,11 @@ export class LeaderboardService {
           prs.losses,
           prs."totalGames",
           -- Balanced Score: ( (wins * 2) - losses ) * winRate * 10 (rounded)
-          ROUND(( (prs.wins * 2) - prs.losses ) * (CAST(prs.wins AS REAL) / NULLIF(prs."totalGames", 0)) * 10) AS score
+          ROUND(
+            (CAST(prs.wins AS REAL) / NULLIF(prs."totalGames", 0)) * 100
+            + (prs.wins * 2)
+            - (prs.losses)
+          ) AS score
       FROM
           "PlayerRawStats" prs
       JOIN
