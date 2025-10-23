@@ -21,7 +21,9 @@ export class LeaderboardService {
     private readonly discordServerService: DiscordServerService,
   ) {}
 
-  async getLeaderboardForServer(discordServerId: string): Promise<PlayerStats[]> {
+  async getLeaderboardForServer(
+    discordServerId: string,
+  ): Promise<PlayerStats[]> {
     await this.discordServerService.findOrCreate(discordServerId);
 
     const results: any[] = await this.prisma.$queryRaw`
@@ -69,7 +71,8 @@ export class LeaderboardService {
     `;
 
     const leaderboard = results.map((player, index) => {
-      const winRate = player.totalGames > 0 ? player.wins / player.totalGames : 0;
+      const winRate =
+        player.totalGames > 0 ? player.wins / player.totalGames : 0;
 
       return {
         rank: index + 1,

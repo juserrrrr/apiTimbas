@@ -36,7 +36,9 @@ export class RiotController {
   }
 
   @Post('tournaments/match-callback')
-  async tournamentMatchCallback(@Body() tournamentMatchDto: TournamentMatchDto) {
+  async tournamentMatchCallback(
+    @Body() tournamentMatchDto: TournamentMatchDto,
+  ) {
     console.log(tournamentMatchDto);
     return { message: 'Callback received' };
   }
