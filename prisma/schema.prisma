@@ -147,6 +147,13 @@ enum Side {
   RED
 }
 
+enum MatchType {
+  ALEATORIO          // 0 - Sorteia apenas os jogadores nos times
+  LIVRE              // 1 - Jogadores escolhem seus times manualmente
+  BALANCEADO         // 2 - Sorteia times balanceados por MMR/rank (não implementado ainda)
+  ALEATORIO_COMPLETO // 3 - Sorteia jogadores + posições
+}
+
 model TeamLeague {
   id                  Int                @id @default(autoincrement())
   side                Side
@@ -162,17 +169,20 @@ model UserTeamLeague {
   id           Int        @id @default(autoincrement())
   userId       Int
   teamLeagueId Int
+  position     String?    // Posição do jogador (Top, Jungle, Mid, ADC, Suporte)
   user         User       @relation(fields: [userId], references: [id])
   teamLeague   TeamLeague @relation(fields: [teamLeagueId], references: [id])
 
   @@unique([userId, teamLeagueId])
   @@index([userId])
   @@index([teamLeagueId])
+  @@index([position])
 }
 
 model CustomLeagueMatch {
   id              Int           @id @default(autoincrement())
   riotMatchId     String        @unique
+  matchType       MatchType     @default(ALEATORIO) // Tipo da partida
   teamBlueId      Int
   teamRedId       Int
   winnerId        Int?
@@ -183,5 +193,6 @@ model CustomLeagueMatch {
   dateUpdated     DateTime      @updatedAt
   @@index([winnerId])
   @@index([ServerDiscordId])
+  @@index([matchType])
 }
 

@@ -1,5 +1,8 @@
 import { UpdateCustomLeagueMatchDto } from './dto/update-leagueMatch.dto';
-import { CreateCustomLeagueMatchDto } from './dto/create-leagueMatch.dto';
+import {
+  CreateCustomLeagueMatchDto,
+  MatchType,
+} from './dto/create-leagueMatch.dto';
 import {
   BadRequestException,
   Injectable,
@@ -9,6 +12,7 @@ import {
 import { Prisma, Side } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { DiscordServerService } from '../discordServer/discordServer.service';
+import { MatchValidator } from './validators/match-validator';
 
 @Injectable()
 export class LeagueMatchService {
@@ -19,18 +23,31 @@ export class LeagueMatchService {
 
   async create(createLeagueMatchDto: CreateCustomLeagueMatchDto) {
     try {
-      await this.discordServerService.findOrCreate(createLeagueMatchDto.ServerDiscordId);
+      // Validar o tipo de partida e campos correspondentes
+      if (createLeagueMatchDto.matchType === MatchType.ALEATORIO_COMPLETO) {
+        MatchValidator.validateCompleteRandomMatch(createLeagueMatchDto);
+      } else {
+        MatchValidator.validateNonCompleteRandomMatch(createLeagueMatchDto);
+      }
+
+      await this.discordServerService.findOrCreate(
+        createLeagueMatchDto.ServerDiscordId,
+      );
       return await this.prisma.$transaction(async (prisma) => {
         const mapPlayersToConnect = async (
-          players: { userId?: number; discordId?: string }[],
+          players: {
+            userId?: number;
+            discordId?: string;
+            position?: string;
+          }[],
         ) => {
           return Promise.all(
             players.map(async (player) => {
-              if (player.userId) {
-                return { user: { connect: { id: player.userId } } };
-              }
+              let userId: number;
 
-              if (player.discordId) {
+              if (player.userId) {
+                userId = player.userId;
+              } else if (player.discordId) {
                 const user = await prisma.user.findUnique({
                   where: { discordId: player.discordId },
                   select: { id: true },
@@ -40,12 +57,17 @@ export class LeagueMatchService {
                     `Usuário com discordId ${player.discordId} não encontrado`,
                   );
                 }
-                return { user: { connect: { id: user.id } } };
+                userId = user.id;
+              } else {
+                throw new BadRequestException(
+                  'Cada jogador deve ter um userId ou discordId.',
+                );
               }
 
-              throw new BadRequestException(
-                'Cada jogador deve ter um userId ou discordId.',
-              );
+              return {
+                user: { connect: { id: userId } },
+                position: player.position || null,
+              };
             }),
           );
         };
@@ -88,6 +110,7 @@ export class LeagueMatchService {
           data: {
             winnerId: null,
             riotMatchId: createLeagueMatchDto.riotMatchId,
+            matchType: createLeagueMatchDto.matchType || MatchType.ALEATORIO,
             ServerDiscordId: createLeagueMatchDto.ServerDiscordId,
             teamBlueId: teamBlue.id,
             teamRedId: teamRed.id,

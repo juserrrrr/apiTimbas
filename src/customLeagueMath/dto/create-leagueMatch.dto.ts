@@ -5,7 +5,11 @@ import {
   IsInt,
   IsOptional,
   IsString,
+  IsEnum,
 } from 'class-validator';
+import { MatchType } from '@prisma/client';
+
+export { MatchType };
 
 export class UserTeamLeagueDto {
   @IsOptional()
@@ -15,6 +19,10 @@ export class UserTeamLeagueDto {
   @IsOptional()
   @IsString()
   discordId?: string;
+
+  @IsOptional()
+  @IsString()
+  position?: string;
 }
 
 export class TeamLeagueDto {
@@ -30,6 +38,10 @@ export class CreateCustomLeagueMatchDto {
   @IsString()
   @IsNotEmpty()
   riotMatchId: string;
+
+  @IsOptional()
+  @IsEnum(MatchType)
+  matchType?: MatchType;
 
   @IsNotEmpty()
   teamBlue: TeamLeagueDto;
