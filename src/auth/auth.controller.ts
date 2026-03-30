@@ -19,6 +19,7 @@ import { Role } from '../enums/role.enum';
 import { Roles } from '../decorators/roles.decorator';
 import { CreateBotDto } from './dto/create-bot.dto';
 import { AuthBotDto } from './dto/auth-bot.dto';
+import { AuthBotSecretDto } from './dto/auth-bot-secret.dto';
 
 @Controller('auth')
 export class AuthController {
@@ -63,6 +64,11 @@ export class AuthController {
   @Post('authenticate-bot')
   async authenticateBot(@Body() { botId }: AuthBotDto) {
     return this.authService.authenticateBot(botId);
+  }
+
+  @Post('bot')
+  async authenticateBotBySecret(@Body() { secret }: AuthBotSecretDto) {
+    return this.authService.authenticateBotBySecret(secret);
   }
 
   // ─── Discord OAuth ────────────────────────────────────────────────────────

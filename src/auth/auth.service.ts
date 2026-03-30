@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, ForbiddenException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { AuthRegisterDto } from './dto/auth-register.dto';
 import * as bcrypt from 'bcrypt';
@@ -205,5 +205,23 @@ export class AuthService {
     }
 
     return this.createBotToken(botId);
+  }
+
+  authenticateBotBySecret(secret: string) {
+    const expectedSecret = process.env.BOT_SECRET;
+    if (!expectedSecret || secret !== expectedSecret) {
+      throw new ForbiddenException('Invalid bot secret');
+    }
+
+    const acessToken = this.jwtService.sign(
+      { role: Role.BOT },
+      {
+        expiresIn: '24h',
+        subject: 'bot',
+        issuer: 'ApiTimbasSignature',
+      },
+    );
+
+    return { acessToken };
   }
 }
