@@ -2,6 +2,8 @@ import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { AuthRegisterDto } from './dto/auth-register.dto';
 import * as bcrypt from 'bcrypt';
+import { HttpService } from '@nestjs/axios';
+import { firstValueFrom } from 'rxjs';
 import { PrismaService } from '../prisma/prisma.service';
 import { UserService } from '../user/user.service';
 import { CreateBotDto } from './dto/create-bot.dto';
@@ -13,6 +15,7 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly prisma: PrismaService,
     private readonly userService: UserService,
+    private readonly httpService: HttpService,
   ) {}
 
   createToken(id: string, name: string, email: string, role: string) {
@@ -139,6 +142,54 @@ export class AuthService {
     });
 
     return bot;
+  }
+
+  async discordLogin(code: string) {
+    // 1. Trocar code por access token do Discord
+    const tokenRes = await firstValueFrom(
+      this.httpService.post(
+        'https://discord.com/api/oauth2/token',
+        new URLSearchParams({
+          client_id: process.env.DISCORD_CLIENT_ID,
+          client_secret: process.env.DISCORD_CLIENT_SECRET,
+          code,
+          grant_type: 'authorization_code',
+          redirect_uri: process.env.DISCORD_REDIRECT_URI,
+        }),
+        { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } },
+      ),
+    );
+
+    // 2. Buscar dados do usuário no Discord
+    const userRes = await firstValueFrom(
+      this.httpService.get('https://discord.com/api/users/@me', {
+        headers: { Authorization: `Bearer ${tokenRes.data.access_token}` },
+      }),
+    );
+
+    const discordUser = userRes.data;
+
+    // 3. Buscar ou criar usuário pelo discordId
+    let user = await this.prisma.user.findUnique({
+      where: { discordId: discordUser.id },
+    });
+
+    if (!user) {
+      user = await this.prisma.user.create({
+        data: {
+          discordId: discordUser.id,
+          name: discordUser.username,
+          role: Role.PLAYER,
+        },
+      });
+    }
+
+    return this.createToken(
+      user.id.toString(),
+      user.name,
+      user.email ?? '',
+      user.role,
+    );
   }
 
   async authenticateBot(botId: string) {

@@ -1,10 +1,14 @@
 import {
   Body,
   Controller,
+  Get,
   Post,
+  Query,
+  Res,
   UseGuards,
   Request,
 } from '@nestjs/common';
+import { Response } from 'express';
 import { AuthService } from './auth.service';
 import { AuthLoginDto } from './dto/auth-login.dto';
 import { AuthRegisterDto } from './dto/auth-register.dto';
@@ -37,20 +41,14 @@ export class AuthController {
 
   @UseGuards(AuthGuard)
   @Post('reset-password')
-  async resetPassword(
-    @Body() { password }: AuthResetDto,
-    @Request() req,
-  ) {
+  async resetPassword(@Body() { password }: AuthResetDto, @Request() req) {
     return this.authService.resetPassword(password, Number(req.tokenPayload.sub));
   }
 
   @UseGuards(AuthGuard)
   @Post('validate-token')
   async validateToken(@Request() req) {
-    return {
-      message: 'token is valid',
-      data: req.tokenPayload,
-    };
+    return { message: 'token is valid', data: req.tokenPayload };
   }
 
   @UseGuards(AuthGuard)
@@ -65,5 +63,26 @@ export class AuthController {
   @Post('authenticate-bot')
   async authenticateBot(@Body() { botId }: AuthBotDto) {
     return this.authService.authenticateBot(botId);
+  }
+
+  // ─── Discord OAuth ────────────────────────────────────────────────────────
+
+  @Get('discord')
+  discordAuth(@Res() res: Response) {
+    const clientId = process.env.DISCORD_CLIENT_ID;
+    const redirectUri = encodeURIComponent(process.env.DISCORD_REDIRECT_URI);
+    const url = `https://discord.com/oauth2/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&response_type=code&scope=identify`;
+    res.redirect(url);
+  }
+
+  @Get('discord/callback')
+  async discordCallback(@Query('code') code: string, @Res() res: Response) {
+    const webUrl = process.env.WEB_URL;
+    try {
+      const { acessToken } = await this.authService.discordLogin(code);
+      res.redirect(`${webUrl}/auth/callback?token=${acessToken}`);
+    } catch {
+      res.redirect(`${webUrl}/login?error=auth_failed`);
+    }
   }
 }

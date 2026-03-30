@@ -1,5 +1,6 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
+import { HttpModule } from '@nestjs/axios';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { PrismaModule } from '../prisma/prisma.module';
@@ -9,6 +10,7 @@ import { UserModule } from '../user/user.module';
     JwtModule.register({
       secret: process.env.JWT_SECRET,
     }),
+    HttpModule,
     PrismaModule,
     forwardRef(() => UserModule),
   ],
