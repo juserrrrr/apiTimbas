@@ -18,14 +18,14 @@ export class RoleGuard implements CanActivate {
     ]); // get roles from decorator with reflector
 
     // Check if roles are required
-    if (!requiredRoles) {
+    if (!requiredRoles || requiredRoles.length === 0) {
       return true;
     }
     //get tokenPayload from request
     const { tokenPayload } = context.switchToHttp().getRequest(); // get tokenPayload from request
     // Check if user has role and return boolean
     const hasRole = requiredRoles.some((role) =>
-      tokenPayload.role?.includes(role),
+      tokenPayload.role === role,
     ); // validate if user has role
     if (!hasRole) {
       throw new ForbiddenException('You do not have permission');

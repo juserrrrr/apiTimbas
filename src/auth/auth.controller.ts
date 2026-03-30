@@ -2,7 +2,6 @@ import {
   Body,
   Controller,
   Post,
-  Headers,
   UseGuards,
   Request,
 } from '@nestjs/common';
@@ -36,12 +35,13 @@ export class AuthController {
     return this.authService.forgotPassword(email);
   }
 
+  @UseGuards(AuthGuard)
   @Post('reset-password')
   async resetPassword(
     @Body() { password }: AuthResetDto,
-    @Headers('authorization') token: string,
+    @Request() req,
   ) {
-    return this.authService.resetPassword(password, token);
+    return this.authService.resetPassword(password, Number(req.tokenPayload.sub));
   }
 
   @UseGuards(AuthGuard)

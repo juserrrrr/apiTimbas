@@ -3,9 +3,11 @@ import { RiotService } from './riot.service';
 import { RiotController } from './riot.controller';
 import { HttpModule } from '@nestjs/axios';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { AuthModule } from '../auth/auth.module';
 
 @Module({
   imports: [
+    AuthModule,
     ConfigModule.forRoot(),
     HttpModule.registerAsync({
       imports: [ConfigModule],

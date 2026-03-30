@@ -111,17 +111,16 @@ export class AuthService {
     };
   }
 
-  async resetPassword(password: string, token: string) {
-    // validate token
-    const decoded = this.validateToken(token);
+  async resetPassword(password: string, userId: number) {
+    const salt = await bcrypt.genSalt();
+    const hashedPassword = await bcrypt.hash(password, salt);
+
     await this.prisma.user.update({
-      where: {
-        id: Number(decoded.sub),
-      },
-      data: {
-        password,
-      },
+      where: { id: userId },
+      data: { password: hashedPassword },
     });
+
+    return { message: 'Password updated successfully' };
   }
 
   async createBot(createBotDto: CreateBotDto) {

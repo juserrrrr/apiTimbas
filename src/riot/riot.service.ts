@@ -5,6 +5,7 @@ import { AxiosError } from 'axios';
 import { CreateProviderDto } from './dto/create-provider.dto';
 import { CreateTournamentDto } from './dto/create-tournament.dto';
 import { CreateMatchesDto } from './dto/create-matches.dto';
+import { TournamentMatchDto } from './dto/tournament-match.dto';
 
 @Injectable()
 export class RiotService {
@@ -63,5 +64,10 @@ export class RiotService {
       ),
     );
     return data;
+  }
+
+  async handleMatchCallback(tournamentMatchDto: TournamentMatchDto) {
+    // Process the match result callback from Riot
+    return { message: 'Callback received', matchId: tournamentMatchDto };
   }
 }
