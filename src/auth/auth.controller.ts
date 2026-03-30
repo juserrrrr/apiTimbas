@@ -87,7 +87,8 @@ export class AuthController {
     try {
       const { acessToken } = await this.authService.discordLogin(code);
       res.redirect(`${webUrl}/auth/callback?token=${acessToken}`);
-    } catch {
+    } catch (e) {
+      console.error('[Discord OAuth] discordLogin error:', e);
       res.redirect(`${webUrl}/login?error=auth_failed`);
     }
   }
