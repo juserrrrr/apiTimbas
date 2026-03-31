@@ -18,13 +18,15 @@ export class AuthService {
     private readonly httpService: HttpService,
   ) {}
 
-  createToken(id: string, name: string, email: string, role: string) {
+  createToken(id: string, name: string, email: string, role: string, discordId?: string, avatar?: string) {
     const acessToken = this.jwtService.sign(
       {
         id,
         name,
         email,
         role,
+        ...(discordId && { discordId }),
+        ...(avatar && { avatar }),
       },
       {
         expiresIn: '1h',
@@ -189,6 +191,8 @@ export class AuthService {
       user.name,
       user.email ?? '',
       user.role,
+      user.discordId,
+      discordUser.avatar ?? undefined,
     );
   }
 
