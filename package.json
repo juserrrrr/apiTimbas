@@ -12,7 +12,7 @@
     "start": "nest start",
     "dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",
-    "start:migrate:prod": "prisma db push && npm run start:prod",
+    "start:migrate:prod": "echo 'Running prisma db push...' && prisma db push --accept-data-loss && echo 'DB push done' && npm run start:prod",
     "start:prod": "node dist/src/main",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
     "test": "jest",
