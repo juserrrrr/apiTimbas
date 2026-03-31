@@ -178,21 +178,35 @@ export class AuthService {
 
     const incomingAvatar: string | null = discordUser.avatar ?? null;
 
+    const adminIds = (process.env.ADMIN_DISCORD_IDS ?? '')
+      .split(',')
+      .map((id) => id.trim())
+      .filter(Boolean);
+    const isDesignatedAdmin = adminIds.includes(discordUser.id);
+    const resolvedRole = isDesignatedAdmin ? Role.ADMIN : Role.PLAYER;
+
     if (!user) {
       user = await this.prisma.user.create({
         data: {
           discordId: discordUser.id,
           name: discordUser.username,
-          role: Role.PLAYER,
+          role: resolvedRole,
           avatar: incomingAvatar,
         },
       });
-    } else if (user.avatar !== incomingAvatar) {
-      // Só atualiza se o hash mudou (ou foi removido)
-      user = await this.prisma.user.update({
-        where: { id: user.id },
-        data: { avatar: incomingAvatar },
-      });
+    } else {
+      const needsUpdate =
+        user.avatar !== incomingAvatar ||
+        (isDesignatedAdmin && user.role !== Role.ADMIN);
+      if (needsUpdate) {
+        user = await this.prisma.user.update({
+          where: { id: user.id },
+          data: {
+            avatar: incomingAvatar,
+            ...(isDesignatedAdmin && { role: Role.ADMIN }),
+          },
+        });
+      }
     }
 
     return this.createToken(
