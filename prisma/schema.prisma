@@ -53,8 +53,8 @@ model Embed {
   id          Int             @id @default(autoincrement())
   title       String?
   description String?
-  color       String? // Cor em hexadecimal
-  url         String? // URL do embed
+  color       String?
+  url         String?
   timestamp   Boolean?        @default(false)
   footer      EmbedFooter?
   image       EmbedImage?
@@ -142,17 +142,31 @@ model LeagueAccount {
   @@index([userId])
 }
 
-
 enum Side {
   BLUE
   RED
 }
 
 enum MatchType {
-  ALEATORIO          // 0 - Sorteia apenas os jogadores nos times
-  LIVRE              // 1 - Jogadores escolhem seus times manualmente
-  BALANCEADO         // 2 - Sorteia times balanceados por MMR/rank (não implementado ainda)
-  ALEATORIO_COMPLETO // 3 - Sorteia jogadores + posições
+  ALEATORIO
+  LIVRE
+  BALANCEADO
+  ALEATORIO_COMPLETO
+}
+
+enum Position {
+  TOP
+  JUNGLE
+  MID
+  ADC
+  SUPPORT
+}
+
+enum MatchStatus {
+  WAITING
+  STARTED
+  FINISHED
+  EXPIRED
 }
 
 model TeamLeague {
@@ -167,33 +181,45 @@ model TeamLeague {
 }
 
 model UserTeamLeague {
-  id           Int        @id @default(autoincrement())
+  id           Int                @id @default(autoincrement())
   userId       Int
-  teamLeagueId Int
-  position     String?    // Posição do jogador (Top, Jungle, Mid, ADC, Suporte)
-  user         User       @relation(fields: [userId], references: [id])
-  teamLeague   TeamLeague @relation(fields: [teamLeagueId], references: [id])
+  user         User               @relation(fields: [userId], references: [id])
+  teamLeagueId Int?
+  teamLeague   TeamLeague?        @relation(fields: [teamLeagueId], references: [id])
+  matchId      Int?
+  match        CustomLeagueMatch? @relation("MatchQueue", fields: [matchId], references: [id])
+  position     Position?
 
+  @@unique([userId, matchId])
   @@unique([userId, teamLeagueId])
   @@index([userId])
   @@index([teamLeagueId])
-  @@index([position])
+  @@index([matchId])
 }
 
 model CustomLeagueMatch {
-  id              Int           @id @default(autoincrement())
-  riotMatchId     String        @unique
-  matchType       MatchType     @default(ALEATORIO) // Tipo da partida
-  teamBlueId      Int
-  teamRedId       Int
-  winnerId        Int?
-  ServerDiscordId String
-  discordServer   DiscordServer @relation(fields: [ServerDiscordId], references: [discordServerId])
-  Teams           TeamLeague[]
-  dateCreated     DateTime      @default(now())
-  dateUpdated     DateTime      @updatedAt
+  id               Int               @id @default(autoincrement())
+  riotMatchId      String?           @unique
+  matchType        MatchType         @default(ALEATORIO)
+  teamBlueId       Int?
+  teamRedId        Int?
+  winnerId         Int?
+  ServerDiscordId  String
+  discordServer    DiscordServer     @relation(fields: [ServerDiscordId], references: [discordServerId])
+  Teams            TeamLeague[]
+  status           MatchStatus       @default(FINISHED)
+  creatorDiscordId String?
+  showDetails      Boolean           @default(false)
+  queuePlayers     UserTeamLeague[]  @relation("MatchQueue")
+  startedAt        DateTime?
+  finishedAt       DateTime?
+  expiresAt        DateTime?
+  dateCreated      DateTime          @default(now())
+  dateUpdated      DateTime          @updatedAt
+
   @@index([winnerId])
   @@index([ServerDiscordId])
   @@index([matchType])
+  @@index([status])
+  @@index([creatorDiscordId])
 }
-

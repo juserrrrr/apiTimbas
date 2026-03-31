@@ -74,19 +74,24 @@ export class AuthController {
   // ─── Discord OAuth ────────────────────────────────────────────────────────
 
   @Get('discord')
-  discordAuth(@Res() res: Response) {
+  discordAuth(@Query('redirect') redirect: string, @Res() res: Response) {
     const clientId = process.env.DISCORD_CLIENT_ID;
     const redirectUri = encodeURIComponent(process.env.DISCORD_REDIRECT_URI);
-    const url = `https://discord.com/oauth2/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&response_type=code&scope=identify`;
+    const stateParam = redirect ? `&state=${encodeURIComponent(redirect)}` : '';
+    const url = `https://discord.com/oauth2/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&response_type=code&scope=identify${stateParam}`;
     res.redirect(url);
   }
 
   @Get('discord/callback')
-  async discordCallback(@Query('code') code: string, @Res() res: Response) {
+  async discordCallback(@Query('code') code: string, @Query('state') state: string, @Res() res: Response) {
     const webUrl = process.env.WEB_URL;
     try {
       const { acessToken } = await this.authService.discordLogin(code);
-      res.redirect(`${webUrl}/auth/callback?token=${acessToken}`);
+      let redirectUrl = `${webUrl}/auth/callback?token=${acessToken}`;
+      if (state) {
+        redirectUrl += `&redirect=${encodeURIComponent(state)}`;
+      }
+      res.redirect(redirectUrl);
     } catch (e) {
       console.error('[Discord OAuth] discordLogin error:', e);
       res.redirect(`${webUrl}/login?error=auth_failed`);

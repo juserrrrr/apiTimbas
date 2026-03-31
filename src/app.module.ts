@@ -4,6 +4,7 @@ import { APP_GUARD } from '@nestjs/core';
 import { AuthModule } from './auth/auth.module';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { ConfigModule } from '@nestjs/config';
+import { ScheduleModule } from '@nestjs/schedule';
 import { LeagueMatchModule } from './customLeagueMath/leagueMatch.module';
 import { DiscordServerModule } from './discordServer/discordServer.module';
 import { RiotModule } from './riot/riot.module';
@@ -12,6 +13,7 @@ import { LeaderboardModule } from './leaderboard/leaderboard.module';
 @Module({
   imports: [
     ConfigModule.forRoot(),
+    ScheduleModule.forRoot(),
     ThrottlerModule.forRoot([
       {
         ttl: 60000,
