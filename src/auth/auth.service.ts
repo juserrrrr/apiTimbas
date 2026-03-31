@@ -178,35 +178,20 @@ export class AuthService {
 
     const incomingAvatar: string | null = discordUser.avatar ?? null;
 
-    const adminIds = (process.env.ADMIN_DISCORD_IDS ?? '')
-      .split(',')
-      .map((id) => id.trim())
-      .filter(Boolean);
-    const isDesignatedAdmin = adminIds.includes(discordUser.id);
-    const resolvedRole = isDesignatedAdmin ? Role.ADMIN : Role.PLAYER;
-
     if (!user) {
       user = await this.prisma.user.create({
         data: {
           discordId: discordUser.id,
           name: discordUser.username,
-          role: resolvedRole,
+          role: Role.PLAYER,
           avatar: incomingAvatar,
         },
       });
-    } else {
-      const needsUpdate =
-        user.avatar !== incomingAvatar ||
-        (isDesignatedAdmin && user.role !== Role.ADMIN);
-      if (needsUpdate) {
-        user = await this.prisma.user.update({
-          where: { id: user.id },
-          data: {
-            avatar: incomingAvatar,
-            ...(isDesignatedAdmin && { role: Role.ADMIN }),
-          },
-        });
-      }
+    } else if (user.avatar !== incomingAvatar) {
+      user = await this.prisma.user.update({
+        where: { id: user.id },
+        data: { avatar: incomingAvatar },
+      });
     }
 
     return this.createToken(

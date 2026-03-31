@@ -22,11 +22,11 @@ async function bootstrap() {
 
     const admin = await prisma.user.upsert({
       where: {
-        email: process.env.ADMIN_EMAIL!,
+        discordId: process.env.ADMIN_DISCORD_ID!,
       },
       update: {
         name: process.env.ADMIN_NAME!,
-        discordId: process.env.ADMIN_DISCORD_ID!,
+        email: process.env.ADMIN_EMAIL!,
         password: hashedPassword,
         role: Role.ADMIN,
       },
