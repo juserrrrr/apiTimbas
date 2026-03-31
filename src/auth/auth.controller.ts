@@ -71,6 +71,11 @@ export class AuthController {
     return this.authService.authenticateBotBySecret(secret);
   }
 
+  @Post('refresh')
+  async refresh(@Body() body: { refreshToken: string }) {
+    return this.authService.refresh(body.refreshToken);
+  }
+
   // ─── Discord OAuth ────────────────────────────────────────────────────────
 
   @Get('discord')
@@ -86,8 +91,8 @@ export class AuthController {
   async discordCallback(@Query('code') code: string, @Query('state') state: string, @Res() res: Response) {
     const webUrl = process.env.WEB_URL;
     try {
-      const { acessToken } = await this.authService.discordLogin(code);
-      let redirectUrl = `${webUrl}/auth/callback?token=${acessToken}`;
+      const { acessToken, refreshToken } = await this.authService.discordLogin(code);
+      let redirectUrl = `${webUrl}/auth/callback?token=${acessToken}&refreshToken=${refreshToken}`;
       if (state) {
         redirectUrl += `&redirect=${encodeURIComponent(state)}`;
       }

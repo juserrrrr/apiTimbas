@@ -29,14 +29,47 @@ export class AuthService {
         ...(avatar && { avatar }),
       },
       {
-        expiresIn: '1h',
+        expiresIn: '7d',
         subject: id,
         issuer: 'ApiTimbasSignature',
       },
     );
-    return {
-      acessToken,
-    };
+
+    const refreshToken = this.jwtService.sign(
+      { type: 'refresh' },
+      {
+        expiresIn: '30d',
+        subject: id,
+        issuer: 'ApiTimbasRefresh',
+      },
+    );
+
+    return { acessToken, refreshToken };
+  }
+
+  async refresh(refreshToken: string) {
+    try {
+      const decoded = this.jwtService.verify(refreshToken, {
+        issuer: 'ApiTimbasRefresh',
+      });
+
+      const user = await this.prisma.user.findUnique({
+        where: { id: Number(decoded.sub) },
+      });
+
+      if (!user) throw new UnauthorizedException('User not found');
+
+      return this.createToken(
+        user.id.toString(),
+        user.name,
+        user.email ?? '',
+        user.role,
+        user.discordId,
+        user.avatar ?? undefined,
+      );
+    } catch {
+      throw new UnauthorizedException('Invalid or expired refresh token');
+    }
   }
 
   createBotToken(botId: string) {
