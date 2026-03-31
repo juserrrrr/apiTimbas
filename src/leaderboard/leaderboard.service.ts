@@ -7,6 +7,7 @@ export interface PlayerStats {
   userId: number;
   name: string;
   discordId: string;
+  avatar: string | null;
   score: number;
   wins: number;
   losses: number;
@@ -29,8 +30,8 @@ export interface MatchHistoryEntry {
   matchType: string;
   dateCreated: Date;
   winnerId: number | null;
-  blueTeam: { id: number; players: { userId: number; name: string; discordId: string; position: string | null }[] };
-  redTeam: { id: number; players: { userId: number; name: string; discordId: string; position: string | null }[] };
+  blueTeam: { id: number; players: { userId: number; name: string; discordId: string; avatar: string | null; position: string | null }[] };
+  redTeam: { id: number; players: { userId: number; name: string; discordId: string; avatar: string | null; position: string | null }[] };
 }
 
 @Injectable()
@@ -67,6 +68,7 @@ export class LeaderboardService {
           prs."userId",
           u.name,
           u."discordId",
+          u.avatar,
           prs.wins,
           prs.losses,
           prs."totalGames",
@@ -96,6 +98,7 @@ export class LeaderboardService {
         userId: player.userId,
         name: player.name,
         discordId: player.discordId,
+        avatar: player.avatar ?? null,
         wins: player.wins,
         losses: player.losses,
         score: player.score,
@@ -247,7 +250,7 @@ export class LeaderboardService {
             players: {
               include: {
                 user: {
-                  select: { id: true, name: true, discordId: true },
+                  select: { id: true, name: true, discordId: true, avatar: true },
                 },
               },
             },
@@ -267,6 +270,7 @@ export class LeaderboardService {
               userId: p.user.id,
               name: p.user.name,
               discordId: p.user.discordId,
+              avatar: p.user.avatar ?? null,
               position: p.position,
             }))
           : [];

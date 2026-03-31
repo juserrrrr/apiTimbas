@@ -176,13 +176,22 @@ export class AuthService {
       where: { discordId: discordUser.id },
     });
 
+    const incomingAvatar: string | null = discordUser.avatar ?? null;
+
     if (!user) {
       user = await this.prisma.user.create({
         data: {
           discordId: discordUser.id,
           name: discordUser.username,
           role: Role.PLAYER,
+          avatar: incomingAvatar,
         },
+      });
+    } else if (user.avatar !== incomingAvatar) {
+      // Só atualiza se o hash mudou (ou foi removido)
+      user = await this.prisma.user.update({
+        where: { id: user.id },
+        data: { avatar: incomingAvatar },
       });
     }
 
@@ -192,7 +201,7 @@ export class AuthService {
       user.email ?? '',
       user.role,
       user.discordId,
-      discordUser.avatar ?? undefined,
+      user.avatar ?? undefined,
     );
   }
 
