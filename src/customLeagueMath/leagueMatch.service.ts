@@ -104,27 +104,35 @@ export class LeagueMatchService {
   }
 
   async join(matchId: number, dto: JoinMatchDto) {
-    const match = await this.findOne(matchId);
-
-    if (match.status !== MatchStatus.WAITING) {
-      throw new BadRequestException('A partida já foi iniciada ou encerrada.');
-    }
-
     const user = await this.findUserByDiscordId(dto.discordId);
 
-    const totalPlayers = match.queuePlayers.length;
-    if (totalPlayers >= 10) {
-      throw new BadRequestException('A partida já está cheia (10/10).');
-    }
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const match = await tx.customLeagueMatch.findUnique({
+        where: { id: matchId },
+        include: MATCH_INCLUDE,
+      });
 
-    const already = match.queuePlayers.find((p) => p.userId === user.id);
-    if (already) throw new BadRequestException('Você já está na partida.');
+      if (!match) throw new NotFoundException('Partida não encontrada.');
+      if (match.status !== MatchStatus.WAITING) {
+        throw new BadRequestException('A partida já foi iniciada ou encerrada.');
+      }
+      if (match.queuePlayers.length >= 10) {
+        throw new BadRequestException('A partida já está cheia (10/10).');
+      }
+      if (match.queuePlayers.find((p) => p.userId === user.id)) {
+        throw new BadRequestException('Você já está na partida.');
+      }
 
-    await this.prisma.userTeamLeague.create({
-      data: { matchId: match.id, userId: user.id },
-    });
+      await tx.userTeamLeague.create({
+        data: { matchId: match.id, userId: user.id },
+      });
 
-    const updated = await this.findOne(matchId);
+      return tx.customLeagueMatch.findUnique({
+        where: { id: matchId },
+        include: MATCH_INCLUDE,
+      });
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+
     this.emit(matchId, { type: 'player_joined', payload: updated });
     return updated;
   }
