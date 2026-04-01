@@ -331,24 +331,46 @@ export class LeagueMatchService {
   @Cron('0 */30 * * * *')
   async cleanExpiredLobbies() {
     this.logger.log('Limpando partidas expiradas online...');
-    const expired = await this.prisma.customLeagueMatch.findMany({
+    const toDelete = await this.prisma.customLeagueMatch.findMany({
       where: {
-        status: { in: [MatchStatus.WAITING, MatchStatus.STARTED] },
-        expiresAt: { lt: new Date() },
+        OR: [
+          { status: MatchStatus.EXPIRED },
+          {
+            status: { in: [MatchStatus.WAITING, MatchStatus.STARTED] },
+            expiresAt: { lt: new Date() },
+          },
+        ],
       },
-      select: { id: true },
+      select: { id: true, Teams: { select: { id: true } } },
     });
 
-    if (expired.length > 0) {
-      await this.prisma.customLeagueMatch.updateMany({
-        where: { id: { in: expired.map((l) => l.id) } },
-        data: { status: MatchStatus.EXPIRED },
-      });
-      for (const match of expired) {
+    if (toDelete.length > 0) {
+      const matchIds = toDelete.map((m) => m.id);
+      const teamIds = toDelete.flatMap((m) => m.Teams.map((t) => t.id));
+
+      for (const match of toDelete) {
         this.emit(match.id, { type: 'match_expired', payload: {} });
+      }
+
+      await this.prisma.userTeamLeague.deleteMany({
+        where: { matchId: { in: matchIds } },
+      });
+
+      if (teamIds.length > 0) {
+        await this.prisma.teamLeague.deleteMany({
+          where: { id: { in: teamIds } },
+        });
+      }
+
+      await this.prisma.customLeagueMatch.deleteMany({
+        where: { id: { in: matchIds } },
+      });
+
+      for (const match of toDelete) {
         setTimeout(() => this.removeSubject(match.id), 2000);
       }
-      this.logger.log(`${expired.length} partida(s) expirada(s).`);
+
+      this.logger.log(`${toDelete.length} partida(s) removida(s) por expiração.`);
     }
   }
 

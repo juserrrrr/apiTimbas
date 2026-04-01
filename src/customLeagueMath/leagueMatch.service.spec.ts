@@ -332,27 +332,35 @@ describe('LeagueMatchService', () => {
   });
 
   describe('cron: cleanExpiredLobbies', () => {
-    it('deve atualizar partidas expiradas para o status EXPIRED', async () => {
-      prismaMock.customLeagueMatch.findMany.mockResolvedValue([{ id: 1 }, { id: 2 }] as any);
-      prismaMock.customLeagueMatch.updateMany.mockResolvedValue({ count: 2 } as any);
+    it('deve deletar partidas expiradas completamente', async () => {
+      prismaMock.customLeagueMatch.findMany.mockResolvedValue([
+        { id: 1, Teams: [{ id: 10 }] },
+        { id: 2, Teams: [] },
+      ] as any);
+      prismaMock.userTeamLeague.deleteMany.mockResolvedValue({ count: 5 } as any);
+      prismaMock.teamLeague.deleteMany.mockResolvedValue({ count: 1 } as any);
+      prismaMock.customLeagueMatch.deleteMany.mockResolvedValue({ count: 2 } as any);
 
       await service.cleanExpiredLobbies();
 
-      expect(prismaMock.customLeagueMatch.findMany).toHaveBeenCalledWith(expect.objectContaining({
-        where: expect.objectContaining({ expiresAt: { lt: expect.any(Date) } })
-      }));
-      expect(prismaMock.customLeagueMatch.updateMany).toHaveBeenCalledWith({
+      expect(prismaMock.userTeamLeague.deleteMany).toHaveBeenCalledWith({
+        where: { matchId: { in: [1, 2] } },
+      });
+      expect(prismaMock.teamLeague.deleteMany).toHaveBeenCalledWith({
+        where: { id: { in: [10] } },
+      });
+      expect(prismaMock.customLeagueMatch.deleteMany).toHaveBeenCalledWith({
         where: { id: { in: [1, 2] } },
-        data: { status: MatchStatus.EXPIRED },
       });
     });
 
     it('não deve fazer nada se não houver lobbies expirados', async () => {
       prismaMock.customLeagueMatch.findMany.mockResolvedValue([]);
-      
+
       await service.cleanExpiredLobbies();
-      
-      expect(prismaMock.customLeagueMatch.updateMany).not.toHaveBeenCalled();
+
+      expect(prismaMock.userTeamLeague.deleteMany).not.toHaveBeenCalled();
+      expect(prismaMock.customLeagueMatch.deleteMany).not.toHaveBeenCalled();
     });
   });
 });

@@ -243,7 +243,7 @@ export class LeaderboardService {
     await this.discordServerService.findOrCreate(discordServerId);
 
     const matches = await this.prisma.customLeagueMatch.findMany({
-      where: { ServerDiscordId: discordServerId },
+      where: { ServerDiscordId: discordServerId, status: 'FINISHED' },
       include: {
         Teams: {
           include: {
