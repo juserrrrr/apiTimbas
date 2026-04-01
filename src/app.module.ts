@@ -2,7 +2,8 @@ import { Module } from '@nestjs/common';
 import { UserModule } from './user/user.module';
 import { APP_GUARD } from '@nestjs/core';
 import { AuthModule } from './auth/auth.module';
-import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { ThrottlerModule } from '@nestjs/throttler';
+import { AppThrottlerGuard } from './throttler.guard';
 import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
 import { LeagueMatchModule } from './customLeagueMath/leagueMatch.module';
@@ -39,6 +40,6 @@ import { DiscordBotModule } from './discord/discord.module';
     DiscordBotModule,
   ],
   controllers: [],
-  providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
+  providers: [{ provide: APP_GUARD, useClass: AppThrottlerGuard }],
 })
 export class AppModule {}
