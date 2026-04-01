@@ -35,8 +35,14 @@ export class DiscordVoiceController {
   async getStatus(
     @Query('guildId') guildId: string,
     @Query('discordId') discordId: string,
+    @Req() req: any,
   ) {
     if (!guildId || !discordId) throw new BadRequestException('guildId e discordId são obrigatórios.');
+
+    const payload = req.tokenPayload;
+    if (payload?.role !== Role.ADMIN && payload?.role !== Role.BOT && payload?.discordId !== discordId) {
+      throw new UnauthorizedException('Você só pode consultar seu próprio status de voz.');
+    }
 
     const guild = this.client.guilds.cache.get(guildId);
     if (!guild) return { channelId: null, channelName: null, channelType: null };
