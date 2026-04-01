@@ -20,11 +20,34 @@ async function seedAdmin(prisma: PrismaService) {
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
-  app.useGlobalPipes(new ValidationPipe());
+
+  app.useGlobalPipes(new ValidationPipe({
+    whitelist: true,
+    forbidNonWhitelisted: true,
+    transform: true,
+  }));
+
+  // Security headers
+  app.use((req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('X-XSS-Protection', '1; mode=block');
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self';");
+    next();
+  });
+
+  // CORS - be specific about allowed origins
+  const allowedOrigins = [process.env.WEB_URL || 'http://localhost:3000'];
+  if (process.env.EXTRA_ALLOWED_ORIGINS) {
+    allowedOrigins.push(...process.env.EXTRA_ALLOWED_ORIGINS.split(','));
+  }
+
   app.enableCors({
-    origin: process.env.WEB_URL ?? 'http://localhost:3000',
+    origin: allowedOrigins,
     methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
     credentials: true,
+    allowedHeaders: ['Content-Type', 'Authorization'],
   });
 
   await seedAdmin(app.get(PrismaService));
