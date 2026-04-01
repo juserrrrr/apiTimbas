@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
+import { APP_INTERCEPTOR } from '@nestjs/core';
 import { NecordModule } from 'necord';
 import { IntentsBitField } from 'discord.js';
+import { DiscordErrorInterceptor } from './interceptors/discord-error.interceptor';
 
 // Services
 import { MatchStateService } from './services/match-state.service';
@@ -29,11 +31,15 @@ import { OnlineLobbyInteraction } from './interactions/online-lobby.interaction'
 import { EventInteraction } from './interactions/event.interaction';
 import { LolVerificationInteraction } from './interactions/lol-verification.interaction';
 
+// Controllers
+import { DiscordVoiceController } from './controllers/discord-voice.controller';
+
 // NestJS module imports
 import { LeagueMatchModule } from '../customLeagueMath/leagueMatch.module';
 import { UserModule } from '../user/user.module';
 import { RiotModule } from '../riot/riot.module';
 import { LeaderboardModule } from '../leaderboard/leaderboard.module';
+import { AuthModule } from '../auth/auth.module';
 
 @Module({
   imports: [
@@ -52,8 +58,11 @@ import { LeaderboardModule } from '../leaderboard/leaderboard.module';
     UserModule,
     RiotModule,
     LeaderboardModule,
+    AuthModule,
   ],
+  controllers: [DiscordVoiceController],
   providers: [
+    { provide: APP_INTERCEPTOR, useClass: DiscordErrorInterceptor },
     // Services
     MatchStateService,
     EventStateService,

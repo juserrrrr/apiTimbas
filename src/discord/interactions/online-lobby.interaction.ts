@@ -17,6 +17,8 @@ const FORMAT_VALUES: Record<number, number> = {};
 
 // Map lobby ID -> discord users cache
 const lobbyUsers = new Map<string, Map<string, GuildMember>>();
+// Map lobby ID -> original channel ID per user
+const lobbyOriginalChannels = new Map<string, Map<string, string>>();
 
 @Injectable()
 export class OnlineLobbyInteraction {
@@ -31,6 +33,11 @@ export class OnlineLobbyInteraction {
   private getLobbyUsers(lobbyId: string): Map<string, GuildMember> {
     if (!lobbyUsers.has(lobbyId)) lobbyUsers.set(lobbyId, new Map());
     return lobbyUsers.get(lobbyId)!;
+  }
+
+  private getLobbyOriginalChannels(lobbyId: string): Map<string, string> {
+    if (!lobbyOriginalChannels.has(lobbyId)) lobbyOriginalChannels.set(lobbyId, new Map());
+    return lobbyOriginalChannels.get(lobbyId)!;
   }
 
   private async refreshLobbyEmbed(interaction: any, lobby: any) {
@@ -100,10 +107,13 @@ export class OnlineLobbyInteraction {
         discordId: interaction.user.id,
       });
 
-      // Cache the member for voice moves
+      // Cache the member and original channel for voice moves
       this.getLobbyUsers(lobbyId).set(interaction.user.id, member);
+      if (member.voice.channel) {
+        this.getLobbyOriginalChannels(lobbyId).set(interaction.user.id, member.voice.channel.id);
+      }
 
-      // Get waiting channel from any voice channel named AGUARDANDO in guild
+      // Move to waiting channel
       const waitingChannel = interaction.guild!.channels.cache.find(
         (c) => c.name === '| 🕘 | AGUARDANDO',
       ) as VoiceChannel | undefined;
@@ -126,6 +136,7 @@ export class OnlineLobbyInteraction {
     try {
       const lobby = await this.leagueMatchService.leave(parseInt(lobbyId), interaction.user.id);
       this.getLobbyUsers(lobbyId).delete(interaction.user.id);
+      this.getLobbyOriginalChannels(lobbyId).delete(interaction.user.id);
       await this.refreshLobbyEmbed(interaction, lobby);
       const msg = await interaction.followUp({ content: '🚪 Você saiu da partida.', ephemeral: true });
       setTimeout(() => msg.delete().catch(() => {}), 3000);
@@ -214,12 +225,18 @@ export class OnlineLobbyInteraction {
       const lobby = await this.leagueMatchService.finish(parseInt(lobbyId), interaction.user.id, winner);
 
       // Restore original channels
-      const waitingChannel = interaction.guild!.channels.cache.find((c) => c.name === '| 🕘 | AGUARDANDO') as VoiceChannel | undefined;
       const users = this.getLobbyUsers(lobbyId);
-      for (const member of users.values()) {
-        if (waitingChannel) await this.channelManager.moveToChannel(member, waitingChannel);
+      const originalChannels = this.getLobbyOriginalChannels(lobbyId);
+      const waitingChannel = interaction.guild!.channels.cache.find((c) => c.name === '| 🕘 | AGUARDANDO') as VoiceChannel | undefined;
+      for (const [userId, member] of users.entries()) {
+        const originalChannelId = originalChannels.get(userId);
+        const target = originalChannelId
+          ? (interaction.guild!.channels.cache.get(originalChannelId) as VoiceChannel | undefined) ?? waitingChannel
+          : waitingChannel;
+        if (target) await this.channelManager.moveToChannel(member, target);
       }
       lobbyUsers.delete(lobbyId);
+      lobbyOriginalChannels.delete(lobbyId);
 
       await this.refreshLobbyEmbed(interaction, lobby);
       await interaction.deleteReply().catch(() => {});
