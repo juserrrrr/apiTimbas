@@ -1,4 +1,5 @@
 import { Injectable, UnauthorizedException, ForbiddenException } from '@nestjs/common';
+import { timingSafeEqual } from 'crypto';
 import { JwtService } from '@nestjs/jwt';
 import { AuthRegisterDto } from './dto/auth-register.dto';
 import * as bcrypt from 'bcrypt';
@@ -254,7 +255,11 @@ export class AuthService {
 
   authenticateBotBySecret(secret: string) {
     const expectedSecret = process.env.BOT_SECRET;
-    if (!expectedSecret || secret !== expectedSecret) {
+    if (
+      !expectedSecret ||
+      secret.length !== expectedSecret.length ||
+      !timingSafeEqual(Buffer.from(secret), Buffer.from(expectedSecret))
+    ) {
       throw new ForbiddenException('Invalid bot secret');
     }
 

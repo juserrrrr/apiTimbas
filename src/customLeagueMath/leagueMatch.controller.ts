@@ -19,7 +19,6 @@ import { CreateOnlineMatchDto } from './dto/create-online-match.dto';
 import { JoinMatchDto } from './dto/join-match.dto';
 import { ActionMatchDto, FinishMatchDto } from './dto/action-match.dto';
 import { LeagueMatchService } from './leagueMatch.service';
-import { AuthService } from '../auth/auth.service';
 import { AuthGuard } from '../auth/guards/auth.guard';
 import { RoleGuard } from '../auth/guards/role.guard';
 import { Roles } from '../decorators/roles.decorator';
@@ -29,7 +28,6 @@ import { Role } from '../enums/role.enum';
 export class LeagueMatchController {
   constructor(
     private readonly leagueMatchService: LeagueMatchService,
-    private readonly authService: AuthService,
   ) {}
 
   // ─── OFFLINE CREATE ────────────────────────────────────────────────────────
@@ -110,16 +108,20 @@ export class LeagueMatchController {
     return this.leagueMatchService.finish(id, requester, dto.winner);
   }
 
+  @UseGuards(AuthGuard)
+  @Post(':id/events/ticket')
+  async createSseTicket(@Param('id', ParseIntPipe) id: number) {
+    return { ticket: this.leagueMatchService.createSseTicket(id) };
+  }
+
   @Get(':id/events')
   async sse(
     @Param('id', ParseIntPipe) id: number,
-    @Query('token') token: string,
+    @Query('ticket') ticket: string,
     @Req() req: any,
     @Res() res: Response,
   ) {
-    try {
-      this.authService.validateToken(token);
-    } catch {
+    if (!ticket || !this.leagueMatchService.validateAndConsumeSseTicket(ticket, id)) {
       res.status(401).json({ message: 'Unauthorized' });
       return;
     }

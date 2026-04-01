@@ -6,6 +6,7 @@ import {
   NotFoundException,
   Logger,
 } from '@nestjs/common';
+import { randomUUID } from 'crypto';
 import { Prisma, Side, Position, MatchStatus, MatchType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { DiscordServerService } from '../discordServer/discordServer.service';
@@ -47,6 +48,7 @@ const MATCH_INCLUDE = {
 export class LeagueMatchService {
   private readonly logger = new Logger(LeagueMatchService.name);
   private readonly eventSubjects = new Map<number, Subject<MatchEvent>>();
+  private readonly sseTickets = new Map<string, { matchId: number; expiresAt: number }>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -69,6 +71,21 @@ export class LeagueMatchService {
   private removeSubject(matchId: number) {
     const sub = this.eventSubjects.get(matchId);
     if (sub) { sub.complete(); this.eventSubjects.delete(matchId); }
+  }
+
+  createSseTicket(matchId: number): string {
+    const ticket = randomUUID();
+    this.sseTickets.set(ticket, { matchId, expiresAt: Date.now() + 30_000 });
+    return ticket;
+  }
+
+  validateAndConsumeSseTicket(ticket: string, matchId: number): boolean {
+    const entry = this.sseTickets.get(ticket);
+    this.sseTickets.delete(ticket);
+    if (!entry) return false;
+    if (entry.expiresAt < Date.now()) return false;
+    if (entry.matchId !== matchId) return false;
+    return true;
   }
 
   private async findUserByDiscordId(discordId: string) {

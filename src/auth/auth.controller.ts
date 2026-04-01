@@ -8,6 +8,7 @@ import {
   UseGuards,
   Request,
 } from '@nestjs/common';
+import { randomBytes } from 'crypto';
 import { Response } from 'express';
 import { AuthService } from './auth.service';
 import { AuthLoginDto } from './dto/auth-login.dto';
@@ -82,23 +83,77 @@ export class AuthController {
   discordAuth(@Query('redirect') redirect: string, @Res() res: Response) {
     const clientId = process.env.DISCORD_CLIENT_ID;
     const redirectUri = encodeURIComponent(process.env.DISCORD_REDIRECT_URI);
-    const stateParam = redirect ? `&state=${encodeURIComponent(redirect)}` : '';
-    const url = `https://discord.com/oauth2/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&response_type=code&scope=identify${stateParam}`;
+
+    // Generate CSRF state token
+    const state = randomBytes(32).toString('hex');
+
+    // Store state in secure httpOnly cookie
+    res.cookie('oauth_state', state, {
+      httpOnly: true,
+      secure: process.env.ENV_TYPE === 'PRODUCTION',
+      sameSite: 'lax',
+      maxAge: 10 * 60 * 1000, // 10 minutes
+    });
+
+    // Store original redirect URL in session (not in OAuth state)
+    if (redirect) {
+      res.cookie('oauth_redirect', encodeURIComponent(redirect), {
+        httpOnly: true,
+        secure: process.env.ENV_TYPE === 'PRODUCTION',
+        sameSite: 'lax',
+        maxAge: 10 * 60 * 1000,
+      });
+    }
+
+    const url = `https://discord.com/oauth2/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&response_type=code&scope=identify&state=${state}`;
     res.redirect(url);
   }
 
   @Get('discord/callback')
-  async discordCallback(@Query('code') code: string, @Query('state') state: string, @Res() res: Response) {
+  async discordCallback(
+    @Query('code') code: string,
+    @Query('state') state: string,
+    @Res() res: Response,
+    @Request() req,
+  ) {
     const webUrl = process.env.WEB_URL;
     try {
+      // Validate CSRF state token
+      const storedState = req.cookies?.oauth_state;
+      if (!state || state !== storedState) {
+        throw new Error('CSRF state validation failed');
+      }
+
       const { acessToken, refreshToken } = await this.authService.discordLogin(code);
-      let redirectUrl = `${webUrl}/auth/callback?token=${acessToken}&refreshToken=${refreshToken}`;
-      if (state) {
-        redirectUrl += `&redirect=${encodeURIComponent(state)}`;
+
+      // Set tokens in secure httpOnly cookies instead of URL
+      res.cookie('acessToken', acessToken, {
+        httpOnly: true,
+        secure: process.env.ENV_TYPE === 'PRODUCTION',
+        sameSite: 'lax',
+        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+      });
+
+      res.cookie('refreshToken', refreshToken, {
+        httpOnly: true,
+        secure: process.env.ENV_TYPE === 'PRODUCTION',
+        sameSite: 'lax',
+        maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+      });
+
+      // Clear state and redirect cookies
+      res.clearCookie('oauth_state');
+      const originalRedirect = req.cookies?.oauth_redirect ? decodeURIComponent(req.cookies.oauth_redirect) : null;
+      res.clearCookie('oauth_redirect');
+
+      // Redirect to auth success page without tokens in URL
+      let redirectUrl = `${webUrl}/auth/callback`;
+      if (originalRedirect) {
+        redirectUrl += `?redirect=${encodeURIComponent(originalRedirect)}`;
       }
       res.redirect(redirectUrl);
     } catch (e) {
-      console.error('[Discord OAuth] discordLogin error:', e);
+      console.error('[Discord OAuth] discordCallback error:', e);
       res.redirect(`${webUrl}/login?error=auth_failed`);
     }
   }

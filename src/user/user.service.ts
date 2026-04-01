@@ -3,6 +3,7 @@ import {
   NotFoundException,
   BadRequestException,
   InternalServerErrorException,
+  Logger,
 } from '@nestjs/common';
 import { CreateUserDto } from './dto/create-user.dto';
 import { CreatePlayerDto } from './dto/create-player.dto';
@@ -15,6 +16,7 @@ import { Role } from '../enums/role.enum';
 
 @Injectable()
 export class UserService {
+  private readonly logger = new Logger(UserService.name);
   constructor(private readonly prisma: PrismaService) {}
 
   async findAll() {
@@ -226,7 +228,7 @@ export class UserService {
             'One or more fields are invalid. Please check your input and try again.',
           );
         }
-        console.log(err);
+        this.logger.error('Unexpected error creating user', err);
         throw new InternalServerErrorException(
           'An unexpected error occurred while trying to create the user',
         );

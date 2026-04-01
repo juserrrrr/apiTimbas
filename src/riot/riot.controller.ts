@@ -9,6 +9,7 @@ import {
   UnauthorizedException,
   ParseIntPipe,
 } from '@nestjs/common';
+import { timingSafeEqual } from 'crypto';
 import { RiotService } from './riot.service';
 import { CreateProviderDto } from './dto/create-provider.dto';
 import { CreateTournamentDto } from './dto/create-tournament.dto';
@@ -97,7 +98,12 @@ export class RiotController {
     @Headers('x-riot-secret') secret: string,
   ) {
     const expectedSecret = process.env.RIOT_CALLBACK_SECRET;
-    if (!expectedSecret || secret !== expectedSecret) {
+    if (
+      !expectedSecret ||
+      !secret ||
+      secret.length !== expectedSecret.length ||
+      !timingSafeEqual(Buffer.from(secret), Buffer.from(expectedSecret))
+    ) {
       throw new UnauthorizedException('Invalid callback secret');
     }
     return this.riotService.handleMatchCallback(tournamentMatchDto);
