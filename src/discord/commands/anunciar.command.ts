@@ -9,18 +9,25 @@ class AnunciarOptions {
 
 @Injectable()
 export class AnunciarCommand {
-  @SlashCommand({ name: 'anunciar', description: 'Faz um anúncio no canal atual.', guilds: process.env.DISCORD_GUILD_ID ? [process.env.DISCORD_GUILD_ID] : undefined })
+  @SlashCommand({ name: 'anunciar', description: 'Encaminha um anuncio para o canal onde foi executado o comando.', guilds: process.env.DISCORD_GUILD_ID ? [process.env.DISCORD_GUILD_ID] : undefined })
   async onAnunciar(
     @Context() [interaction]: SlashCommandContext,
     @Options() { mensagem }: AnunciarOptions,
   ) {
     const embed = new EmbedBuilder()
-      .setTitle('📢 Anúncio')
-      .setDescription(mensagem)
-      .setColor(0x5865f2)
-      .setFooter({ text: `Anunciado por ${interaction.user.displayName}` });
+      .setTitle('🚨 │ **Anuncio**')
+      .setDescription(`**${mensagem}**`)
+      .setColor(0xFF0004);
 
-    await interaction.channel!.send({ content: '||@everyone||', embeds: [embed] });
-    await interaction.reply({ content: 'Anúncio enviado!', ephemeral: true });
+    const iconUrl = interaction.guild?.icon
+      ? interaction.guild.iconURL({ extension: 'png' }) ?? undefined
+      : undefined;
+    if (iconUrl) embed.setThumbnail(iconUrl);
+
+    await interaction.reply({ content: 'Comando executado com sucesso!', ephemeral: true });
+    setTimeout(() => interaction.deleteReply().catch(() => {}), 5000);
+
+    await interaction.channel!.send({ content: '||@everyone||' });
+    await interaction.channel!.send({ embeds: [embed] });
   }
 }

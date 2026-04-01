@@ -3,7 +3,8 @@ import { Context, Options, SlashCommand, SlashCommandContext, StringOption } fro
 import { Client } from 'discord.js';
 import axios from 'axios';
 
-const DEFAULT_AVATAR_URL = 'https://i.imgur.com/zcJBDUq_d.webp';
+const DEFAULT_AVATAR_URL = 'https://i.imgur.com/zcJBDUq_d.webp?maxwidth=760&fidelity=grand';
+const BOT_OWNER_ID = '352240724693090305';
 
 class SetAvatarOptions {
   @StringOption({ name: 'url', description: 'URL da imagem (deixe em branco para usar o padrão)', required: false })
@@ -19,8 +20,8 @@ export class SetAvatarCommand {
     @Context() [interaction]: SlashCommandContext,
     @Options() { url }: SetAvatarOptions,
   ) {
-    if (interaction.user.id !== interaction.guild!.ownerId) {
-      await interaction.reply({ content: '❌ Apenas o dono do servidor pode usar este comando.', ephemeral: true });
+    if (interaction.user.id !== BOT_OWNER_ID) {
+      await interaction.reply({ content: '❌ Apenas o dono do bot pode usar este comando.', ephemeral: true });
       return;
     }
 
@@ -31,9 +32,11 @@ export class SetAvatarCommand {
       const response = await axios.get(imageUrl, { responseType: 'arraybuffer' });
       const buffer = Buffer.from(response.data);
       await this.client.user!.setAvatar(buffer);
-      await interaction.followUp({ content: '✅ Avatar atualizado!', ephemeral: true });
+      const msg = await interaction.followUp({ content: '✅ Avatar atualizado com sucesso!', ephemeral: true });
+      setTimeout(() => msg.delete().catch(() => {}), 5000);
     } catch (e) {
-      await interaction.followUp({ content: `❌ Falha ao definir avatar: ${e}`, ephemeral: true });
+      const msg = await interaction.followUp({ content: `❌ Falha ao definir avatar: ${e}`, ephemeral: true });
+      setTimeout(() => msg.delete().catch(() => {}), 5000);
     }
   }
 }

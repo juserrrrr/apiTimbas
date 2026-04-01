@@ -15,42 +15,51 @@ class UsuarioLolOptions {
 export class UsuarioLolCommand {
   constructor(private readonly riotService: RiotService) {}
 
-  @SlashCommand({ name: 'usuariolol', description: 'Busca informações de um jogador de League of Legends.', guilds: process.env.DISCORD_GUILD_ID ? [process.env.DISCORD_GUILD_ID] : undefined })
+  @SlashCommand({ name: 'usuariolol', description: 'Mostra as informações de determinado usuario do lol', guilds: process.env.DISCORD_GUILD_ID ? [process.env.DISCORD_GUILD_ID] : undefined })
   async onUsuarioLol(
     @Context() [interaction]: SlashCommandContext,
     @Options() { nick, tag }: UsuarioLolOptions,
   ) {
-    await interaction.deferReply({ ephemeral: true });
+    const guildIconUrl = interaction.guild?.icon
+      ? interaction.guild.iconURL({ extension: 'png' }) ?? undefined
+      : undefined;
+
+    const embed = new EmbedBuilder()
+      .setTitle('🔷 │ **Usuário não encontrado**')
+      .setDescription('Por favor, tente novamente')
+      .setColor(0xFF0004);
+    if (guildIconUrl) embed.setThumbnail(guildIconUrl);
+
+    await interaction.deferReply();
 
     try {
       const data = await this.riotService.getPlayerInfo(nick, tag);
-      if (!data) {
-        await interaction.followUp({ content: '❌ Jogador não encontrado.', ephemeral: true });
-        return;
+      if (data) {
+        const solo: any = (data as any).solo ?? {};
+        const flex: any = (data as any).flex ?? {};
+
+        const soloDuoStats = solo.tier && solo.tier !== 'Unranked'
+          ? `${solo.tier} ${solo.rank ?? ''}`.trim()
+          : 'Unranked';
+        const flexStats = flex.tier && flex.tier !== 'Unranked'
+          ? `${flex.tier} ${flex.rank ?? ''}`.trim()
+          : 'Unranked';
+
+        embed
+          .setTitle(`🔷 │ **${data.gameName ?? nick}#${tag}**`)
+          .setDescription('**Informações sobre o jogador**')
+          .spliceFields(0, embed.data.fields?.length ?? 0)
+          .addFields(
+            { name: 'Solo/Duo', value: soloDuoStats, inline: true },
+            { name: 'Flex', value: flexStats, inline: true },
+            { name: 'Level', value: String(data.summonerLevel ?? '?'), inline: true },
+          );
+
+        const iconUrl = (data as any).profileIconUrl ?? guildIconUrl;
+        if (iconUrl) embed.setThumbnail(iconUrl);
       }
+    } catch {}
 
-      const solo: any = (data as any).solo ?? {};
-      const flex: any = (data as any).flex ?? {};
-
-      const embed = new EmbedBuilder()
-        .setTitle(`${data.gameName ?? nick}`)
-        .setColor(0xc69b3a)
-        .addFields(
-          { name: 'Nível', value: String(data.summonerLevel ?? '?'), inline: true },
-          { name: 'Solo/Duo', value: `${solo.tier ?? 'Unranked'} ${solo.rank ?? ''}`.trim(), inline: true },
-          { name: 'Flex', value: `${flex.tier ?? 'Unranked'} ${flex.rank ?? ''}`.trim(), inline: true },
-        );
-
-      if (data.profileIconId) {
-        const iconUrl = await this.riotService.buildChampionIconUrl('').catch(() => null);
-        // use ddragon profile icon
-        const version = '14.8.1';
-        embed.setThumbnail(`https://ddragon.leagueoflegends.com/cdn/${version}/img/profileicon/${data.profileIconId}.png`);
-      }
-
-      await interaction.followUp({ embeds: [embed], ephemeral: true });
-    } catch (e) {
-      await interaction.followUp({ content: `❌ Erro ao buscar jogador: ${e}`, ephemeral: true });
-    }
+    await interaction.editReply({ embeds: [embed] });
   }
 }
