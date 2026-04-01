@@ -9,5 +9,6 @@ import { DiscordServerModule } from '../discordServer/discordServer.module';
   imports: [PrismaModule, AuthModule, DiscordServerModule],
   controllers: [LeaderboardController],
   providers: [LeaderboardService],
+  exports: [LeaderboardService],
 })
 export class LeaderboardModule {}

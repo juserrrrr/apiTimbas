@@ -22,5 +22,6 @@ import { AuthModule } from '../auth/auth.module';
   ],
   providers: [RiotService],
   controllers: [RiotController],
+  exports: [RiotService],
 })
 export class RiotModule {}

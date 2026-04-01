@@ -9,6 +9,7 @@ import { LeagueMatchModule } from './customLeagueMath/leagueMatch.module';
 import { DiscordServerModule } from './discordServer/discordServer.module';
 import { RiotModule } from './riot/riot.module';
 import { LeaderboardModule } from './leaderboard/leaderboard.module';
+// import { DiscordBotModule } from './discord/discord.module'; // ← enable to activate bot
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { LeaderboardModule } from './leaderboard/leaderboard.module';
     DiscordServerModule,
     RiotModule,
     LeaderboardModule,
+    // DiscordBotModule, // ← uncomment to activate bot
   ],
   controllers: [],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
