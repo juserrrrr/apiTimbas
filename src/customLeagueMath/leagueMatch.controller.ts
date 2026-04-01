@@ -6,6 +6,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   UseGuards,
   ParseIntPipe,
   Req,
@@ -18,6 +19,7 @@ import { CreateOnlineMatchDto } from './dto/create-online-match.dto';
 import { JoinMatchDto } from './dto/join-match.dto';
 import { ActionMatchDto, FinishMatchDto } from './dto/action-match.dto';
 import { LeagueMatchService } from './leagueMatch.service';
+import { AuthService } from '../auth/auth.service';
 import { AuthGuard } from '../auth/guards/auth.guard';
 import { RoleGuard } from '../auth/guards/role.guard';
 import { Roles } from '../decorators/roles.decorator';
@@ -25,7 +27,10 @@ import { Role } from '../enums/role.enum';
 
 @Controller('leagueMatch')
 export class LeagueMatchController {
-  constructor(private readonly leagueMatchService: LeagueMatchService) {}
+  constructor(
+    private readonly leagueMatchService: LeagueMatchService,
+    private readonly authService: AuthService,
+  ) {}
 
   // ─── OFFLINE CREATE ────────────────────────────────────────────────────────
   @UseGuards(AuthGuard, RoleGuard)
@@ -106,11 +111,22 @@ export class LeagueMatchController {
   }
 
   @Get(':id/events')
-  async sse(@Param('id', ParseIntPipe) id: number, @Req() req: any, @Res() res: Response) {
+  async sse(
+    @Param('id', ParseIntPipe) id: number,
+    @Query('token') token: string,
+    @Req() req: any,
+    @Res() res: Response,
+  ) {
+    try {
+      this.authService.validateToken(token);
+    } catch {
+      res.status(401).json({ message: 'Unauthorized' });
+      return;
+    }
+
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
-    res.setHeader('Access-Control-Allow-Origin', '*');
     res.flushHeaders();
 
     try {
@@ -140,11 +156,14 @@ export class LeagueMatchController {
 
   // ─── CRUD BÁSICO ─────────────────────────────────────────────────────────
 
+  @UseGuards(AuthGuard, RoleGuard)
+  @Roles(Role.ADMIN)
   @Get()
   async findAll() {
     return this.leagueMatchService.findAll();
   }
 
+  @UseGuards(AuthGuard)
   @Get(':id')
   async findOne(@Param('id', ParseIntPipe) id: number) {
     return this.leagueMatchService.findOne(id);
