@@ -114,7 +114,7 @@ export function buildMatchEmbed(
     .setDescription('```' + text + '```')
     .setColor(0x5865f2)
     .setFooter({ text: footerText });
-  if (withGif) embed.setImage('attachment://timbasQueueGif.gif');
+  if (withGif) embed.setImage('attachment://timbas.gif');
   if (webUrl) {
     embed.addFields({ name: '\u200b', value: `[Acompanhe pelo site](${webUrl})`, inline: false });
   }
@@ -134,7 +134,7 @@ export class CriarPersonalizadaCommand {
 
   private getGifAttachment(): AttachmentBuilder | null {
     const gifPath = path.join(process.cwd(), 'images', 'timbasQueueGif.gif');
-    if (fs.existsSync(gifPath)) return new AttachmentBuilder(gifPath, { name: 'timbasQueueGif.gif' });
+    if (fs.existsSync(gifPath)) return new AttachmentBuilder(gifPath, { name: 'timbas.gif' });
     return null;
   }
 
@@ -292,7 +292,7 @@ export class CriarPersonalizadaCommand {
     const webUrl = (!winner && !finished)
       ? `${process.env.WEB_URL ?? 'http://localhost:3000'}/dashboard/match/${lobby.id}`
       : undefined;
-    const hasGif = message.attachments?.some((a: any) => a.name === 'timbasQueueGif.gif') ?? false;
+    const hasGif = message.attachments?.some((a: any) => a.name === 'timbas.gif' || a.name === 'timbasQueueGif.gif') ?? false;
     const embed = buildMatchEmbed(blueDisplay, redDisplay, FORMAT_NAMES[matchFormat], 'Online', footerMap[status] ?? '', webUrl, winner, showDetails, hasGif);
     const buttons = buildOnlineLobbyButtons(lobby.id, started, finished, matchFormat);
 

@@ -42,17 +42,22 @@ export class OfflineMatchInteraction {
     const buttons = buildOfflineMatchButtons(key, state.started, state.matchFormatValue, state.confirmedPlayerIds.length, state.finished);
     const blueDisplay = state.blueTeam.length ? state.blueTeam : state.confirmedPlayerIds.slice(0, 5).map((id) => ({ userId: id }));
     const redDisplay = state.redTeam.length ? state.redTeam : state.confirmedPlayerIds.slice(5).map((id) => ({ userId: id }));
-    const toEmbedPlayer = (e: any, idx: number) => {
+      const toEmbedPlayer = (e: any, idx: number) => {
       const member = interaction.guild.members.cache.get(e.userId ?? e);
       const fallbackName = state.debug ? `TestPlayer${idx + 1}` : (e.userId ?? '?');
       return { name: member?.displayName ?? fallbackName, position: e.position };
     };
+    const hasGif = interaction.message.attachments?.some((a: any) => a.name === 'timbas.gif' || a.name === 'timbasQueueGif.gif') ?? false;
     const embed = buildMatchEmbed(
       blueDisplay.map((e, i) => toEmbedPlayer(e, i)),
       redDisplay.map((e, i) => toEmbedPlayer(e, i + 5)),
       state.matchFormatName,
       state.onlineModeName,
       state.started ? 'Partida em andamento!' : state.confirmedPlayerIds.length >= 10 ? 'Pronto para começar!' : 'Aguardando jogadores...',
+      undefined,
+      null,
+      state.showDetails,
+      hasGif
     );
     await interaction.message.edit({ embeds: [embed], components: buttons }).catch(() => {});
   }

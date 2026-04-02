@@ -11,6 +11,11 @@ export class DiscordErrorInterceptor implements NestInterceptor {
   constructor(private readonly client: Client) {}
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
+    // Para requisições HTTP, queremos que o NestJS trate a exceção normalmente e envie ao Frontend.
+    if (context.getType() === 'http') {
+      return next.handle();
+    }
+
     return next.handle().pipe(
       catchError(async (error) => {
         let interaction: Interaction | undefined;
