@@ -41,6 +41,7 @@ export class DiscordVoiceController {
 
     const payload = req.tokenPayload;
     if (payload?.role !== Role.ADMIN && payload?.role !== Role.BOT && payload?.discordId !== discordId) {
+      console.error('[DiscordVoiceController] Unauthorized: payload discordId mismatch', { payload: payload?.discordId, discordId });
       throw new UnauthorizedException('Você só pode consultar seu próprio status de voz.');
     }
 
@@ -49,7 +50,12 @@ export class DiscordVoiceController {
 
     let member = guild.members.cache.get(discordId);
     if (!member) {
-      member = await guild.members.fetch(discordId).catch(() => undefined);
+      try {
+        member = await guild.members.fetch(discordId);
+      } catch (e) {
+        console.error('[DiscordVoiceController] Erro ao dar fetch no membro:', e.message);
+        member = undefined;
+      }
     }
 
     const channel = (member as any)?.voice?.channel as VoiceChannel | null;

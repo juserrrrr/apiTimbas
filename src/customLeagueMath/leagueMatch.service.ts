@@ -17,6 +17,7 @@ import { CreateOnlineMatchDto } from './dto/create-online-match.dto';
 import { JoinMatchDto } from './dto/join-match.dto';
 import { Subject } from 'rxjs';
 import { Cron } from '@nestjs/schedule';
+import { Client, VoiceChannel } from 'discord.js';
 
 export interface MatchEvent {
   type:
@@ -53,6 +54,7 @@ export class LeagueMatchService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly discordServerService: DiscordServerService,
+    private readonly client: Client,
   ) {}
 
   // ─── SSE ─────────────────────────────────────────────────────────────────
@@ -138,6 +140,32 @@ export class LeagueMatchService {
       }
       if (match.queuePlayers.find((p) => p.userId === user.id)) {
         throw new BadRequestException('Você já está na partida.');
+      }
+
+      // Voice Channel Validation
+      if (match.ServerDiscordId && user.discordId) {
+        const guild = this.client.guilds.cache.get(match.ServerDiscordId);
+        if (guild) {
+          let member = guild.members.cache.get(user.discordId);
+          if (!member) {
+            try {
+              member = await guild.members.fetch(user.discordId);
+            } catch {}
+          }
+          const channel = (member as any)?.voice?.channel as VoiceChannel | null;
+          if (!channel) {
+            throw new BadRequestException('Você precisa estar em um canal de voz no servidor do Discord para entrar na partida.');
+          }
+
+          // MOVE THE PLAYER TO THE WAITING ROOM
+          const waitingChannel = guild.channels.cache.find(
+            (c) => c.type === 2 && c.name === '| 🕘 | AGUARDANDO' // 2 is ChannelType.GuildVoice
+          ) as VoiceChannel | undefined;
+          
+          if (waitingChannel && channel.id !== waitingChannel.id) {
+            await (member as any)?.voice?.setChannel(waitingChannel).catch(() => {});
+          }
+        }
       }
 
       await tx.userTeamLeague.create({
