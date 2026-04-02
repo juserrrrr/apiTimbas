@@ -121,6 +121,7 @@ export class AuthController {
       // Validate CSRF state token
       const storedState = req.cookies?.oauth_state;
       if (!state || state !== storedState) {
+        console.error(`[Discord OAuth] CSRF falhou. Recebido: ${state}, Cookie: ${storedState}`);
         throw new Error('CSRF state validation failed');
       }
 
@@ -153,7 +154,13 @@ export class AuthController {
       }
       res.redirect(redirectUrl);
     } catch (e) {
-      console.error('[Discord OAuth] discordCallback error:', e);
+      console.error('[Discord OAuth] discordCallback error:');
+      if (e.response) {
+        console.error('Discord API Error Data:', JSON.stringify(e.response.data, null, 2));
+      } else {
+        console.error('Error Message:', e.message);
+        console.error('Error Stack:', e.stack);
+      }
       res.redirect(`${webUrl}/login?error=auth_failed`);
     }
   }
