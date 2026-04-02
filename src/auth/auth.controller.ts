@@ -7,6 +7,7 @@ import {
   Res,
   UseGuards,
   Request,
+  Logger,
 } from '@nestjs/common';
 import { randomBytes } from 'crypto';
 import { Response } from 'express';
@@ -121,7 +122,7 @@ export class AuthController {
       // Validate CSRF state token
       const storedState = req.cookies?.oauth_state;
       if (!state || state !== storedState) {
-        console.error(`[Discord OAuth] CSRF falhou. Recebido: ${state}, Cookie: ${storedState}`);
+        Logger.error(`[Discord OAuth] CSRF falhou. Recebido: ${state}, Cookie: ${storedState}`, 'AuthController');
         throw new Error('CSRF state validation failed');
       }
 
@@ -154,12 +155,11 @@ export class AuthController {
       }
       res.redirect(redirectUrl);
     } catch (e) {
-      console.error('[Discord OAuth] discordCallback error:');
+      Logger.error('[Discord OAuth] discordCallback error:', e.stack, 'AuthController');
       if (e.response) {
-        console.error('Discord API Error Data:', JSON.stringify(e.response.data, null, 2));
+        Logger.error(`Discord API Error Data: ${JSON.stringify(e.response.data)}`, 'AuthController');
       } else {
-        console.error('Error Message:', e.message);
-        console.error('Error Stack:', e.stack);
+        Logger.error(`Error Message: ${e.message}`, 'AuthController');
       }
       res.redirect(`${webUrl}/login?error=auth_failed`);
     }
