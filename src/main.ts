@@ -4,6 +4,7 @@ import { ValidationPipe } from '@nestjs/common';
 import { PrismaService } from './prisma/prisma.service';
 import { Role } from './enums/role.enum';
 import * as bcrypt from 'bcrypt';
+import * as cookieParser from 'cookie-parser';
 
 async function seedAdmin(prisma: PrismaService) {
   const { ADMIN_DISCORD_ID, ADMIN_NAME, ADMIN_EMAIL, ADMIN_PASSWORD } = process.env;
@@ -20,6 +21,8 @@ async function seedAdmin(prisma: PrismaService) {
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+
+  app.use(cookieParser());
 
   app.useGlobalPipes(new ValidationPipe({
     whitelist: true,

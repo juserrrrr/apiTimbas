@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ComponentParam, Context, StringSelect, StringSelectContext } from 'necord';
-import { GuildMember, VoiceChannel } from 'discord.js';
+import { GuildMember, MessageFlags, VoiceChannel } from 'discord.js';
 import { MatchStateService } from '../services/match-state.service';
 import { ChannelManagerService } from '../services/channel-manager.service';
 import { LeagueMatchService } from '../../customLeagueMath/leagueMatch.service';
@@ -25,7 +25,7 @@ export class OfflineMatchSelectInteraction {
     if (!state || state.finished) return;
 
     if (interaction.user.id !== state.creatorId) {
-      await interaction.followUp({ content: '❌ Apenas o criador pode selecionar o vencedor.', ephemeral: true });
+      await interaction.followUp({ content: '❌ Apenas o criador pode selecionar o vencedor.', flags: MessageFlags.Ephemeral });
       return;
     }
 
@@ -37,7 +37,7 @@ export class OfflineMatchSelectInteraction {
       await this.leagueMatchService.update(state.matchId!, { winnerId: winnerTeamId } as any);
     } catch (e) {
       this.logger.error(`Failed to update winner: ${e}`);
-      await interaction.followUp({ content: '❌ Erro ao finalizar partida.', ephemeral: true });
+      await interaction.followUp({ content: '❌ Erro ao finalizar partida.', flags: MessageFlags.Ephemeral });
       this.matchStateService.update(key, { finishing: false });
       return;
     }

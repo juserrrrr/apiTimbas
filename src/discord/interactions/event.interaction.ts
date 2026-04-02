@@ -5,6 +5,7 @@ import {
   ButtonBuilder,
   ButtonStyle,
   EmbedBuilder,
+  MessageFlags,
   StringSelectMenuBuilder,
   StringSelectMenuOptionBuilder,
   TextChannel,
@@ -33,7 +34,7 @@ export class EventInteraction {
 
   @Modal('event_create/:channelId')
   async onEventModal(@Context() [interaction]: ModalContext, @ModalParam('channelId') channelId: string) {
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
     const titulo = interaction.fields.getTextInputValue('titulo').trim();
     const descricao = interaction.fields.getTextInputValue('descricao')?.trim() || null;
@@ -41,7 +42,7 @@ export class EventInteraction {
 
     const channel = interaction.guild!.channels.cache.get(channelId) as TextChannel;
     if (!channel) {
-      await interaction.followUp({ content: '❌ Canal não encontrado.', ephemeral: true });
+      await interaction.followUp({ content: '❌ Canal não encontrado.', flags: MessageFlags.Ephemeral });
       return;
     }
 
@@ -66,13 +67,13 @@ export class EventInteraction {
     const realRow = this.eventoCommand.buildEventButtons(msg.id);
     await msg.edit({ components: [realRow] });
 
-    const reply = await interaction.followUp({ content: `Evento criado em ${channel}!`, ephemeral: true });
+    const reply = await interaction.followUp({ content: `Evento criado em ${channel}!`, flags: MessageFlags.Ephemeral });
     setTimeout(() => reply.delete().catch(() => {}), 5000);
   }
 
   @Button('event/vou/:messageId')
   async onVou(@Context() [interaction]: ButtonContext, @ComponentParam('messageId') messageId: string) {
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const entry = this.eventStateService.get(messageId);
     if (!entry) return;
 
@@ -81,7 +82,7 @@ export class EventInteraction {
     let notGoingIds = entry.notGoingIds.filter((id) => id !== userId);
 
     if (goingIds.includes(userId)) {
-      const msg = await interaction.followUp({ content: 'Você já confirmou presença.', ephemeral: true });
+      const msg = await interaction.followUp({ content: 'Você já confirmou presença.', flags: MessageFlags.Ephemeral });
       setTimeout(() => msg.delete().catch(() => {}), 4000);
       return;
     }
@@ -90,13 +91,13 @@ export class EventInteraction {
     this.eventStateService.upsert({ ...entry, goingIds, notGoingIds });
     await this.updateEventEmbed(interaction, messageId, { ...entry, goingIds, notGoingIds });
 
-    const msg = await interaction.followUp({ content: '✅ Presença confirmada!', ephemeral: true });
+    const msg = await interaction.followUp({ content: '✅ Presença confirmada!', flags: MessageFlags.Ephemeral });
     setTimeout(() => msg.delete().catch(() => {}), 4000);
   }
 
   @Button('event/nao_vou/:messageId')
   async onNaoVou(@Context() [interaction]: ButtonContext, @ComponentParam('messageId') messageId: string) {
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const entry = this.eventStateService.get(messageId);
     if (!entry) return;
 
@@ -105,7 +106,7 @@ export class EventInteraction {
     let goingIds = entry.goingIds.filter((id) => id !== userId);
 
     if (notGoingIds.includes(userId)) {
-      const msg = await interaction.followUp({ content: 'Você já marcou que não vai.', ephemeral: true });
+      const msg = await interaction.followUp({ content: 'Você já marcou que não vai.', flags: MessageFlags.Ephemeral });
       setTimeout(() => msg.delete().catch(() => {}), 4000);
       return;
     }
@@ -114,18 +115,18 @@ export class EventInteraction {
     this.eventStateService.upsert({ ...entry, goingIds, notGoingIds });
     await this.updateEventEmbed(interaction, messageId, { ...entry, goingIds, notGoingIds });
 
-    const msg = await interaction.followUp({ content: '❌ Marcado como não vai.', ephemeral: true });
+    const msg = await interaction.followUp({ content: '❌ Marcado como não vai.', flags: MessageFlags.Ephemeral });
     setTimeout(() => msg.delete().catch(() => {}), 4000);
   }
 
   @Button('event/criar/:messageId')
   async onCriarPartida(@Context() [interaction]: ButtonContext, @ComponentParam('messageId') messageId: string) {
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const entry = this.eventStateService.get(messageId);
     if (!entry) return;
 
     if (interaction.user.id !== entry.creatorId) {
-      const msg = await interaction.followUp({ content: 'Apenas o criador do evento pode iniciar a partida.', ephemeral: true });
+      const msg = await interaction.followUp({ content: 'Apenas o criador do evento pode iniciar a partida.', flags: MessageFlags.Ephemeral });
       setTimeout(() => msg.delete().catch(() => {}), 5000);
       return;
     }
@@ -152,7 +153,7 @@ export class EventInteraction {
         new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(select1),
         new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(select2),
       ],
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
       fetchReply: true,
     });
     setTimeout(() => msg.delete().catch(() => {}), 60_000);

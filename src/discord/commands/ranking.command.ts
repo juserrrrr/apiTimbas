@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { Context, Options, SlashCommand, SlashCommandContext, BooleanOption } from 'necord';
-import { EmbedBuilder } from 'discord.js';
+import { EmbedBuilder, MessageFlags } from 'discord.js';
 import { LeaderboardService } from '../../leaderboard/leaderboard.service';
 
 class RankingOptions {
@@ -17,13 +17,13 @@ export class RankingCommand {
     @Context() [interaction]: SlashCommandContext,
     @Options() { debug }: RankingOptions,
   ) {
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
     let rankingData: any[];
 
     if (debug) {
       if (interaction.user.id !== interaction.guild!.ownerId) {
-        const msg = await interaction.followUp({ content: 'Você não tem permissão para usar o modo de debug.', ephemeral: true });
+        const msg = await interaction.followUp({ content: 'Você não tem permissão para usar o modo de debug.', flags: MessageFlags.Ephemeral });
         setTimeout(() => msg.delete().catch(() => {}), 5000);
         return;
       }
@@ -37,7 +37,7 @@ export class RankingCommand {
     }
 
     if (!rankingData?.length) {
-      const msg = await interaction.followUp({ content: 'Ainda não há jogadores no ranking deste servidor.', ephemeral: true });
+      const msg = await interaction.followUp({ content: 'Ainda não há jogadores no ranking deste servidor.', flags: MessageFlags.Ephemeral });
       setTimeout(() => msg.delete().catch(() => {}), 5000);
       return;
     }
@@ -69,7 +69,7 @@ export class RankingCommand {
       .setFooter({ text: 'Os melhores jogadores do servidor com base nas partidas personalizadas.' });
 
     await interaction.channel!.send({ embeds: [embed] });
-    const msg = await interaction.followUp({ content: 'Comando de ranking executado com sucesso!', ephemeral: true });
+    const msg = await interaction.followUp({ content: 'Comando de ranking executado com sucesso!', flags: MessageFlags.Ephemeral });
     setTimeout(() => msg.delete().catch(() => {}), 5000);
   }
 }

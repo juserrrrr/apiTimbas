@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { Context, Options, SlashCommand, SlashCommandContext, StringOption } from 'necord';
-import { EmbedBuilder } from 'discord.js';
+import { EmbedBuilder, MessageFlags } from 'discord.js';
 
 class AnunciarOptions {
   @StringOption({ name: 'mensagem', description: 'Mensagem do anúncio', required: true })
@@ -24,7 +24,7 @@ export class AnunciarCommand {
       : undefined;
     if (iconUrl) embed.setThumbnail(iconUrl);
 
-    await interaction.reply({ content: 'Comando executado com sucesso!', ephemeral: true });
+    await interaction.reply({ content: 'Comando executado com sucesso!', flags: MessageFlags.Ephemeral });
     setTimeout(() => interaction.deleteReply().catch(() => {}), 5000);
 
     await interaction.channel!.send({ content: '||@everyone||' });

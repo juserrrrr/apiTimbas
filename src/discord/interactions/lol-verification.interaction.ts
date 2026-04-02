@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Button, ComponentParam, Context, ButtonContext, Modal, ModalContext, ModalParam } from 'necord';
-import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
+import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } from 'discord.js';
 import { RiotService } from '../../riot/riot.service';
 import { UserService } from '../../user/user.service';
 import { randomUUID } from 'crypto';
@@ -25,12 +25,12 @@ export class LolVerificationInteraction {
 
   @Modal('lol_verify')
   async onVerifyModal(@Context() [interaction]: ModalContext) {
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
     const username = interaction.fields.getTextInputValue('league_name').trim();
     const parts = username.split('#');
     if (parts.length < 2) {
-      await interaction.followUp({ content: '❌ Formato inválido. Use Nickname#TAG', ephemeral: true });
+      await interaction.followUp({ content: '❌ Formato inválido. Use Nickname#TAG', flags: MessageFlags.Ephemeral });
       return;
     }
 

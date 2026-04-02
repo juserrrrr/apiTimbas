@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { Context, SlashCommand, SlashCommandContext } from 'necord';
-import { GuildMember, VoiceChannel } from 'discord.js';
+import { GuildMember, MessageFlags, VoiceChannel } from 'discord.js';
 
 @Injectable()
 export class TrazertodosCommand {
@@ -8,11 +8,11 @@ export class TrazertodosCommand {
   async onPuxartodos(@Context() [interaction]: SlashCommandContext) {
     const member = interaction.member as GuildMember;
     if (!member.voice.channel) {
-      await interaction.reply({ content: '❌ Você precisa estar em um canal de voz.', ephemeral: true });
+      await interaction.reply({ content: '❌ Você precisa estar em um canal de voz.', flags: MessageFlags.Ephemeral });
       return;
     }
 
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const targetChannel = member.voice.channel as VoiceChannel;
     const guild = interaction.guild!;
 
@@ -21,13 +21,13 @@ export class TrazertodosCommand {
     );
 
     if (!toMove.size) {
-      const msg = await interaction.followUp({ content: 'Não há usuários para mover.', ephemeral: true });
+      const msg = await interaction.followUp({ content: 'Não há usuários para mover.', flags: MessageFlags.Ephemeral });
       setTimeout(() => msg.delete().catch(() => {}), 5000);
       return;
     }
 
     await Promise.allSettled(toMove.map((m) => m.voice.setChannel(targetChannel)));
-    const msg = await interaction.followUp({ content: `✅ ${toMove.size} usuário(s) movido(s) para ${targetChannel.name}.`, ephemeral: true });
+    const msg = await interaction.followUp({ content: `✅ ${toMove.size} usuário(s) movido(s) para ${targetChannel.name}.`, flags: MessageFlags.Ephemeral });
     setTimeout(() => msg.delete().catch(() => {}), 5000);
   }
 }

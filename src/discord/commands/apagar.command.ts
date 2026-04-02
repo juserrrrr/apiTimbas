@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { Context, Options, SlashCommand, SlashCommandContext, IntegerOption } from 'necord';
-import { TextChannel } from 'discord.js';
+import { TextChannel, MessageFlags } from 'discord.js';
 
 class ApagarOptions {
   @IntegerOption({ name: 'quantidade', description: 'Número de mensagens a apagar', required: true, min_value: 1, max_value: 100 })
@@ -14,10 +14,10 @@ export class ApagarCommand {
     @Context() [interaction]: SlashCommandContext,
     @Options() { quantidade }: ApagarOptions,
   ) {
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const channel = interaction.channel as TextChannel;
     await channel.bulkDelete(quantidade, true);
-    const msg = await interaction.followUp({ content: `✅ ${quantidade} mensagens apagadas.`, ephemeral: true });
+    const msg = await interaction.followUp({ content: `✅ ${quantidade} mensagens apagadas.`, flags: MessageFlags.Ephemeral });
     setTimeout(() => msg.delete().catch(() => {}), 5000);
   }
 }

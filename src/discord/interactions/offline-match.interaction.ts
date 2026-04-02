@@ -4,6 +4,7 @@ import {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
+  MessageFlags,
   StringSelectMenuBuilder,
   StringSelectMenuOptionBuilder,
   GuildMember,
@@ -58,28 +59,28 @@ export class OfflineMatchInteraction {
 
   @Button('cm/join/:key')
   async onJoin(@Context() [interaction]: ButtonContext, @ComponentParam('key') key: string) {
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const state = this.matchStateService.get(key);
     if (!state || state.started || state.finished) {
-      await interaction.followUp({ content: '❌ Partida não encontrada ou já encerrada.', ephemeral: true });
+      await interaction.followUp({ content: '❌ Partida não encontrada ou já encerrada.', flags: MessageFlags.Ephemeral });
       return;
     }
 
     const member = interaction.member as GuildMember;
     if (!member.voice.channel) {
-      const msg = await interaction.followUp({ content: '❌ Você precisa estar em um canal de voz.', ephemeral: true });
+      const msg = await interaction.followUp({ content: '❌ Você precisa estar em um canal de voz.', flags: MessageFlags.Ephemeral });
       setTimeout(() => msg.delete().catch(() => {}), 5000);
       return;
     }
 
     if (state.confirmedPlayerIds.includes(interaction.user.id)) {
-      const msg = await interaction.followUp({ content: '❌ Você já está na lista.', ephemeral: true });
+      const msg = await interaction.followUp({ content: '❌ Você já está na lista.', flags: MessageFlags.Ephemeral });
       setTimeout(() => msg.delete().catch(() => {}), 5000);
       return;
     }
 
     if (state.confirmedPlayerIds.length >= 10) {
-      const msg = await interaction.followUp({ content: '❌ A partida já está cheia.', ephemeral: true });
+      const msg = await interaction.followUp({ content: '❌ A partida já está cheia.', flags: MessageFlags.Ephemeral });
       setTimeout(() => msg.delete().catch(() => {}), 5000);
       return;
     }
@@ -92,7 +93,7 @@ export class OfflineMatchInteraction {
         try {
           await this.userService.createPlayer({ discordId: interaction.user.id, name: interaction.user.username } as any);
         } catch {
-          const msg = await interaction.followUp({ content: '❌ Erro ao criar conta Timbas.', ephemeral: true });
+          const msg = await interaction.followUp({ content: '❌ Erro ao criar conta Timbas.', flags: MessageFlags.Ephemeral });
           setTimeout(() => msg.delete().catch(() => {}), 5000);
           return;
         }
@@ -109,22 +110,22 @@ export class OfflineMatchInteraction {
     await this.channelManager.moveToChannel(member, waitingChannel);
 
     await this.refreshMessage(interaction, key);
-    const msg = await interaction.followUp({ content: '✅ Você entrou na partida!', ephemeral: true });
+    const msg = await interaction.followUp({ content: '✅ Você entrou na partida!', flags: MessageFlags.Ephemeral });
     setTimeout(() => msg.delete().catch(() => {}), 3000);
   }
 
   @Button('cm/leave/:key')
   async onLeave(@Context() [interaction]: ButtonContext, @ComponentParam('key') key: string) {
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const state = this.matchStateService.get(key);
     if (!state || state.started) {
-      await interaction.followUp({ content: '❌ Não é possível sair agora.', ephemeral: true });
+      await interaction.followUp({ content: '❌ Não é possível sair agora.', flags: MessageFlags.Ephemeral });
       return;
     }
 
     const userId = interaction.user.id;
     if (!state.confirmedPlayerIds.includes(userId)) {
-      const msg = await interaction.followUp({ content: '❌ Você não está na lista.', ephemeral: true });
+      const msg = await interaction.followUp({ content: '❌ Você não está na lista.', flags: MessageFlags.Ephemeral });
       setTimeout(() => msg.delete().catch(() => {}), 5000);
       return;
     }
@@ -142,18 +143,18 @@ export class OfflineMatchInteraction {
     this.matchStateService.update(key, { confirmedPlayerIds, originalChannels });
 
     await this.refreshMessage(interaction, key);
-    const msg = await interaction.followUp({ content: '🚪 Você saiu da lista.', ephemeral: true });
+    const msg = await interaction.followUp({ content: '🚪 Você saiu da lista.', flags: MessageFlags.Ephemeral });
     setTimeout(() => msg.delete().catch(() => {}), 5000);
   }
 
   @Button('cm/draw/:key')
   async onDraw(@Context() [interaction]: ButtonContext, @ComponentParam('key') key: string) {
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const state = this.matchStateService.get(key);
     if (!state || state.started) return;
 
     if (interaction.user.id !== state.creatorId) {
-      const msg = await interaction.followUp({ content: '❌ Apenas o criador pode sortear.', ephemeral: true });
+      const msg = await interaction.followUp({ content: '❌ Apenas o criador pode sortear.', flags: MessageFlags.Ephemeral });
       setTimeout(() => msg.delete().catch(() => {}), 5000);
       return;
     }
@@ -177,30 +178,30 @@ export class OfflineMatchInteraction {
     await this.refreshMessage(interaction, key);
 
     const text = state.matchFormatValue === 3 ? 'Times e posições sorteados!' : 'Times sorteados!';
-    const msg = await interaction.followUp({ content: `🎲 ${text}`, ephemeral: true });
+    const msg = await interaction.followUp({ content: `🎲 ${text}`, flags: MessageFlags.Ephemeral });
     setTimeout(() => msg.delete().catch(() => {}), 5000);
   }
 
   @Button('cm/start/:key')
   async onStart(@Context() [interaction]: ButtonContext, @ComponentParam('key') key: string) {
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const state = this.matchStateService.get(key);
     if (!state || state.started) return;
 
     if (interaction.user.id !== state.creatorId) {
-      const msg = await interaction.followUp({ content: '❌ Apenas o criador pode iniciar.', ephemeral: true });
+      const msg = await interaction.followUp({ content: '❌ Apenas o criador pode iniciar.', flags: MessageFlags.Ephemeral });
       setTimeout(() => msg.delete().catch(() => {}), 5000);
       return;
     }
 
     if (state.confirmedPlayerIds.length < 10) {
-      const msg = await interaction.followUp({ content: '❌ É necessário ter 10 jogadores para iniciar.', ephemeral: true });
+      const msg = await interaction.followUp({ content: '❌ É necessário ter 10 jogadores para iniciar.', flags: MessageFlags.Ephemeral });
       setTimeout(() => msg.delete().catch(() => {}), 5000);
       return;
     }
 
     if ((state.matchFormatValue === 0 || state.matchFormatValue === 3) && !state.blueTeam.length) {
-      const msg = await interaction.followUp({ content: '❌ Sorteie os times primeiro.', ephemeral: true });
+      const msg = await interaction.followUp({ content: '❌ Sorteie os times primeiro.', flags: MessageFlags.Ephemeral });
       setTimeout(() => msg.delete().catch(() => {}), 5000);
       return;
     }
@@ -229,7 +230,7 @@ export class OfflineMatchInteraction {
         redTeamId = match.teamRedId;
       } catch (e) {
         this.logger.error(`Failed to create match in API: ${e}`);
-        const msg = await interaction.followUp({ content: '❌ Erro ao criar partida na API.', ephemeral: true });
+        const msg = await interaction.followUp({ content: '❌ Erro ao criar partida na API.', flags: MessageFlags.Ephemeral });
         setTimeout(() => msg.delete().catch(() => {}), 5000);
         return;
       }
@@ -251,18 +252,18 @@ export class OfflineMatchInteraction {
     }
 
     await this.refreshMessage(interaction, key);
-    const msg = await interaction.followUp({ content: '▶ Partida iniciada!', ephemeral: true });
+    const msg = await interaction.followUp({ content: '▶ Partida iniciada!', flags: MessageFlags.Ephemeral });
     setTimeout(() => msg.delete().catch(() => {}), 3000);
   }
 
   @Button('cm/finish/:key')
   async onFinish(@Context() [interaction]: ButtonContext, @ComponentParam('key') key: string) {
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const state = this.matchStateService.get(key);
     if (!state || !state.started || state.finished) return;
 
     if (interaction.user.id !== state.creatorId) {
-      const msg = await interaction.followUp({ content: '❌ Apenas o criador pode finalizar.', ephemeral: true });
+      const msg = await interaction.followUp({ content: '❌ Apenas o criador pode finalizar.', flags: MessageFlags.Ephemeral });
       setTimeout(() => msg.delete().catch(() => {}), 5000);
       return;
     }
@@ -282,13 +283,13 @@ export class OfflineMatchInteraction {
     }
 
     if (state.finishing) {
-      const msg = await interaction.followUp({ content: '❌ Seleção de vencedor já em andamento.', ephemeral: true });
+      const msg = await interaction.followUp({ content: '❌ Seleção de vencedor já em andamento.', flags: MessageFlags.Ephemeral });
       setTimeout(() => msg.delete().catch(() => {}), 5000);
       return;
     }
 
     if (!state.matchId || !state.blueTeamId || !state.redTeamId) {
-      const msg = await interaction.followUp({ content: '❌ IDs da partida não encontrados.', ephemeral: true });
+      const msg = await interaction.followUp({ content: '❌ IDs da partida não encontrados.', flags: MessageFlags.Ephemeral });
       setTimeout(() => msg.delete().catch(() => {}), 5000);
       return;
     }
@@ -304,7 +305,7 @@ export class OfflineMatchInteraction {
       );
 
     const row = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(select);
-    const msg = await interaction.followUp({ content: '🏆 Quem venceu a partida?', components: [row], ephemeral: true, fetchReply: true });
+    const msg = await interaction.followUp({ content: '🏆 Quem venceu a partida?', components: [row], flags: MessageFlags.Ephemeral, fetchReply: true });
     setTimeout(() => {
       if (!this.matchStateService.get(key)?.finished) {
         this.matchStateService.update(key, { finishing: false });
@@ -315,13 +316,13 @@ export class OfflineMatchInteraction {
 
   @Button('cm/rejoin/:key')
   async onRejoin(@Context() [interaction]: ButtonContext, @ComponentParam('key') key: string) {
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const state = this.matchStateService.get(key);
     if (!state || !state.started) return;
 
     const member = interaction.member as GuildMember;
     if (!member.voice.channel) {
-      const msg = await interaction.followUp({ content: '❌ Você precisa estar em um canal de voz.', ephemeral: true });
+      const msg = await interaction.followUp({ content: '❌ Você precisa estar em um canal de voz.', flags: MessageFlags.Ephemeral });
       setTimeout(() => msg.delete().catch(() => {}), 5000);
       return;
     }
@@ -330,7 +331,7 @@ export class OfflineMatchInteraction {
     const isRed = state.redTeam.some((e) => e.userId === interaction.user.id);
 
     if (!isBlue && !isRed) {
-      const msg = await interaction.followUp({ content: '❌ Você não faz parte desta partida.', ephemeral: true });
+      const msg = await interaction.followUp({ content: '❌ Você não faz parte desta partida.', flags: MessageFlags.Ephemeral });
       setTimeout(() => msg.delete().catch(() => {}), 5000);
       return;
     }
@@ -340,7 +341,7 @@ export class OfflineMatchInteraction {
     await this.channelManager.moveToChannel(member, channel);
 
     const teamName = isBlue ? 'Azul' : 'Vermelho';
-    const msg = await interaction.followUp({ content: `🔄 Você foi movido para o canal do Time ${teamName}.`, ephemeral: true });
+    const msg = await interaction.followUp({ content: `🔄 Você foi movido para o canal do Time ${teamName}.`, flags: MessageFlags.Ephemeral });
     setTimeout(() => msg.delete().catch(() => {}), 5000);
   }
 }

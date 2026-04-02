@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { Context, Options, SlashCommand, SlashCommandContext, UserOption } from 'necord';
-import { EmbedBuilder, GuildMember, Colors } from 'discord.js';
+import { EmbedBuilder, GuildMember, Colors, MessageFlags } from 'discord.js';
 import { LeaderboardService } from '../../leaderboard/leaderboard.service';
 
 class VersusOptions {
@@ -23,7 +23,7 @@ export class VersusCommand {
     await interaction.deferReply();
 
     if (jogador1.id === jogador2.id) {
-      const msg = await interaction.followUp({ content: 'Selecione dois jogadores diferentes.', ephemeral: true });
+      const msg = await interaction.followUp({ content: 'Selecione dois jogadores diferentes.', flags: MessageFlags.Ephemeral });
       setTimeout(() => msg.delete().catch(() => {}), 5000);
       return;
     }
@@ -60,7 +60,7 @@ export class VersusCommand {
     const s2 = extractStats(p2Raw, jogador2);
 
     if (!s1 && !s2) {
-      const msg = await interaction.followUp({ content: 'Nenhum dos jogadores possui estatísticas registradas.', ephemeral: true });
+      const msg = await interaction.followUp({ content: 'Nenhum dos jogadores possui estatísticas registradas.', flags: MessageFlags.Ephemeral });
       setTimeout(() => msg.delete().catch(() => {}), 5000);
       return;
     }

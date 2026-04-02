@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { Context, Options, SlashCommand, SlashCommandContext, StringOption } from 'necord';
-import { Client } from 'discord.js';
+import { Client, MessageFlags } from 'discord.js';
 import axios from 'axios';
 import { URL } from 'url';
 
@@ -37,16 +37,16 @@ export class SetAvatarCommand {
     @Options() { url }: SetAvatarOptions,
   ) {
     if (interaction.user.id !== BOT_OWNER_ID) {
-      await interaction.reply({ content: '❌ Apenas o dono do bot pode usar este comando.', ephemeral: true });
+      await interaction.reply({ content: '❌ Apenas o dono do bot pode usar este comando.', flags: MessageFlags.Ephemeral });
       return;
     }
 
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const imageUrl = url ?? DEFAULT_AVATAR_URL;
 
     // Validate URL to prevent SSRF
     if (!this.isValidImageUrl(imageUrl)) {
-      const msg = await interaction.followUp({ content: '❌ URL inválida ou não permitida.', ephemeral: true });
+      const msg = await interaction.followUp({ content: '❌ URL inválida ou não permitida.', flags: MessageFlags.Ephemeral });
       setTimeout(() => msg.delete().catch(() => {}), 5000);
       return;
     }
@@ -59,11 +59,11 @@ export class SetAvatarCommand {
       });
       const buffer = Buffer.from(response.data);
       await this.client.user!.setAvatar(buffer);
-      const msg = await interaction.followUp({ content: '✅ Avatar atualizado com sucesso!', ephemeral: true });
+      const msg = await interaction.followUp({ content: '✅ Avatar atualizado com sucesso!', flags: MessageFlags.Ephemeral });
       setTimeout(() => msg.delete().catch(() => {}), 5000);
     } catch (e) {
       // Don't expose error details to prevent information leakage
-      const msg = await interaction.followUp({ content: '❌ Falha ao atualizar avatar. Verifique a URL.', ephemeral: true });
+      const msg = await interaction.followUp({ content: '❌ Falha ao atualizar avatar. Verifique a URL.', flags: MessageFlags.Ephemeral });
       setTimeout(() => msg.delete().catch(() => {}), 5000);
     }
   }

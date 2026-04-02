@@ -1,6 +1,6 @@
 import { Injectable, NestInterceptor, ExecutionContext, CallHandler, Logger } from '@nestjs/common';
 import { Observable, catchError, EMPTY } from 'rxjs';
-import { Client, EmbedBuilder, Interaction } from 'discord.js';
+import { Client, EmbedBuilder, Interaction, MessageFlags } from 'discord.js';
 
 const OWNER_ID = '352240724693090305';
 
@@ -66,10 +66,10 @@ export class DiscordErrorInterceptor implements NestInterceptor {
     try {
       const i = interaction as any;
       if (i.replied || i.deferred) {
-        const msg = await i.followUp({ embeds: [embed], ephemeral: true, fetchReply: true });
+        const msg = await i.followUp({ embeds: [embed], flags: MessageFlags.Ephemeral, fetchReply: true });
         setTimeout(() => msg.delete().catch(() => {}), 10_000);
       } else if (i.reply) {
-        await i.reply({ embeds: [embed], ephemeral: true });
+        await i.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
         setTimeout(() => i.deleteReply().catch(() => {}), 10_000);
       }
     } catch (e) {

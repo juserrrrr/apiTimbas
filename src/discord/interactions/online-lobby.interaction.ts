@@ -3,6 +3,7 @@ import { Button, ComponentParam, Context, ButtonContext, StringSelect, StringSel
 import {
   ActionRowBuilder,
   GuildMember,
+  MessageFlags,
   StringSelectMenuBuilder,
   StringSelectMenuOptionBuilder,
   VoiceChannel,
@@ -80,11 +81,11 @@ export class OnlineLobbyInteraction {
 
   @Button('ol/join/:lobbyId')
   async onJoin(@Context() [interaction]: ButtonContext, @ComponentParam('lobbyId') lobbyId: string) {
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const member = interaction.member as GuildMember;
 
     if (!member.voice.channel) {
-      const msg = await interaction.followUp({ content: '❌ Você precisa estar em um canal de voz.', ephemeral: true });
+      const msg = await interaction.followUp({ content: '❌ Você precisa estar em um canal de voz.', flags: MessageFlags.Ephemeral });
       setTimeout(() => msg.delete().catch(() => {}), 5000);
       return;
     }
@@ -96,7 +97,7 @@ export class OnlineLobbyInteraction {
       try {
         await this.userService.createPlayer({ discordId: interaction.user.id, name: interaction.user.username } as any);
       } catch {
-        const msg = await interaction.followUp({ content: '❌ Erro ao criar conta Timbas.', ephemeral: true });
+        const msg = await interaction.followUp({ content: '❌ Erro ao criar conta Timbas.', flags: MessageFlags.Ephemeral });
         setTimeout(() => msg.delete().catch(() => {}), 5000);
         return;
       }
@@ -120,17 +121,17 @@ export class OnlineLobbyInteraction {
       if (waitingChannel) await this.channelManager.moveToChannel(member, waitingChannel);
 
       await this.refreshLobbyEmbed(interaction, lobby);
-      const msg = await interaction.followUp({ content: '✅ Você entrou na partida!', ephemeral: true });
+      const msg = await interaction.followUp({ content: '✅ Você entrou na partida!', flags: MessageFlags.Ephemeral });
       setTimeout(() => msg.delete().catch(() => {}), 3000);
     } catch (e: any) {
-      const msg = await interaction.followUp({ content: `❌ ${e?.message ?? 'Erro ao entrar na partida.'}`, ephemeral: true });
+      const msg = await interaction.followUp({ content: `❌ ${e?.message ?? 'Erro ao entrar na partida.'}`, flags: MessageFlags.Ephemeral });
       setTimeout(() => msg.delete().catch(() => {}), 5000);
     }
   }
 
   @Button('ol/leave/:lobbyId')
   async onLeave(@Context() [interaction]: ButtonContext, @ComponentParam('lobbyId') lobbyId: string) {
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const member = interaction.member as GuildMember;
 
     try {
@@ -138,31 +139,31 @@ export class OnlineLobbyInteraction {
       this.getLobbyUsers(lobbyId).delete(interaction.user.id);
       this.getLobbyOriginalChannels(lobbyId).delete(interaction.user.id);
       await this.refreshLobbyEmbed(interaction, lobby);
-      const msg = await interaction.followUp({ content: '🚪 Você saiu da partida.', ephemeral: true });
+      const msg = await interaction.followUp({ content: '🚪 Você saiu da partida.', flags: MessageFlags.Ephemeral });
       setTimeout(() => msg.delete().catch(() => {}), 3000);
     } catch (e: any) {
-      const msg = await interaction.followUp({ content: `❌ ${e?.message ?? 'Erro ao sair.'}`, ephemeral: true });
+      const msg = await interaction.followUp({ content: `❌ ${e?.message ?? 'Erro ao sair.'}`, flags: MessageFlags.Ephemeral });
       setTimeout(() => msg.delete().catch(() => {}), 5000);
     }
   }
 
   @Button('ol/draw/:lobbyId')
   async onDraw(@Context() [interaction]: ButtonContext, @ComponentParam('lobbyId') lobbyId: string) {
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     try {
       const lobby = await this.leagueMatchService.draw(parseInt(lobbyId), interaction.user.id);
       await this.refreshLobbyEmbed(interaction, lobby);
-      const msg = await interaction.followUp({ content: '🎲 Times sorteados!', ephemeral: true });
+      const msg = await interaction.followUp({ content: '🎲 Times sorteados!', flags: MessageFlags.Ephemeral });
       setTimeout(() => msg.delete().catch(() => {}), 3000);
     } catch (e: any) {
-      const msg = await interaction.followUp({ content: `❌ ${e?.message ?? 'Erro ao sortear.'}`, ephemeral: true });
+      const msg = await interaction.followUp({ content: `❌ ${e?.message ?? 'Erro ao sortear.'}`, flags: MessageFlags.Ephemeral });
       setTimeout(() => msg.delete().catch(() => {}), 5000);
     }
   }
 
   @Button('ol/start/:lobbyId')
   async onStart(@Context() [interaction]: ButtonContext, @ComponentParam('lobbyId') lobbyId: string) {
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     try {
       const lobby = await this.leagueMatchService.start(parseInt(lobbyId), interaction.user.id);
 
@@ -191,17 +192,17 @@ export class OnlineLobbyInteraction {
       }
 
       await this.refreshLobbyEmbed(interaction, lobby);
-      const msg = await interaction.followUp({ content: '▶ Partida iniciada!', ephemeral: true });
+      const msg = await interaction.followUp({ content: '▶ Partida iniciada!', flags: MessageFlags.Ephemeral });
       setTimeout(() => msg.delete().catch(() => {}), 3000);
     } catch (e: any) {
-      const msg = await interaction.followUp({ content: `❌ ${e?.message ?? 'Erro ao iniciar.'}`, ephemeral: true });
+      const msg = await interaction.followUp({ content: `❌ ${e?.message ?? 'Erro ao iniciar.'}`, flags: MessageFlags.Ephemeral });
       setTimeout(() => msg.delete().catch(() => {}), 5000);
     }
   }
 
   @Button('ol/finish/:lobbyId')
   async onFinish(@Context() [interaction]: ButtonContext, @ComponentParam('lobbyId') lobbyId: string) {
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
     const select = new StringSelectMenuBuilder()
       .setCustomId(`ol/winner/${lobbyId}`)
@@ -212,7 +213,7 @@ export class OnlineLobbyInteraction {
       );
 
     const row = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(select);
-    const msg = await interaction.followUp({ content: '🏆 Quem venceu a partida?', components: [row], ephemeral: true, fetchReply: true });
+    const msg = await interaction.followUp({ content: '🏆 Quem venceu a partida?', components: [row], flags: MessageFlags.Ephemeral, fetchReply: true });
     setTimeout(() => msg.delete().catch(() => {}), 120_000);
   }
 
@@ -241,7 +242,7 @@ export class OnlineLobbyInteraction {
       await this.refreshLobbyEmbed(interaction, lobby);
       await interaction.deleteReply().catch(() => {});
     } catch (e: any) {
-      await interaction.followUp({ content: `❌ ${e?.message ?? 'Erro ao finalizar.'}`, ephemeral: true });
+      await interaction.followUp({ content: `❌ ${e?.message ?? 'Erro ao finalizar.'}`, flags: MessageFlags.Ephemeral });
     }
   }
 }

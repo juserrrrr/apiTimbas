@@ -8,6 +8,7 @@ import {
   EmbedBuilder,
   AttachmentBuilder,
   GuildMember,
+  MessageFlags,
   StringSelectMenuBuilder,
   StringSelectMenuOptionBuilder,
 } from 'discord.js';
@@ -106,13 +107,14 @@ export function buildMatchEmbed(
   webUrl?: string,
   winner?: 'BLUE' | 'RED' | null,
   showDetails = false,
+  withGif = false,
 ): EmbedBuilder {
   const text = generateLeagueEmbedText(blueTeam, redTeam, matchFormat, onlineMode, winner, showDetails);
   const embed = new EmbedBuilder()
     .setDescription('```' + text + '```')
     .setColor(0x5865f2)
-    .setFooter({ text: footerText })
-    .setImage('attachment://timbasQueueGif.gif');
+    .setFooter({ text: footerText });
+  if (withGif) embed.setImage('attachment://timbasQueueGif.gif');
   if (webUrl) {
     embed.addFields({ name: '\u200b', value: `[Acompanhe pelo site](${webUrl})`, inline: false });
   }
@@ -144,16 +146,16 @@ export class CriarPersonalizadaCommand {
     const member = interaction.member as GuildMember;
 
     if (debug && interaction.user.id !== interaction.guild!.ownerId) {
-      await interaction.reply({ content: '❌ Você não tem permissão para usar o modo de debug.', ephemeral: true });
+      await interaction.reply({ content: '❌ Você não tem permissão para usar o modo de debug.', flags: MessageFlags.Ephemeral });
       return;
     }
 
     if (matchFormat === 2) {
-      await interaction.reply({ content: 'O modo Balanceado ainda está em desenvolvimento.', ephemeral: true });
+      await interaction.reply({ content: 'O modo Balanceado ainda está em desenvolvimento.', flags: MessageFlags.Ephemeral });
       return;
     }
 
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
     // Channel management
     const missing = this.channelManager.getMissingChannels(interaction.guild!);
@@ -162,7 +164,7 @@ export class CriarPersonalizadaCommand {
         new ButtonBuilder().setCustomId('ch/create/confirm').setLabel('Sim, criar canais').setStyle(ButtonStyle.Success),
         new ButtonBuilder().setCustomId('ch/create/cancel').setLabel('Não, cancelar').setStyle(ButtonStyle.Danger),
       );
-      const promptMsg = await interaction.followUp({ content: 'Canais para a partida não encontrados. Deseja criá-los?', components: [confirmRow], ephemeral: true, fetchReply: true });
+      const promptMsg = await interaction.followUp({ content: 'Canais para a partida não encontrados. Deseja criá-los?', components: [confirmRow], flags: MessageFlags.Ephemeral, fetchReply: true });
 
       const collector = promptMsg.createMessageComponentCollector({ time: 60_000, max: 1 });
       const result = await new Promise<boolean>((resolve) => {
@@ -202,10 +204,10 @@ export class CriarPersonalizadaCommand {
 
       const lobbyId = lobby.id;
       const webUrl = `${process.env.WEB_URL ?? 'http://localhost:3000'}/dashboard/match/${lobbyId}`;
-      const embed = buildMatchEmbed([], [], FORMAT_NAMES[matchFormat], 'Online', 'Aguardando jogadores... 0/10', webUrl);
-      const buttons = buildOnlineLobbyButtons(lobbyId, false, false, matchFormat);
       const gif = this.getGifAttachment();
       const files = gif ? [gif] : [];
+      const embed = buildMatchEmbed([], [], FORMAT_NAMES[matchFormat], 'Online', 'Aguardando jogadores... 0/10', webUrl, null, false, !!gif);
+      const buttons = buildOnlineLobbyButtons(lobbyId, false, false, matchFormat);
 
       const lobbyMsg = await channels.text.send({ embeds: [embed], components: buttons, files });
 
@@ -214,13 +216,13 @@ export class CriarPersonalizadaCommand {
 
       const msg = await interaction.followUp({
         content: `✅ Partida criada! Veja em ${channels.text}\n🌐 Ao vivo: ${webUrl}`,
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
         fetchReply: true,
       });
       setTimeout(() => msg.delete().catch(() => {}), 8000);
     } catch (e) {
       this.logger.error(`Error creating online lobby: ${e}`);
-      const msg = await interaction.followUp({ content: '❌ Erro inesperado ao criar a partida. Tente novamente.', ephemeral: true, fetchReply: true });
+      const msg = await interaction.followUp({ content: '❌ Erro inesperado ao criar a partida. Tente novamente.', flags: MessageFlags.Ephemeral, fetchReply: true });
       setTimeout(() => msg.delete().catch(() => {}), 5000);
     }
   }
@@ -287,11 +289,11 @@ export class CriarPersonalizadaCommand {
 
     const started = status === 'STARTED';
     const finished = status === 'FINISHED' || status === 'EXPIRED';
-    const embed = buildMatchEmbed(blueDisplay, redDisplay, FORMAT_NAMES[matchFormat], 'Online', footerMap[status] ?? '', undefined, winner, showDetails);
-    const webUrl = `${process.env.WEB_URL ?? 'http://localhost:3000'}/dashboard/match/${lobby.id}`;
-    if (!winner && !finished) {
-      embed.addFields({ name: '\u200b', value: `[Acompanhe pelo site](${webUrl})`, inline: false });
-    }
+    const webUrl = (!winner && !finished)
+      ? `${process.env.WEB_URL ?? 'http://localhost:3000'}/dashboard/match/${lobby.id}`
+      : undefined;
+    const hasGif = message.attachments?.some((a: any) => a.name === 'timbasQueueGif.gif') ?? false;
+    const embed = buildMatchEmbed(blueDisplay, redDisplay, FORMAT_NAMES[matchFormat], 'Online', footerMap[status] ?? '', webUrl, winner, showDetails, hasGif);
     const buttons = buildOnlineLobbyButtons(lobby.id, started, finished, matchFormat);
 
     try {
@@ -333,16 +335,16 @@ export class CriarPersonalizadaCommand {
       originalChannels: {},
     });
 
-    const embed = buildMatchEmbed([], [], FORMAT_NAMES[matchFormat], 'Offline', 'Aguardando jogadores...');
-    const buttons = buildOfflineMatchButtons(key, false, matchFormat, initialPlayers.length, false);
     const gif = this.getGifAttachment();
     const files = gif ? [gif] : [];
+    const embed = buildMatchEmbed([], [], FORMAT_NAMES[matchFormat], 'Offline', 'Aguardando jogadores...', undefined, null, false, !!gif);
+    const buttons = buildOfflineMatchButtons(key, false, matchFormat, initialPlayers.length, false);
 
     await channels.text.send({ embeds: [embed], components: buttons, files });
 
     const msg = await interaction.followUp({
       content: `Partida criada com sucesso! Veja em ${channels.text}`,
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
       fetchReply: true,
     });
     setTimeout(() => msg.delete().catch(() => {}), 5000);
