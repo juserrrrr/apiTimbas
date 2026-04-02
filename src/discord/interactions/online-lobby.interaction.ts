@@ -73,7 +73,11 @@ export class OnlineLobbyInteraction {
     const started = status === 'STARTED';
     const finished = ['FINISHED', 'EXPIRED'].includes(status);
     const formatName = FORMAT_NAMES[lobby?.matchFormat] ?? 'Aleatório';
-    const embed = buildMatchEmbed(blueDisplay, redDisplay, formatName, 'Online', footerMap[status] ?? '');
+    const webUrl = (!winner && !finished)
+      ? `${process.env.WEB_URL ?? 'http://localhost:3000'}/dashboard/match/${lobby.id}`
+      : undefined;
+    const hasGif = interaction.message.attachments?.some((a: any) => a.name === 'timbasQueueGif.gif') ?? false;
+    const embed = buildMatchEmbed(blueDisplay, redDisplay, formatName, 'Online', footerMap[status] ?? '', webUrl, winner, showDetails, hasGif);
     const buttons = buildOnlineLobbyButtons(lobby.id, started, finished, matchFormatValue);
 
     try { await interaction.message.edit({ embeds: [embed], components: buttons }); } catch {}
@@ -85,8 +89,8 @@ export class OnlineLobbyInteraction {
     const member = interaction.member as GuildMember;
 
     if (!member.voice.channel) {
-      const msg = await interaction.followUp({ content: '❌ Você precisa estar em um canal de voz.', flags: MessageFlags.Ephemeral });
-      setTimeout(() => msg.delete().catch(() => {}), 5000);
+      await interaction.editReply({ content: '❌ Você precisa estar em um canal de voz.' });
+      setTimeout(() => interaction.deleteReply().catch(() => {}), 5000);
       return;
     }
 
@@ -97,8 +101,8 @@ export class OnlineLobbyInteraction {
       try {
         await this.userService.createPlayer({ discordId: interaction.user.id, name: interaction.user.username } as any);
       } catch {
-        const msg = await interaction.followUp({ content: '❌ Erro ao criar conta Timbas.', flags: MessageFlags.Ephemeral });
-        setTimeout(() => msg.delete().catch(() => {}), 5000);
+        await interaction.editReply({ content: '❌ Erro ao criar conta Timbas.' });
+        setTimeout(() => interaction.deleteReply().catch(() => {}), 5000);
         return;
       }
     }
@@ -121,11 +125,11 @@ export class OnlineLobbyInteraction {
       if (waitingChannel) await this.channelManager.moveToChannel(member, waitingChannel);
 
       await this.refreshLobbyEmbed(interaction, lobby);
-      const msg = await interaction.followUp({ content: '✅ Você entrou na partida!', flags: MessageFlags.Ephemeral });
-      setTimeout(() => msg.delete().catch(() => {}), 3000);
+      await interaction.editReply({ content: '✅ Você entrou na partida!' });
+      setTimeout(() => interaction.deleteReply().catch(() => {}), 3000);
     } catch (e: any) {
-      const msg = await interaction.followUp({ content: `❌ ${e?.message ?? 'Erro ao entrar na partida.'}`, flags: MessageFlags.Ephemeral });
-      setTimeout(() => msg.delete().catch(() => {}), 5000);
+      await interaction.editReply({ content: `❌ ${e?.message ?? 'Erro ao entrar na partida.'}` });
+      setTimeout(() => interaction.deleteReply().catch(() => {}), 5000);
     }
   }
 
@@ -139,11 +143,11 @@ export class OnlineLobbyInteraction {
       this.getLobbyUsers(lobbyId).delete(interaction.user.id);
       this.getLobbyOriginalChannels(lobbyId).delete(interaction.user.id);
       await this.refreshLobbyEmbed(interaction, lobby);
-      const msg = await interaction.followUp({ content: '🚪 Você saiu da partida.', flags: MessageFlags.Ephemeral });
-      setTimeout(() => msg.delete().catch(() => {}), 3000);
+      await interaction.editReply({ content: '🚪 Você saiu da partida.' });
+      setTimeout(() => interaction.deleteReply().catch(() => {}), 3000);
     } catch (e: any) {
-      const msg = await interaction.followUp({ content: `❌ ${e?.message ?? 'Erro ao sair.'}`, flags: MessageFlags.Ephemeral });
-      setTimeout(() => msg.delete().catch(() => {}), 5000);
+      await interaction.editReply({ content: `❌ ${e?.message ?? 'Erro ao sair.'}` });
+      setTimeout(() => interaction.deleteReply().catch(() => {}), 5000);
     }
   }
 
@@ -153,11 +157,11 @@ export class OnlineLobbyInteraction {
     try {
       const lobby = await this.leagueMatchService.draw(parseInt(lobbyId), interaction.user.id);
       await this.refreshLobbyEmbed(interaction, lobby);
-      const msg = await interaction.followUp({ content: '🎲 Times sorteados!', flags: MessageFlags.Ephemeral });
-      setTimeout(() => msg.delete().catch(() => {}), 3000);
+      await interaction.editReply({ content: '🎲 Times sorteados!' });
+      setTimeout(() => interaction.deleteReply().catch(() => {}), 3000);
     } catch (e: any) {
-      const msg = await interaction.followUp({ content: `❌ ${e?.message ?? 'Erro ao sortear.'}`, flags: MessageFlags.Ephemeral });
-      setTimeout(() => msg.delete().catch(() => {}), 5000);
+      await interaction.editReply({ content: `❌ ${e?.message ?? 'Erro ao sortear.'}` });
+      setTimeout(() => interaction.deleteReply().catch(() => {}), 5000);
     }
   }
 
@@ -192,11 +196,11 @@ export class OnlineLobbyInteraction {
       }
 
       await this.refreshLobbyEmbed(interaction, lobby);
-      const msg = await interaction.followUp({ content: '▶ Partida iniciada!', flags: MessageFlags.Ephemeral });
-      setTimeout(() => msg.delete().catch(() => {}), 3000);
+      await interaction.editReply({ content: '▶ Partida iniciada!' });
+      setTimeout(() => interaction.deleteReply().catch(() => {}), 3000);
     } catch (e: any) {
-      const msg = await interaction.followUp({ content: `❌ ${e?.message ?? 'Erro ao iniciar.'}`, flags: MessageFlags.Ephemeral });
-      setTimeout(() => msg.delete().catch(() => {}), 5000);
+      await interaction.editReply({ content: `❌ ${e?.message ?? 'Erro ao iniciar.'}` });
+      setTimeout(() => interaction.deleteReply().catch(() => {}), 5000);
     }
   }
 
@@ -213,8 +217,8 @@ export class OnlineLobbyInteraction {
       );
 
     const row = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(select);
-    const msg = await interaction.followUp({ content: '🏆 Quem venceu a partida?', components: [row], flags: MessageFlags.Ephemeral, fetchReply: true });
-    setTimeout(() => msg.delete().catch(() => {}), 120_000);
+    await interaction.editReply({ content: '🏆 Quem venceu a partida?', components: [row] });
+    setTimeout(() => interaction.deleteReply().catch(() => {}), 120_000);
   }
 
   @StringSelect('ol/winner/:lobbyId')

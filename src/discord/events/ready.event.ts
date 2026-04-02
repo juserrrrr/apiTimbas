@@ -18,8 +18,8 @@ export class ReadyEvent {
     private readonly eventoCommand: EventoCommand,
   ) {}
 
-  @Once('ready')
-  async onReady(@Context() [client]: ContextOf<'ready'>) {
+  @Once('clientReady')
+  async onReady(@Context() [client]: ContextOf<'clientReady'>) {
     this.logger.log(`Bot online como ${client.user.tag} em ${client.guilds.cache.size} servidor(es)`);
 
     // Sync slash commands
