@@ -148,10 +148,10 @@ export class AuthController {
       const originalRedirect = req.cookies?.oauth_redirect ? decodeURIComponent(req.cookies.oauth_redirect) : null;
       res.clearCookie('oauth_redirect');
 
-      // Redirect to auth success page without tokens in URL
-      let redirectUrl = `${webUrl}/auth/callback`;
+      // Redirect to auth success page - O FRONTEND PRECISA DESTES DADOS NA URL PARA FUNCIONAR
+      let redirectUrl = `${webUrl}/auth/callback?token=${acessToken}&refreshToken=${refreshToken}`;
       if (originalRedirect) {
-        redirectUrl += `?redirect=${encodeURIComponent(originalRedirect)}`;
+        redirectUrl += `&redirect=${encodeURIComponent(originalRedirect)}`;
       }
       res.redirect(redirectUrl);
     } catch (e) {
