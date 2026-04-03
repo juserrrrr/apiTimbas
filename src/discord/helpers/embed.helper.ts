@@ -106,7 +106,7 @@ export function buildMatchEmbed(
   webUrl?: string,
   winner?: 'BLUE' | 'RED' | null,
   showDetails = false,
-  withGif = false,
+  gifUrl?: string | boolean,
   playersPerTeam = 5,
 ): EmbedBuilder {
   const text = generateLeagueEmbedText(blueTeam, redTeam, matchFormat, onlineMode, winner, showDetails, playersPerTeam);
@@ -114,7 +114,13 @@ export function buildMatchEmbed(
     .setDescription('```' + text + '```')
     .setColor(0x5865f2)
     .setFooter({ text: footerText });
-  if (withGif) embed.setImage('attachment://timbas.gif');
+  if (gifUrl) {
+    if (typeof gifUrl === 'string') {
+      embed.setImage(gifUrl);
+    } else {
+      embed.setImage('attachment://timbas.gif');
+    }
+  }
   if (webUrl) {
     embed.addFields({ name: '\u200b', value: `[Acompanhe pelo site](${webUrl})`, inline: false });
   }

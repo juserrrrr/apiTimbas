@@ -74,8 +74,9 @@ export class OnlineLobbyInteraction {
     const webUrl = (!winner && !finished)
       ? `${process.env.WEB_URL ?? 'http://localhost:3000'}/dashboard/match/${lobby.id}`
       : undefined;
-    const hasGif = interaction.message.attachments?.some((a: any) => a.name === 'timbasQueueGif.gif' || a.name === 'timbas.gif') ?? false;
-    const embed = buildMatchEmbed(blueDisplay, redDisplay, formatName, 'Online', footerMap[status] ?? '', webUrl, winner, showDetails, hasGif, playersPerTeam);
+    const gifAttachment = interaction.message.attachments?.find((a: any) => a.name === 'timbasQueueGif.gif' || a.name === 'timbas.gif');
+    const gifUrl = gifAttachment ? gifAttachment.url : false;
+    const embed = buildMatchEmbed(blueDisplay, redDisplay, formatName, 'Online', footerMap[status] ?? '', webUrl, winner, showDetails, gifUrl, playersPerTeam);
     const buttons = buildOnlineLobbyButtons(lobby.id, started, finished, isLivre);
 
     try { await interaction.message.edit({ embeds: [embed], components: buttons }); } catch {}
@@ -188,6 +189,19 @@ export class OnlineLobbyInteraction {
       setTimeout(() => interaction.deleteReply().catch(() => {}), 3000);
     } catch (e: any) {
       await interaction.editReply({ content: `❌ ${e?.message ?? 'Erro ao iniciar.'}` });
+      setTimeout(() => interaction.deleteReply().catch(() => {}), 5000);
+    }
+  }
+
+  @Button('ol/move/:lobbyId')
+  async onMoveUser(@Context() [interaction]: ButtonContext, @ComponentParam('lobbyId') lobbyId: string) {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    try {
+      await this.leagueMatchService.moveToRoom(parseInt(lobbyId), interaction.user.id);
+      await interaction.editReply({ content: '🎧 Movendo você para a sala do seu time!' });
+      setTimeout(() => interaction.deleteReply().catch(() => {}), 3000);
+    } catch (e: any) {
+      await interaction.editReply({ content: `❌ ${e?.message ?? 'Erro ao mover.'}` });
       setTimeout(() => interaction.deleteReply().catch(() => {}), 5000);
     }
   }

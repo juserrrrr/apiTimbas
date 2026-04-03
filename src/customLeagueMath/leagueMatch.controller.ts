@@ -112,6 +112,17 @@ export class LeagueMatchController {
   }
 
   @UseGuards(AuthGuard)
+  @Post(':id/move-to-room')
+  async moveToRoom(@Param('id', ParseIntPipe) id: number, @Req() req: any) {
+    const tokenPayload = req.tokenPayload;
+    const discordId = tokenPayload?.discordId;
+    if (!discordId) {
+      throw new BadRequestException('ID do Discord não encontrado no token.');
+    }
+    return this.leagueMatchService.moveToRoom(id, discordId);
+  }
+
+  @UseGuards(AuthGuard)
   @Post(':id/finish')
   async finish(@Param('id', ParseIntPipe) id: number, @Body() dto: FinishMatchDto, @Req() req: any) {
     const tokenPayload = req.tokenPayload;

@@ -56,5 +56,10 @@ export function buildOnlineLobbyButtons(
     new ButtonBuilder().setCustomId(`ol/start/${lobbyId}`).setLabel('Iniciar').setStyle(ButtonStyle.Success).setEmoji('▶').setDisabled(started || finished),
     new ButtonBuilder().setCustomId(`ol/finish/${lobbyId}`).setLabel('Finalizar').setStyle(ButtonStyle.Danger).setEmoji('🏁').setDisabled(finished),
   );
+  if (started && !finished) {
+    row2.addComponents(
+      new ButtonBuilder().setCustomId(`ol/move/${lobbyId}`).setLabel('Ir para a sala').setStyle(ButtonStyle.Primary).setEmoji('🎧')
+    );
+  }
   return [row1, row2];
 }

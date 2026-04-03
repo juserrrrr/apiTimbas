@@ -223,9 +223,10 @@ export class LeagueMatchService {
     const webUrl = (!winner && !finished)
       ? `${process.env.WEB_URL ?? 'http://localhost:3000'}/dashboard/match/${lobby.id}`
       : undefined;
-    const hasGif = message.attachments?.some((a: any) => a.name === 'timbas.gif' || a.name === 'timbasQueueGif.gif') ?? false;
+    const gifAttachment = message.attachments?.find((a: any) => a.name === 'timbas.gif' || a.name === 'timbasQueueGif.gif');
+    const gifUrl = gifAttachment ? gifAttachment.url : false;
     const formatName = MATCH_TYPE_LABELS[matchFormat ?? 'ALEATORIO'] ?? 'Aleatório';
-    const embed = buildMatchEmbed(blueDisplay, redDisplay, formatName, 'Online', footerMap[status] ?? '', webUrl, winner, showDetails, hasGif, playersPerTeam);
+    const embed = buildMatchEmbed(blueDisplay, redDisplay, formatName, 'Online', footerMap[status] ?? '', webUrl, winner, showDetails, gifUrl, playersPerTeam);
     const buttons = buildOnlineLobbyButtons(lobby.id, started, finished, matchFormat === 'LIVRE');
 
     try {
@@ -291,15 +292,12 @@ export class LeagueMatchService {
             try { member = await guild.members.fetch(user.discordId); } catch {}
           }
           const channel = (member as any)?.voice?.channel as VoiceChannel | null;
-          if (!channel) {
-            throw new BadRequestException('Você precisa estar em um canal de voz no servidor do Discord para entrar na partida.');
-          }
 
           const waitingChannel = guild.channels.cache.find(
             (c) => c.type === 2 && c.name === '| 🕘 | AGUARDANDO'
           ) as VoiceChannel | undefined;
 
-          if (waitingChannel && channel.id !== waitingChannel.id) {
+          if (channel && waitingChannel && channel.id !== waitingChannel.id) {
             await (member as any)?.voice?.setChannel(waitingChannel).catch(() => {});
           }
         }
@@ -482,6 +480,55 @@ export class LeagueMatchService {
 
     this.emit(matchId, { type: 'match_started', payload: updated });
     return updated;
+  }
+
+  async moveToRoom(matchId: number, discordId: string) {
+    const match = await this.findOne(matchId);
+    if (!match.ServerDiscordId) {
+      throw new BadRequestException('Partida não vinculada a um servidor do Discord.');
+    }
+    if (match.status !== MatchStatus.STARTED) {
+      throw new BadRequestException('A partida não está em andamento.');
+    }
+
+    const guild = this.client.guilds.cache.get(match.ServerDiscordId);
+    if (!guild) {
+      throw new BadRequestException('Servidor do Discord não encontrado.');
+    }
+
+    let member = guild.members.cache.get(discordId);
+    if (!member) {
+      try { member = await guild.members.fetch(discordId); } catch {}
+    }
+    if (!member) {
+      throw new BadRequestException('Membro não encontrado no Discord.');
+    }
+
+    const channel = (member as any)?.voice?.channel as VoiceChannel | null;
+    if (!channel) {
+      throw new BadRequestException('Você precisa estar conectado a algum canal de voz no servidor para ser movido.');
+    }
+
+    const isBlue = match.Teams.find(t => t.id === match.teamBlueId)?.players?.some(p => p.user?.discordId === discordId);
+    const isRed = match.Teams.find(t => t.id === match.teamRedId)?.players?.some(p => p.user?.discordId === discordId);
+
+    let targetChannelName = '';
+    if (isBlue) targetChannelName = 'LADO [ |🔵| ]';
+    else if (isRed) targetChannelName = 'LADO [ |🔴| ]';
+    else throw new BadRequestException('Você não está em nenhum time nesta partida.');
+
+    const targetChannel = guild.channels.cache.find(c => c.type === 2 && c.name === targetChannelName) as VoiceChannel | undefined;
+    if (!targetChannel) {
+      throw new BadRequestException(`Canal de voz do seu time (${targetChannelName}) não encontrado.`);
+    }
+
+    if (channel.id !== targetChannel.id) {
+      await (member as any)?.voice?.setChannel(targetChannel).catch(() => {
+        throw new BadRequestException('Erro ao mover você para o canal do time. Verifique suas permissões.');
+      });
+    }
+
+    return { success: true, message: 'Movido com sucesso.' };
   }
 
   async finish(matchId: number, requesterDiscordId: string, winnerSide: Side) {
