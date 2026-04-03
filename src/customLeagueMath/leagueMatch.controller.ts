@@ -42,12 +42,11 @@ export class LeagueMatchController {
   @Post('online')
   async createOnline(@Body() dto: CreateOnlineMatchDto, @Req() req: any) {
     const tokenPayload = req.tokenPayload;
-    // For regular users, always use token's discordId
-    if (tokenPayload?.role !== Role.BOT && tokenPayload?.role !== Role.ADMIN) {
+    if (tokenPayload?.role === Role.BOT) {
+      if (!dto.creatorDiscordId) throw new BadRequestException('creatorDiscordId é obrigatório para BOT.');
+    } else {
       if (!tokenPayload?.discordId) throw new BadRequestException('Usuário não identificado.');
       dto.creatorDiscordId = tokenPayload.discordId;
-    } else if (!dto.creatorDiscordId) {
-      throw new BadRequestException('creatorDiscordId é obrigatório para BOT/ADMIN.');
     }
 
     const match = await this.leagueMatchService.createOnline(dto);
