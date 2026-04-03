@@ -19,6 +19,13 @@ import { Subject } from 'rxjs';
 import { Cron } from '@nestjs/schedule';
 import { Client, VoiceChannel } from 'discord.js';
 
+export interface VoiceStatusPayload {
+  discordId: string;
+  channelId: string | null;
+  channelName: string | null;
+  channelType: 'WAITING' | 'BLUE' | 'RED' | 'OTHER' | null;
+}
+
 export interface MatchEvent {
   type:
     | 'player_joined'
@@ -27,6 +34,7 @@ export interface MatchEvent {
     | 'match_started'
     | 'match_finished'
     | 'match_expired'
+    | 'voice_status'
     | 'state';
   payload: any;
 }
@@ -73,6 +81,25 @@ export class LeagueMatchService {
   private removeSubject(matchId: number) {
     const sub = this.eventSubjects.get(matchId);
     if (sub) { sub.complete(); this.eventSubjects.delete(matchId); }
+  }
+
+  emitVoiceStatus(matchId: number, payload: VoiceStatusPayload): void {
+    this.emit(matchId, { type: 'voice_status', payload });
+  }
+
+  async findActiveMatchIdForUser(guildId: string, discordId: string): Promise<number | null> {
+    const match = await this.prisma.customLeagueMatch.findFirst({
+      where: {
+        ServerDiscordId: guildId,
+        status: { in: ['WAITING', 'STARTED'] },
+        OR: [
+          { queuePlayers: { some: { user: { discordId } } } },
+          { Teams: { some: { players: { some: { user: { discordId } } } } } },
+        ],
+      },
+      select: { id: true },
+    });
+    return match?.id ?? null;
   }
 
   createSseTicket(matchId: number): string {

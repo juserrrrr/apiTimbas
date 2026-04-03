@@ -23,6 +23,7 @@ import { EventoCommand } from './commands/evento.command';
 // Events
 import { ReadyEvent } from './events/ready.event';
 import { MemberEvent } from './events/member.event';
+import { VoiceEvent } from './events/voice.event';
 
 // Interactions
 import { OfflineMatchInteraction } from './interactions/offline-match.interaction';
@@ -80,6 +81,7 @@ import { AuthModule } from '../auth/auth.module';
     // Events
     ReadyEvent,
     MemberEvent,
+    VoiceEvent,
     // Interactions
     OfflineMatchInteraction,
     OfflineMatchSelectInteraction,
