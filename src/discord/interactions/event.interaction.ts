@@ -15,7 +15,8 @@ import { EventoCommand } from '../commands/evento.command';
 import { LeagueMatchService } from '../../customLeagueMath/leagueMatch.service';
 import { ChannelManagerService } from '../services/channel-manager.service';
 import { MatchStateService } from '../services/match-state.service';
-import { buildMatchEmbed, buildOnlineLobbyButtons, buildOfflineMatchButtons } from '../commands/criar-personalizada.command';
+import { buildMatchEmbed } from '../helpers/embed.helper';
+import { buildOfflineMatchButtons, buildOnlineLobbyButtons } from '../helpers/match-buttons.helper';
 
 const FORMAT_NAMES: Record<number, string> = { 0: 'Aleatório', 1: 'Livre', 3: 'Aleatório Completo' };
 const FORMAT_API: Record<number, string> = { 0: 'ALEATORIO', 1: 'LIVRE', 3: 'ALEATORIO_COMPLETO' };

@@ -4,7 +4,7 @@ import { GuildMember, MessageFlags, VoiceChannel } from 'discord.js';
 import { MatchStateService } from '../services/match-state.service';
 import { ChannelManagerService } from '../services/channel-manager.service';
 import { LeagueMatchService } from '../../customLeagueMath/leagueMatch.service';
-import { buildMatchEmbed } from '../commands/criar-personalizada.command';
+import { buildMatchEmbed } from '../helpers/embed.helper';
 
 const FORMAT_NAMES: Record<number, string> = { 0: 'Aleatório', 1: 'Livre', 3: 'Aleatório Completo' };
 
