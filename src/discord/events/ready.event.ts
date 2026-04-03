@@ -37,7 +37,7 @@ export class ReadyEvent {
     this.presenceInterval = setInterval(async () => {
       const activities = [
         { name: 'v0.7', type: ActivityType.Streaming, url: 'https://www.twitch.tv/juserrrrr' },
-        { name: `${this.client.users.cache.size} membros`, type: ActivityType.Streaming, url: 'https://www.twitch.tv/juserrrrr' },
+        { name: `${this.client.guilds.cache.reduce((acc, g) => acc + g.memberCount, 0)} membros`, type: ActivityType.Streaming, url: 'https://www.twitch.tv/juserrrrr' },
       ];
       const act = activities[this.presenceIndex % activities.length];
       this.presenceIndex++;
