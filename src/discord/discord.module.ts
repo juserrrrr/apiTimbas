@@ -17,7 +17,7 @@ import { SetAvatarCommand } from './commands/setavatar.command';
 import { TrazertodosCommand } from './commands/trazertodos.command';
 import { VersusCommand } from './commands/versus.command';
 import { UsuarioLolCommand } from './commands/usuariolol.command';
-import { CriarPersonalizadaCommand } from './commands/criar-personalizada.command';
+import { CriarPartidaCommand } from './commands/criar-partida.command';
 import { EventoCommand } from './commands/evento.command';
 
 // Events
@@ -76,7 +76,7 @@ import { AuthModule } from '../auth/auth.module';
     TrazertodosCommand,
     VersusCommand,
     UsuarioLolCommand,
-    CriarPersonalizadaCommand,
+    CriarPartidaCommand,
     EventoCommand,
     // Events
     ReadyEvent,

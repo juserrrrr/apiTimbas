@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { DiscordServerService } from '../discordServer/discordServer.service';
 
@@ -28,6 +29,7 @@ export interface PlayerDetailStats {
 export interface MatchHistoryEntry {
   id: number;
   matchType: string;
+  playersPerTeam: number;
   dateCreated: Date;
   winnerId: number | null;
   blueTeam: { id: number; players: { userId: number; name: string; discordId: string; avatar: string | null; position: string | null }[] };
@@ -43,8 +45,13 @@ export class LeaderboardService {
 
   async getLeaderboardForServer(
     discordServerId: string,
+    playersPerTeam?: number,
   ): Promise<PlayerStats[]> {
     await this.discordServerService.findOrCreate(discordServerId);
+
+    const modeFilter = playersPerTeam
+      ? Prisma.sql`AND ctm."playersPerTeam" = ${playersPerTeam}`
+      : Prisma.sql``;
 
     const results: any[] = await this.prisma.$queryRaw`
       WITH "PlayerRawStats" AS (
@@ -61,6 +68,7 @@ export class LeaderboardService {
         WHERE
             ctm."ServerDiscordId" = ${discordServerId}
             AND ctm."winnerId" IS NOT NULL
+            ${modeFilter}
         GROUP BY
             u.id
       )
@@ -91,8 +99,7 @@ export class LeaderboardService {
     `;
 
     return results.map((player, index) => {
-      const winRate =
-        player.totalGames > 0 ? player.wins / player.totalGames : 0;
+      const winRate = player.totalGames > 0 ? player.wins / player.totalGames : 0;
       return {
         rank: index + 1,
         userId: player.userId,
@@ -111,6 +118,7 @@ export class LeaderboardService {
   async getPlayerDetailStats(
     discordServerId: string,
     userId: number,
+    playersPerTeam?: number,
   ): Promise<PlayerDetailStats> {
     await this.discordServerService.findOrCreate(discordServerId);
 
@@ -118,19 +126,12 @@ export class LeaderboardService {
       where: {
         ServerDiscordId: discordServerId,
         winnerId: { not: null },
-        Teams: {
-          some: {
-            players: { some: { userId } },
-          },
-        },
+        ...(playersPerTeam ? { playersPerTeam } : {}),
+        Teams: { some: { players: { some: { userId } } } },
       },
       include: {
         Teams: {
-          include: {
-            players: {
-              where: { userId },
-            },
-          },
+          include: { players: { where: { userId } } },
         },
       },
       orderBy: { dateCreated: 'desc' },
@@ -140,32 +141,23 @@ export class LeaderboardService {
       .map((match) => {
         const playerTeam = match.Teams.find((t) => t.players.length > 0);
         if (!playerTeam) return null;
-        return {
-          won: match.winnerId === playerTeam.id,
-          side: playerTeam.side,
-          date: match.dateCreated,
-        };
+        return { won: match.winnerId === playerTeam.id, side: playerTeam.side, date: match.dateCreated };
       })
       .filter((r): r is NonNullable<typeof r> => r !== null);
 
-    // Current streak
     let currentStreakCount = 0;
     let currentStreakType: 'W' | 'L' | null = null;
     for (const result of matchResults) {
       if (currentStreakType === null) {
         currentStreakType = result.won ? 'W' : 'L';
         currentStreakCount = 1;
-      } else if (
-        (result.won && currentStreakType === 'W') ||
-        (!result.won && currentStreakType === 'L')
-      ) {
+      } else if ((result.won && currentStreakType === 'W') || (!result.won && currentStreakType === 'L')) {
         currentStreakCount++;
       } else {
         break;
       }
     }
 
-    // Longest win streak
     let longestWinStreak = 0;
     let tempStreak = 0;
     for (const result of [...matchResults].reverse()) {
@@ -177,18 +169,13 @@ export class LeaderboardService {
       }
     }
 
-    // Recent form (last 10)
-    const recentForm: ('W' | 'L')[] = matchResults
-      .slice(0, 10)
-      .map((r) => (r.won ? 'W' : 'L'));
+    const recentForm: ('W' | 'L')[] = matchResults.slice(0, 10).map((r) => (r.won ? 'W' : 'L'));
 
-    // Side stats
     const blueSideMatches = matchResults.filter((r) => r.side === 'BLUE');
     const redSideMatches = matchResults.filter((r) => r.side === 'RED');
     const blueSideWins = blueSideMatches.filter((r) => r.won).length;
     const redSideWins = redSideMatches.filter((r) => r.won).length;
 
-    // Weekly performance (last 8 weeks)
     const weeklyMap = new Map<string, { week: string; wins: number; losses: number }>();
     for (const result of matchResults) {
       const d = new Date(result.date);
@@ -197,9 +184,7 @@ export class LeaderboardService {
       const monday = new Date(d.setDate(diff));
       monday.setHours(0, 0, 0, 0);
       const key = monday.toISOString().split('T')[0];
-      if (!weeklyMap.has(key)) {
-        weeklyMap.set(key, { week: key, wins: 0, losses: 0 });
-      }
+      if (!weeklyMap.has(key)) weeklyMap.set(key, { week: key, wins: 0, losses: 0 });
       const entry = weeklyMap.get(key)!;
       if (result.won) entry.wins++;
       else entry.losses++;
@@ -219,19 +204,13 @@ export class LeaderboardService {
         wins: blueSideWins,
         losses: blueSideMatches.length - blueSideWins,
         total: blueSideMatches.length,
-        winRate:
-          blueSideMatches.length > 0
-            ? parseFloat((blueSideWins / blueSideMatches.length).toFixed(2))
-            : 0,
+        winRate: blueSideMatches.length > 0 ? parseFloat((blueSideWins / blueSideMatches.length).toFixed(2)) : 0,
       },
       redSide: {
         wins: redSideWins,
         losses: redSideMatches.length - redSideWins,
         total: redSideMatches.length,
-        winRate:
-          redSideMatches.length > 0
-            ? parseFloat((redSideWins / redSideMatches.length).toFixed(2))
-            : 0,
+        winRate: redSideMatches.length > 0 ? parseFloat((redSideWins / redSideMatches.length).toFixed(2)) : 0,
       },
       weeklyPerformance,
     };
@@ -239,20 +218,21 @@ export class LeaderboardService {
 
   async getMatchHistoryForServer(
     discordServerId: string,
+    playersPerTeam?: number,
   ): Promise<MatchHistoryEntry[]> {
     await this.discordServerService.findOrCreate(discordServerId);
 
     const matches = await this.prisma.customLeagueMatch.findMany({
-      where: { ServerDiscordId: discordServerId, status: 'FINISHED' },
+      where: {
+        ServerDiscordId: discordServerId,
+        status: 'FINISHED',
+        ...(playersPerTeam ? { playersPerTeam } : {}),
+      },
       include: {
         Teams: {
           include: {
             players: {
-              include: {
-                user: {
-                  select: { id: true, name: true, discordId: true, avatar: true },
-                },
-              },
+              include: { user: { select: { id: true, name: true, discordId: true, avatar: true } } },
             },
           },
         },
@@ -278,16 +258,11 @@ export class LeaderboardService {
       return {
         id: match.id,
         matchType: match.matchType,
+        playersPerTeam: match.playersPerTeam,
         dateCreated: match.dateCreated,
         winnerId: match.winnerId,
-        blueTeam: {
-          id: blueTeamRaw?.id ?? 0,
-          players: mapPlayers(blueTeamRaw),
-        },
-        redTeam: {
-          id: redTeamRaw?.id ?? 0,
-          players: mapPlayers(redTeamRaw),
-        },
+        blueTeam: { id: blueTeamRaw?.id ?? 0, players: mapPlayers(blueTeamRaw) },
+        redTeam: { id: redTeamRaw?.id ?? 0, players: mapPlayers(redTeamRaw) },
       };
     });
   }

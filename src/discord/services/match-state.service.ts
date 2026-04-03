@@ -9,6 +9,7 @@ export interface OfflineMatchState {
   matchFormatName: string;
   onlineModeValue: number;
   onlineModeName: string;
+  playersPerTeam: number;
   guildId: string;
   waitingChannelId: string;
   blueChannelId: string;

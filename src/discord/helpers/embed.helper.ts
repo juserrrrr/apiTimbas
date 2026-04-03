@@ -1,6 +1,4 @@
-/**
- * Port of commands/utilsPerson/helpers.py → generate_league_embed_text
- */
+import { EmbedBuilder, AttachmentBuilder } from 'discord.js';
 
 interface TeamPlayer {
   name: string;
@@ -16,6 +14,13 @@ function toTeamPlayer(p: any): TeamPlayer {
   }
   return { name: '?', position: '' };
 }
+
+export const MATCH_TYPE_LABELS: Record<string, string> = {
+  ALEATORIO: 'Aleatório',
+  LIVRE: 'Livre',
+  ALEATORIO_COMPLETO: 'Aleatório Completo',
+  BALANCEADO: 'Balanceado',
+};
 
 const FORMAT_ABBREV: Record<string, string> = {
   Aleatório: 'Aleatório',
@@ -34,11 +39,6 @@ const POS_ABBREV: Record<string, string> = {
   Top: 'TOP', Jungle: 'JG', Suporte: 'SUP',
 };
 
-function pad(s: string, width: number, align: 'left' | 'right' = 'left'): string {
-  if (align === 'right') return s.padStart(width);
-  return s.padEnd(width);
-}
-
 export function generateLeagueEmbedText(
   blueTeam: any[],
   redTeam: any[],
@@ -46,9 +46,8 @@ export function generateLeagueEmbedText(
   onlineMode: string,
   winner?: 'BLUE' | 'RED' | null,
   showDetails = false,
+  playersPerTeam = 5,
 ): string {
-  const half = 5;
-
   const formatStr = `Fmt: ${FORMAT_ABBREV[matchFormat] ?? matchFormat.slice(0, 10)}`;
   const onlineModeStr = `Modo: ${MODE_ABBREV[onlineMode] ?? onlineMode.slice(0, 8)}`;
   const mapName = "[League of Legends] - Summoner's Rift";
@@ -75,7 +74,7 @@ export function generateLeagueEmbedText(
     '',
   ];
 
-  for (let i = 0; i < half; i++) {
+  for (let i = 0; i < playersPerTeam; i++) {
     const bRaw = i < blueTeam.length ? toTeamPlayer(blueTeam[i]) : { name: 'Vazio', position: '' };
     const rRaw = i < redTeam.length ? toTeamPlayer(redTeam[i]) : { name: 'Vazio', position: '' };
 
@@ -96,4 +95,28 @@ export function generateLeagueEmbedText(
   }
 
   return lines.join('\n');
+}
+
+export function buildMatchEmbed(
+  blueTeam: any[],
+  redTeam: any[],
+  matchFormat: string,
+  onlineMode: string,
+  footerText: string,
+  webUrl?: string,
+  winner?: 'BLUE' | 'RED' | null,
+  showDetails = false,
+  withGif = false,
+  playersPerTeam = 5,
+): EmbedBuilder {
+  const text = generateLeagueEmbedText(blueTeam, redTeam, matchFormat, onlineMode, winner, showDetails, playersPerTeam);
+  const embed = new EmbedBuilder()
+    .setDescription('```' + text + '```')
+    .setColor(0x5865f2)
+    .setFooter({ text: footerText });
+  if (withGif) embed.setImage('attachment://timbas.gif');
+  if (webUrl) {
+    embed.addFields({ name: '\u200b', value: `[Acompanhe pelo site](${webUrl})`, inline: false });
+  }
+  return embed;
 }

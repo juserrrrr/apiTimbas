@@ -11,6 +11,7 @@ import {
   ParseIntPipe,
   Req,
   Res,
+  BadRequestException,
 } from '@nestjs/common';
 import { Response } from 'express';
 import { CreateCustomLeagueMatchDto } from './dto/create-leagueMatch.dto';
@@ -26,9 +27,7 @@ import { Role } from '../enums/role.enum';
 
 @Controller('leagueMatch')
 export class LeagueMatchController {
-  constructor(
-    private readonly leagueMatchService: LeagueMatchService,
-  ) {}
+  constructor(private readonly leagueMatchService: LeagueMatchService) {}
 
   // ─── OFFLINE CREATE ────────────────────────────────────────────────────────
   @UseGuards(AuthGuard, RoleGuard)
@@ -39,11 +38,29 @@ export class LeagueMatchController {
   }
 
   // ─── ONLINE LIFECYCLE ───────────────────────────────────────────────────
-  @UseGuards(AuthGuard, RoleGuard)
-  @Roles(Role.ADMIN, Role.BOT)
+  @UseGuards(AuthGuard)
   @Post('online')
-  async createOnline(@Body() dto: CreateOnlineMatchDto) {
-    return this.leagueMatchService.createOnline(dto);
+  async createOnline(@Body() dto: CreateOnlineMatchDto, @Req() req: any) {
+    const tokenPayload = req.tokenPayload;
+    // For regular users, always use token's discordId
+    if (tokenPayload?.role !== Role.BOT && tokenPayload?.role !== Role.ADMIN) {
+      if (!tokenPayload?.discordId) throw new BadRequestException('Usuário não identificado.');
+      dto.creatorDiscordId = tokenPayload.discordId;
+    } else if (!dto.creatorDiscordId) {
+      throw new BadRequestException('creatorDiscordId é obrigatório para BOT/ADMIN.');
+    }
+
+    const match = await this.leagueMatchService.createOnline(dto);
+
+    // Fire-and-forget: send embed to Discord guild channel
+    this.leagueMatchService.announceMatchToGuild(
+      match.id,
+      dto.discordServerId,
+      dto.matchFormat,
+      match.playersPerTeam,
+    ).catch(() => {});
+
+    return match;
   }
 
   @UseGuards(AuthGuard)
@@ -57,9 +74,7 @@ export class LeagueMatchController {
   async join(@Param('id', ParseIntPipe) id: number, @Body() dto: JoinMatchDto, @Req() req: any) {
     const tokenPayload = req.tokenPayload;
     if (tokenPayload?.role !== Role.BOT && tokenPayload?.role !== Role.ADMIN) {
-      if (tokenPayload?.discordId) {
-        dto.discordId = tokenPayload.discordId;
-      }
+      if (tokenPayload?.discordId) dto.discordId = tokenPayload.discordId;
     }
     return this.leagueMatchService.join(id, dto);
   }

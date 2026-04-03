@@ -11,14 +11,10 @@ import {
 import { LeagueMatchService } from '../../customLeagueMath/leagueMatch.service';
 import { UserService } from '../../user/user.service';
 import { ChannelManagerService } from '../services/channel-manager.service';
-import { buildOnlineLobbyButtons, buildMatchEmbed } from '../commands/criar-personalizada.command';
+import { buildOnlineLobbyButtons } from '../helpers/match-buttons.helper';
+import { buildMatchEmbed, MATCH_TYPE_LABELS } from '../helpers/embed.helper';
 
-const FORMAT_NAMES: Record<string, string> = { ALEATORIO: 'Aleatório', LIVRE: 'Livre', ALEATORIO_COMPLETO: 'Aleatório Completo' };
-const FORMAT_VALUES: Record<number, number> = {};
-
-// Map lobby ID -> discord users cache
 const lobbyUsers = new Map<string, Map<string, GuildMember>>();
-// Map lobby ID -> original channel ID per user
 const lobbyOriginalChannels = new Map<string, Map<string, string>>();
 
 @Injectable()
@@ -43,10 +39,12 @@ export class OnlineLobbyInteraction {
 
   private async refreshLobbyEmbed(interaction: any, lobby: any) {
     const status = lobby?.status ?? 'WAITING';
-    const players = lobby?.queuePlayers ?? lobby?.players ?? [];
+    const players = lobby?.queuePlayers ?? [];
     const teams = lobby?.Teams ?? [];
     const blueId = lobby?.teamBlueId;
     const redId = lobby?.teamRedId;
+    const playersPerTeam = lobby?.playersPerTeam ?? 5;
+    const maxPlayers = playersPerTeam * 2;
 
     let blueTeam: any[] = [];
     let redTeam: any[] = [];
@@ -56,29 +54,29 @@ export class OnlineLobbyInteraction {
     }
 
     const showDetails = blueTeam.length > 0 || redTeam.length > 0;
-    const blueDisplay = showDetails ? blueTeam : players.slice(0, 5);
-    const redDisplay = showDetails ? redTeam : players.slice(5, 10);
+    const blueDisplay = showDetails ? blueTeam : players.slice(0, playersPerTeam);
+    const redDisplay = showDetails ? redTeam : players.slice(playersPerTeam, maxPlayers);
 
     let winner: 'BLUE' | 'RED' | null = null;
     if (status === 'FINISHED') winner = lobby.winnerId === blueId ? 'BLUE' : 'RED';
 
     const footerMap: Record<string, string> = {
-      WAITING: `Aguardando jogadores... ${players.length}/10`,
+      WAITING: `Aguardando jogadores... ${players.length}/${maxPlayers}`,
       STARTED: 'Partida em andamento! 🎮',
       FINISHED: 'Partida finalizada! 🏁',
       EXPIRED: 'Partida expirada.',
     };
 
-    const matchFormatValue = lobby?.matchFormat === 'LIVRE' ? 1 : 0;
+    const isLivre = lobby?.matchType === 'LIVRE';
     const started = status === 'STARTED';
     const finished = ['FINISHED', 'EXPIRED'].includes(status);
-    const formatName = FORMAT_NAMES[lobby?.matchFormat] ?? 'Aleatório';
+    const formatName = MATCH_TYPE_LABELS[lobby?.matchType] ?? 'Aleatório';
     const webUrl = (!winner && !finished)
       ? `${process.env.WEB_URL ?? 'http://localhost:3000'}/dashboard/match/${lobby.id}`
       : undefined;
-    const hasGif = interaction.message.attachments?.some((a: any) => a.name === 'timbasQueueGif.gif') ?? false;
-    const embed = buildMatchEmbed(blueDisplay, redDisplay, formatName, 'Online', footerMap[status] ?? '', webUrl, winner, showDetails, hasGif);
-    const buttons = buildOnlineLobbyButtons(lobby.id, started, finished, matchFormatValue);
+    const hasGif = interaction.message.attachments?.some((a: any) => a.name === 'timbasQueueGif.gif' || a.name === 'timbas.gif') ?? false;
+    const embed = buildMatchEmbed(blueDisplay, redDisplay, formatName, 'Online', footerMap[status] ?? '', webUrl, winner, showDetails, hasGif, playersPerTeam);
+    const buttons = buildOnlineLobbyButtons(lobby.id, started, finished, isLivre);
 
     try { await interaction.message.edit({ embeds: [embed], components: buttons }); } catch {}
   }
@@ -94,7 +92,6 @@ export class OnlineLobbyInteraction {
       return;
     }
 
-    // Ensure account exists
     try {
       await this.userService.findOneByDiscordId(interaction.user.id);
     } catch {
@@ -108,17 +105,13 @@ export class OnlineLobbyInteraction {
     }
 
     try {
-      const lobby = await this.leagueMatchService.join(parseInt(lobbyId), {
-        discordId: interaction.user.id,
-      });
+      const lobby = await this.leagueMatchService.join(parseInt(lobbyId), { discordId: interaction.user.id });
 
-      // Cache the member and original channel for voice moves
       this.getLobbyUsers(lobbyId).set(interaction.user.id, member);
       if (member.voice.channel) {
         this.getLobbyOriginalChannels(lobbyId).set(interaction.user.id, member.voice.channel.id);
       }
 
-      // Move to waiting channel
       const waitingChannel = interaction.guild!.channels.cache.find(
         (c) => c.name === '| 🕘 | AGUARDANDO',
       ) as VoiceChannel | undefined;
@@ -136,8 +129,6 @@ export class OnlineLobbyInteraction {
   @Button('ol/leave/:lobbyId')
   async onLeave(@Context() [interaction]: ButtonContext, @ComponentParam('lobbyId') lobbyId: string) {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-    const member = interaction.member as GuildMember;
-
     try {
       const lobby = await this.leagueMatchService.leave(parseInt(lobbyId), interaction.user.id);
       this.getLobbyUsers(lobbyId).delete(interaction.user.id);
@@ -171,16 +162,13 @@ export class OnlineLobbyInteraction {
     try {
       const lobby = await this.leagueMatchService.start(parseInt(lobbyId), interaction.user.id);
 
-      // Move players to team channels
       const blueChannel = interaction.guild!.channels.cache.find((c) => c.name === 'LADO [ |🔵| ]') as VoiceChannel | undefined;
       const redChannel = interaction.guild!.channels.cache.find((c) => c.name === 'LADO [ |🔴| ]') as VoiceChannel | undefined;
 
       if (blueChannel && redChannel) {
         const teams = lobby?.Teams ?? [];
-        const blueId = lobby?.teamBlueId;
-        const redId = lobby?.teamRedId;
-        const blueTeam = teams.find((t: any) => t.id === blueId)?.players ?? [];
-        const redTeam = teams.find((t: any) => t.id === redId)?.players ?? [];
+        const blueTeam = teams.find((t: any) => t.id === lobby?.teamBlueId)?.players ?? [];
+        const redTeam = teams.find((t: any) => t.id === lobby?.teamRedId)?.players ?? [];
         const users = this.getLobbyUsers(lobbyId);
 
         for (const p of blueTeam) {
@@ -229,7 +217,6 @@ export class OnlineLobbyInteraction {
     try {
       const lobby = await this.leagueMatchService.finish(parseInt(lobbyId), interaction.user.id, winner);
 
-      // Restore original channels
       const users = this.getLobbyUsers(lobbyId);
       const originalChannels = this.getLobbyOriginalChannels(lobbyId);
       const waitingChannel = interaction.guild!.channels.cache.find((c) => c.name === '| 🕘 | AGUARDANDO') as VoiceChannel | undefined;

@@ -1,4 +1,4 @@
-import { Controller, Get, Param, ParseIntPipe, UseGuards } from '@nestjs/common';
+import { Controller, Get, Param, ParseIntPipe, Query, UseGuards } from '@nestjs/common';
 import { LeaderboardService } from './leaderboard.service';
 import { AuthGuard } from '../auth/guards/auth.guard';
 
@@ -8,20 +8,30 @@ export class LeaderboardController {
   constructor(private readonly leaderboardService: LeaderboardService) {}
 
   @Get(':discordServerId')
-  async getLeaderboard(@Param('discordServerId') discordServerId: string) {
-    return this.leaderboardService.getLeaderboardForServer(discordServerId);
+  async getLeaderboard(
+    @Param('discordServerId') discordServerId: string,
+    @Query('mode') mode?: string,
+  ) {
+    const playersPerTeam = mode ? parseInt(mode, 10) : undefined;
+    return this.leaderboardService.getLeaderboardForServer(discordServerId, playersPerTeam);
   }
 
   @Get(':discordServerId/matches')
-  async getMatchHistory(@Param('discordServerId') discordServerId: string) {
-    return this.leaderboardService.getMatchHistoryForServer(discordServerId);
+  async getMatchHistory(
+    @Param('discordServerId') discordServerId: string,
+    @Query('mode') mode?: string,
+  ) {
+    const playersPerTeam = mode ? parseInt(mode, 10) : undefined;
+    return this.leaderboardService.getMatchHistoryForServer(discordServerId, playersPerTeam);
   }
 
   @Get(':discordServerId/player/:userId')
   async getPlayerStats(
     @Param('discordServerId') discordServerId: string,
     @Param('userId', ParseIntPipe) userId: number,
+    @Query('mode') mode?: string,
   ) {
-    return this.leaderboardService.getPlayerDetailStats(discordServerId, userId);
+    const playersPerTeam = mode ? parseInt(mode, 10) : undefined;
+    return this.leaderboardService.getPlayerDetailStats(discordServerId, userId, playersPerTeam);
   }
 }

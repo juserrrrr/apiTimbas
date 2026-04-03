@@ -14,9 +14,9 @@ import { MatchStateService } from '../services/match-state.service';
 import { ChannelManagerService } from '../services/channel-manager.service';
 import { LeagueMatchService } from '../../customLeagueMath/leagueMatch.service';
 import { UserService } from '../../user/user.service';
-import { buildOfflineMatchButtons, buildMatchEmbed } from '../commands/criar-personalizada.command';
-import { drawTeams, drawTeamsWithPositions, extractUserFromTeamEntry } from '../helpers/team.helper';
-import { generateLeagueEmbedText } from '../helpers/embed.helper';
+import { buildOfflineMatchButtons } from '../helpers/match-buttons.helper';
+import { buildMatchEmbed } from '../helpers/embed.helper';
+import { drawTeams, drawTeamsWithPositions } from '../helpers/team.helper';
 import { randomBytes } from 'crypto';
 
 const FORMAT_NAMES: Record<number, string> = { 0: 'Aleatório', 1: 'Livre', 3: 'Aleatório Completo' };
@@ -39,25 +39,39 @@ export class OfflineMatchInteraction {
   private async refreshMessage(interaction: any, key: string) {
     const state = this.matchStateService.get(key);
     if (!state) return;
-    const buttons = buildOfflineMatchButtons(key, state.started, state.matchFormatValue, state.confirmedPlayerIds.length, state.finished);
-    const blueDisplay = state.blueTeam.length ? state.blueTeam : state.confirmedPlayerIds.slice(0, 5).map((id) => ({ userId: id }));
-    const redDisplay = state.redTeam.length ? state.redTeam : state.confirmedPlayerIds.slice(5).map((id) => ({ userId: id }));
-      const toEmbedPlayer = (e: any, idx: number) => {
+
+    const { playersPerTeam = 5 } = state;
+    const half = playersPerTeam;
+    const maxPlayers = playersPerTeam * 2;
+
+    const buttons = buildOfflineMatchButtons(key, state.started, state.matchFormatValue, state.confirmedPlayerIds.length, state.finished, playersPerTeam);
+    const blueDisplay = state.blueTeam.length ? state.blueTeam : state.confirmedPlayerIds.slice(0, half).map((id) => ({ userId: id }));
+    const redDisplay = state.redTeam.length ? state.redTeam : state.confirmedPlayerIds.slice(half, maxPlayers).map((id) => ({ userId: id }));
+
+    const toEmbedPlayer = (e: any, idx: number) => {
       const member = interaction.guild.members.cache.get(e.userId ?? e);
       const fallbackName = state.debug ? `TestPlayer${idx + 1}` : (e.userId ?? '?');
       return { name: member?.displayName ?? fallbackName, position: e.position };
     };
+
     const hasGif = interaction.message.attachments?.some((a: any) => a.name === 'timbas.gif' || a.name === 'timbasQueueGif.gif') ?? false;
+    const footerText = state.started
+      ? 'Partida em andamento!'
+      : state.confirmedPlayerIds.length >= maxPlayers
+        ? 'Pronto para começar!'
+        : `Aguardando jogadores... ${state.confirmedPlayerIds.length}/${maxPlayers}`;
+
     const embed = buildMatchEmbed(
       blueDisplay.map((e, i) => toEmbedPlayer(e, i)),
-      redDisplay.map((e, i) => toEmbedPlayer(e, i + 5)),
+      redDisplay.map((e, i) => toEmbedPlayer(e, i + half)),
       state.matchFormatName,
       state.onlineModeName,
-      state.started ? 'Partida em andamento!' : state.confirmedPlayerIds.length >= 10 ? 'Pronto para começar!' : 'Aguardando jogadores...',
+      footerText,
       undefined,
       null,
       state.showDetails,
-      hasGif
+      hasGif,
+      playersPerTeam,
     );
     await interaction.message.edit({ embeds: [embed], components: buttons }).catch(() => {});
   }
@@ -78,39 +92,24 @@ export class OfflineMatchInteraction {
       return;
     }
 
+    const maxPlayers = (state.playersPerTeam ?? 5) * 2;
+
     if (state.confirmedPlayerIds.includes(interaction.user.id)) {
       const msg = await interaction.followUp({ content: '❌ Você já está na lista.', flags: MessageFlags.Ephemeral });
       setTimeout(() => msg.delete().catch(() => {}), 5000);
       return;
     }
 
-    if (state.confirmedPlayerIds.length >= 10) {
+    if (state.confirmedPlayerIds.length >= maxPlayers) {
       const msg = await interaction.followUp({ content: '❌ A partida já está cheia.', flags: MessageFlags.Ephemeral });
       setTimeout(() => msg.delete().catch(() => {}), 5000);
       return;
     }
 
-    // Online mode: check/create account
-    if (state.onlineModeValue === 1) {
-      try {
-        await this.userService.findOneByDiscordId(interaction.user.id);
-      } catch {
-        try {
-          await this.userService.createPlayer({ discordId: interaction.user.id, name: interaction.user.username } as any);
-        } catch {
-          const msg = await interaction.followUp({ content: '❌ Erro ao criar conta Timbas.', flags: MessageFlags.Ephemeral });
-          setTimeout(() => msg.delete().catch(() => {}), 5000);
-          return;
-        }
-      }
-    }
-
-    // Store original channel
     const originalChannels = { ...state.originalChannels, [interaction.user.id]: member.voice.channel.id };
     const confirmedPlayerIds = [...state.confirmedPlayerIds, interaction.user.id];
     this.matchStateService.update(key, { confirmedPlayerIds, originalChannels });
 
-    // Move to waiting channel
     const waitingChannel = interaction.guild.channels.cache.get(state.waitingChannelId) as VoiceChannel;
     await this.channelManager.moveToChannel(member, waitingChannel);
 
@@ -164,10 +163,11 @@ export class OfflineMatchInteraction {
       return;
     }
 
+    const playersPerTeam = state.playersPerTeam ?? 5;
     const players = state.confirmedPlayerIds.map((id) => interaction.guild.members.cache.get(id) ?? id);
     let blueTeam: any[], redTeam: any[], showDetails: boolean;
 
-    if (state.matchFormatValue === 3) {
+    if (state.matchFormatValue === 3 && playersPerTeam === 5) {
       const [blue, red] = drawTeamsWithPositions(players);
       blueTeam = blue.map((e) => ({ userId: (e.user as any)?.id ?? e.user, position: e.position }));
       redTeam = red.map((e) => ({ userId: (e.user as any)?.id ?? e.user, position: e.position }));
@@ -182,7 +182,7 @@ export class OfflineMatchInteraction {
     this.matchStateService.update(key, { blueTeam, redTeam, showDetails });
     await this.refreshMessage(interaction, key);
 
-    const text = state.matchFormatValue === 3 ? 'Times e posições sorteados!' : 'Times sorteados!';
+    const text = state.matchFormatValue === 3 && playersPerTeam === 5 ? 'Times e posições sorteados!' : 'Times sorteados!';
     const msg = await interaction.followUp({ content: `🎲 ${text}`, flags: MessageFlags.Ephemeral });
     setTimeout(() => msg.delete().catch(() => {}), 5000);
   }
@@ -199,8 +199,11 @@ export class OfflineMatchInteraction {
       return;
     }
 
-    if (state.confirmedPlayerIds.length < 10) {
-      const msg = await interaction.followUp({ content: '❌ É necessário ter 10 jogadores para iniciar.', flags: MessageFlags.Ephemeral });
+    const playersPerTeam = state.playersPerTeam ?? 5;
+    const maxPlayers = playersPerTeam * 2;
+
+    if (state.confirmedPlayerIds.length < maxPlayers) {
+      const msg = await interaction.followUp({ content: `❌ É necessário ter ${maxPlayers} jogadores para iniciar.`, flags: MessageFlags.Ephemeral });
       setTimeout(() => msg.delete().catch(() => {}), 5000);
       return;
     }
@@ -213,35 +216,12 @@ export class OfflineMatchInteraction {
 
     let { blueTeam, redTeam } = state;
     if (state.matchFormatValue === 1) {
-      const half = Math.floor(state.confirmedPlayerIds.length / 2);
-      blueTeam = state.confirmedPlayerIds.slice(0, half).map((id) => ({ userId: id }));
-      redTeam = state.confirmedPlayerIds.slice(half).map((id) => ({ userId: id }));
+      blueTeam = state.confirmedPlayerIds.slice(0, playersPerTeam).map((id) => ({ userId: id }));
+      redTeam = state.confirmedPlayerIds.slice(playersPerTeam, maxPlayers).map((id) => ({ userId: id }));
     }
 
-    // Create match in API if online
-    let matchId: number | undefined, blueTeamId: number | undefined, redTeamId: number | undefined;
-    if (state.onlineModeValue === 1) {
-      try {
-        const riotMatchId = genRiotMatchId();
-        const match = await this.leagueMatchService.create({
-          ServerDiscordId: state.guildId,
-          riotMatchId,
-          matchType: state.matchFormatValue,
-          teamBlue: { players: blueTeam.map((e) => ({ discordId: e.userId, position: e.position })) },
-          teamRed: { players: redTeam.map((e) => ({ discordId: e.userId, position: e.position })) },
-        } as any);
-        matchId = match.id;
-        blueTeamId = match.teamBlueId;
-        redTeamId = match.teamRedId;
-      } catch (e) {
-        this.logger.error(`Failed to create match in API: ${e}`);
-        const msg = await interaction.followUp({ content: '❌ Erro ao criar partida na API.', flags: MessageFlags.Ephemeral });
-        setTimeout(() => msg.delete().catch(() => {}), 5000);
-        return;
-      }
-    }
-
-    this.matchStateService.update(key, { started: true, blueTeam, redTeam, matchId, blueTeamId, redTeamId });
+    // Offline: no API call — just move players and update state
+    this.matchStateService.update(key, { started: true, blueTeam, redTeam });
 
     if (!state.debug) {
       const blueChannel = interaction.guild.channels.cache.get(state.blueChannelId) as VoiceChannel;
@@ -273,50 +253,19 @@ export class OfflineMatchInteraction {
       return;
     }
 
-    if (state.onlineModeValue === 0) {
-      // Offline: just finish, restore channels
-      if (!state.debug) {
-        for (const [userId, channelId] of Object.entries(state.originalChannels)) {
-          const member = interaction.guild.members.cache.get(userId);
-          const channel = interaction.guild.channels.cache.get(channelId) as VoiceChannel;
-          if (member) await this.channelManager.moveToChannel(member, channel);
-        }
+    // Offline: just restore channels and finish
+    if (!state.debug) {
+      for (const [userId, channelId] of Object.entries(state.originalChannels)) {
+        const member = interaction.guild.members.cache.get(userId);
+        const channel = interaction.guild.channels.cache.get(channelId) as VoiceChannel;
+        if (member) await this.channelManager.moveToChannel(member, channel);
       }
-      this.matchStateService.update(key, { finished: true });
-      await this.refreshMessage(interaction, key);
-      return;
     }
+    this.matchStateService.update(key, { finished: true });
+    await this.refreshMessage(interaction, key);
 
-    if (state.finishing) {
-      const msg = await interaction.followUp({ content: '❌ Seleção de vencedor já em andamento.', flags: MessageFlags.Ephemeral });
-      setTimeout(() => msg.delete().catch(() => {}), 5000);
-      return;
-    }
-
-    if (!state.matchId || !state.blueTeamId || !state.redTeamId) {
-      const msg = await interaction.followUp({ content: '❌ IDs da partida não encontrados.', flags: MessageFlags.Ephemeral });
-      setTimeout(() => msg.delete().catch(() => {}), 5000);
-      return;
-    }
-
-    this.matchStateService.update(key, { finishing: true });
-
-    const select = new StringSelectMenuBuilder()
-      .setCustomId(`cm/winner/${key}`)
-      .setPlaceholder('Selecione o time vencedor...')
-      .addOptions(
-        new StringSelectMenuOptionBuilder().setLabel('Time Azul').setValue(String(state.blueTeamId)).setEmoji('🔵'),
-        new StringSelectMenuOptionBuilder().setLabel('Time Vermelho').setValue(String(state.redTeamId)).setEmoji('🔴'),
-      );
-
-    const row = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(select);
-    const msg = await interaction.followUp({ content: '🏆 Quem venceu a partida?', components: [row], flags: MessageFlags.Ephemeral, fetchReply: true });
-    setTimeout(() => {
-      if (!this.matchStateService.get(key)?.finished) {
-        this.matchStateService.update(key, { finishing: false });
-        msg.delete().catch(() => {});
-      }
-    }, 180_000);
+    const msg = await interaction.followUp({ content: '🏁 Partida finalizada!', flags: MessageFlags.Ephemeral });
+    setTimeout(() => msg.delete().catch(() => {}), 3000);
   }
 
   @Button('cm/rejoin/:key')

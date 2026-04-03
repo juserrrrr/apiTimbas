@@ -201,6 +201,7 @@ model CustomLeagueMatch {
   id               Int               @id @default(autoincrement())
   riotMatchId      String?           @unique
   matchType        MatchType         @default(ALEATORIO)
+  playersPerTeam   Int               @default(5)
   teamBlueId       Int?
   teamRedId        Int?
   winnerId         Int?
@@ -220,6 +221,7 @@ model CustomLeagueMatch {
   @@index([winnerId])
   @@index([ServerDiscordId])
   @@index([matchType])
+  @@index([playersPerTeam])
   @@index([status])
   @@index([creatorDiscordId])
 }

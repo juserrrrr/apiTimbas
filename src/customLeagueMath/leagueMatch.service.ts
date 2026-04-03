@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { Prisma, Side, Position, MatchStatus, MatchType } from '@prisma/client';
+import { ChannelType, Client, TextChannel, VoiceChannel } from 'discord.js';
 import { PrismaService } from '../prisma/prisma.service';
 import { DiscordServerService } from '../discordServer/discordServer.service';
 import { MatchValidator } from './validators/match-validator';
@@ -17,7 +18,10 @@ import { CreateOnlineMatchDto } from './dto/create-online-match.dto';
 import { JoinMatchDto } from './dto/join-match.dto';
 import { Subject } from 'rxjs';
 import { Cron } from '@nestjs/schedule';
-import { Client, VoiceChannel } from 'discord.js';
+import { buildMatchEmbed, MATCH_TYPE_LABELS } from '../discord/helpers/embed.helper';
+import { buildOnlineLobbyButtons } from '../discord/helpers/match-buttons.helper';
+import * as path from 'path';
+import * as fs from 'fs';
 
 export interface VoiceStatusPayload {
   discordId: string;
@@ -123,17 +127,124 @@ export class LeagueMatchService {
     return user;
   }
 
+  // ─── DISCORD EMBED ANNOUNCEMENT ──────────────────────────────────────────
+
+  async announceMatchToGuild(matchId: number, guildId: string, matchFormat: MatchType | undefined, playersPerTeam: number): Promise<void> {
+    const guild = this.client.guilds.cache.get(guildId);
+    if (!guild) return;
+
+    const textChannel = guild.channels.cache.find(
+      c => c.type === ChannelType.GuildText && c.name === 'custom_game'
+    ) as TextChannel | undefined;
+    if (!textChannel) return;
+
+    const webUrl = `${process.env.WEB_URL ?? 'http://localhost:3000'}/dashboard/match/${matchId}`;
+    const formatName = MATCH_TYPE_LABELS[matchFormat ?? 'ALEATORIO'] ?? 'Aleatório';
+    const maxPlayers = playersPerTeam * 2;
+
+    const gifPath = path.join(process.cwd(), 'images', 'timbasQueueGif.gif');
+    const hasGif = fs.existsSync(gifPath);
+    const files = hasGif ? [{ attachment: gifPath, name: 'timbas.gif' }] : [];
+
+    const embed = buildMatchEmbed([], [], formatName, 'Online', `Aguardando jogadores... 0/${maxPlayers}`, webUrl, null, false, hasGif, playersPerTeam);
+    const buttons = buildOnlineLobbyButtons(matchId, false, false, matchFormat === 'LIVRE');
+
+    try {
+      const message = await textChannel.send({ embeds: [embed], components: buttons, files });
+      this.subscribeToMatchEmbed(matchId, message, matchFormat, playersPerTeam);
+    } catch (e) {
+      this.logger.error(`Failed to announce match ${matchId} to guild ${guildId}: ${e}`);
+    }
+  }
+
+  private subscribeToMatchEmbed(matchId: number, message: any, matchFormat: MatchType | undefined, playersPerTeam: number) {
+    const subject = this.getOrCreateSubject(matchId);
+    let finished = false;
+
+    const subscription = subject.subscribe({
+      next: async (event: any) => {
+        if (finished) return;
+        const { type, payload } = event;
+
+        if (['player_joined', 'player_left', 'teams_drawn', 'match_started', 'match_finished', 'state'].includes(type)) {
+          await this.updateMatchEmbed(message, payload, matchFormat, playersPerTeam);
+        }
+
+        if (type === 'match_expired') {
+          finished = true;
+          subscription.unsubscribe();
+          setTimeout(() => message.delete().catch(() => {}), 5000);
+          return;
+        }
+
+        if (type === 'match_finished' || payload?.status === 'FINISHED') {
+          finished = true;
+          subscription.unsubscribe();
+        }
+      },
+      complete: () => { subscription.unsubscribe(); },
+    });
+  }
+
+  private async updateMatchEmbed(message: any, lobby: any, matchFormat: MatchType | undefined, playersPerTeam: number) {
+    const status = lobby?.status ?? 'WAITING';
+    const players = lobby?.queuePlayers ?? [];
+    const teams = lobby?.Teams ?? [];
+    const blueId = lobby?.teamBlueId;
+    const redId = lobby?.teamRedId;
+    const half = playersPerTeam;
+    const maxPlayers = playersPerTeam * 2;
+
+    let blueTeam: any[] = [];
+    let redTeam: any[] = [];
+    for (const t of teams) {
+      if (t.id === blueId) blueTeam = t.players ?? [];
+      else if (t.id === redId) redTeam = t.players ?? [];
+    }
+
+    const showDetails = blueTeam.length > 0 || redTeam.length > 0;
+    const blueDisplay = showDetails ? blueTeam : players.slice(0, half);
+    const redDisplay = showDetails ? redTeam : players.slice(half, maxPlayers);
+
+    let winner: 'BLUE' | 'RED' | null = null;
+    if (status === 'FINISHED') {
+      winner = lobby.winnerId === blueId ? 'BLUE' : 'RED';
+    }
+
+    const footerMap: Record<string, string> = {
+      WAITING: `Aguardando jogadores... ${players.length}/${maxPlayers}`,
+      STARTED: 'Partida em andamento! 🎮',
+      FINISHED: 'Partida finalizada! 🏁',
+      EXPIRED: 'Partida expirada.',
+    };
+
+    const started = status === 'STARTED';
+    const finished = status === 'FINISHED' || status === 'EXPIRED';
+    const webUrl = (!winner && !finished)
+      ? `${process.env.WEB_URL ?? 'http://localhost:3000'}/dashboard/match/${lobby.id}`
+      : undefined;
+    const hasGif = message.attachments?.some((a: any) => a.name === 'timbas.gif' || a.name === 'timbasQueueGif.gif') ?? false;
+    const formatName = MATCH_TYPE_LABELS[matchFormat ?? 'ALEATORIO'] ?? 'Aleatório';
+    const embed = buildMatchEmbed(blueDisplay, redDisplay, formatName, 'Online', footerMap[status] ?? '', webUrl, winner, showDetails, hasGif, playersPerTeam);
+    const buttons = buildOnlineLobbyButtons(lobby.id, started, finished, matchFormat === 'LIVRE');
+
+    try {
+      await message.edit({ embeds: [embed], components: buttons });
+    } catch {}
+  }
+
   // ─── ONLINE LIFECYCLE ───────────────────────────────────────────────────
 
   async createOnline(dto: CreateOnlineMatchDto) {
     const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hora
     await this.discordServerService.findOrCreate(dto.discordServerId);
-    
+
     return this.prisma.customLeagueMatch.create({
       data: {
         ServerDiscordId: dto.discordServerId,
         creatorDiscordId: dto.creatorDiscordId,
         matchType: dto.matchFormat || MatchType.ALEATORIO,
+        playersPerTeam: dto.playersPerTeam ?? 5,
         status: MatchStatus.WAITING,
         expiresAt,
       },
@@ -162,8 +273,10 @@ export class LeagueMatchService {
       if (match.status !== MatchStatus.WAITING) {
         throw new BadRequestException('A partida já foi iniciada ou encerrada.');
       }
-      if (match.queuePlayers.length >= 10) {
-        throw new BadRequestException('A partida já está cheia (10/10).');
+
+      const maxPlayers = match.playersPerTeam * 2;
+      if (match.queuePlayers.length >= maxPlayers) {
+        throw new BadRequestException(`A partida já está cheia (${maxPlayers}/${maxPlayers}).`);
       }
       if (match.queuePlayers.find((p) => p.userId === user.id)) {
         throw new BadRequestException('Você já está na partida.');
@@ -175,20 +288,17 @@ export class LeagueMatchService {
         if (guild) {
           let member = guild.members.cache.get(user.discordId);
           if (!member) {
-            try {
-              member = await guild.members.fetch(user.discordId);
-            } catch {}
+            try { member = await guild.members.fetch(user.discordId); } catch {}
           }
           const channel = (member as any)?.voice?.channel as VoiceChannel | null;
           if (!channel) {
             throw new BadRequestException('Você precisa estar em um canal de voz no servidor do Discord para entrar na partida.');
           }
 
-          // MOVE THE PLAYER TO THE WAITING ROOM
           const waitingChannel = guild.channels.cache.find(
-            (c) => c.type === 2 && c.name === '| 🕘 | AGUARDANDO' // 2 is ChannelType.GuildVoice
+            (c) => c.type === 2 && c.name === '| 🕘 | AGUARDANDO'
           ) as VoiceChannel | undefined;
-          
+
           if (waitingChannel && channel.id !== waitingChannel.id) {
             await (member as any)?.voice?.setChannel(waitingChannel).catch(() => {});
           }
@@ -237,47 +347,46 @@ export class LeagueMatchService {
       throw new BadRequestException('Não é possível sortear neste estado da partida.');
     }
 
-    let allPlayers = match.queuePlayers;
-    
-    // Check if drawn already
+    const allPlayers = match.queuePlayers;
+    const playersPerTeam = match.playersPerTeam;
+    const maxPlayers = playersPerTeam * 2;
+
+    // Clean up previous draw if exists
     if (match.teamBlueId || match.teamRedId) {
-       await this.prisma.userTeamLeague.updateMany({
-         where: { matchId },
-         data: { teamLeagueId: null, position: null }
-       });
-       
-       const teamsToDelete = [];
-       if (match.teamBlueId) teamsToDelete.push(match.teamBlueId);
-       if (match.teamRedId) teamsToDelete.push(match.teamRedId);
-       
-       await this.prisma.customLeagueMatch.update({
-         where: { id: matchId },
-         data: { teamBlueId: null, teamRedId: null, Teams: { set: [] } }
-       });
-       
-       if (teamsToDelete.length > 0) {
-         await this.prisma.teamLeague.deleteMany({
-           where: { id: { in: teamsToDelete } }
-         });
-       }
+      await this.prisma.userTeamLeague.updateMany({
+        where: { matchId },
+        data: { teamLeagueId: null, position: null }
+      });
+
+      const teamsToDelete = [];
+      if (match.teamBlueId) teamsToDelete.push(match.teamBlueId);
+      if (match.teamRedId) teamsToDelete.push(match.teamRedId);
+
+      await this.prisma.customLeagueMatch.update({
+        where: { id: matchId },
+        data: { teamBlueId: null, teamRedId: null, Teams: { set: [] } }
+      });
+
+      if (teamsToDelete.length > 0) {
+        await this.prisma.teamLeague.deleteMany({ where: { id: { in: teamsToDelete } } });
+      }
     }
 
-    if (allPlayers.length < 10) {
-      throw new BadRequestException(`São necessários 10 jogadores. Atual: ${allPlayers.length}/10`);
+    if (allPlayers.length < maxPlayers) {
+      throw new BadRequestException(`São necessários ${maxPlayers} jogadores. Atual: ${allPlayers.length}/${maxPlayers}`);
     }
 
     const shuffled = this.shuffleArray(allPlayers.map((p) => p.id));
-    const blueIds = shuffled.slice(0, 5);
-    const redIds  = shuffled.slice(5, 10);
+    const blueIds = shuffled.slice(0, playersPerTeam);
+    const redIds  = shuffled.slice(playersPerTeam, maxPlayers);
 
     const teamBlue = await this.prisma.teamLeague.create({ data: { side: Side.BLUE } });
     const teamRed = await this.prisma.teamLeague.create({ data: { side: Side.RED } });
 
     let showDetails = false;
 
-    if (match.matchType === 'ALEATORIO_COMPLETO') {
+    if (match.matchType === 'ALEATORIO_COMPLETO' && playersPerTeam === 5) {
       const positions: Position[] = ['TOP', 'JUNGLE', 'MID', 'ADC', 'SUPPORT'];
-      
       const bluePositions = this.shuffleArray([...positions]);
       const redPositions  = this.shuffleArray([...positions]);
 
@@ -307,7 +416,7 @@ export class LeagueMatchService {
 
     await this.prisma.customLeagueMatch.update({
       where: { id: matchId },
-      data: { 
+      data: {
         showDetails,
         teamBlueId: teamBlue.id,
         teamRedId: teamRed.id,
@@ -330,36 +439,38 @@ export class LeagueMatchService {
       throw new BadRequestException('A partida já foi iniciada ou encerrada.');
     }
 
-    if (match.queuePlayers.length < 10) {
-      throw new BadRequestException(`São necessários 10 jogadores. Atual: ${match.queuePlayers.length}/10`);
+    const playersPerTeam = match.playersPerTeam;
+    const maxPlayers = playersPerTeam * 2;
+
+    if (match.queuePlayers.length < maxPlayers) {
+      throw new BadRequestException(`São necessários ${maxPlayers} jogadores. Atual: ${match.queuePlayers.length}/${maxPlayers}`);
     }
 
     const blueCount = match.Teams.find(t => t.id === match.teamBlueId)?.players?.length || 0;
     const redCount  = match.Teams.find(t => t.id === match.teamRedId)?.players?.length || 0;
 
-    if (match.matchType === 'LIVRE' && (blueCount < 5 || redCount < 5)) {
-      // Create teams if missing in LIVRE mode
+    if (match.matchType === 'LIVRE' && (blueCount < playersPerTeam || redCount < playersPerTeam)) {
       const teamBlue = await this.prisma.teamLeague.create({ data: { side: Side.BLUE } });
       const teamRed = await this.prisma.teamLeague.create({ data: { side: Side.RED } });
 
       const sorted = match.queuePlayers.sort((a, b) => a.id - b.id);
       await this.prisma.userTeamLeague.updateMany({
-        where: { id: { in: sorted.slice(0, 5).map((p) => p.id) } },
+        where: { id: { in: sorted.slice(0, playersPerTeam).map((p) => p.id) } },
         data: { teamLeagueId: teamBlue.id },
       });
       await this.prisma.userTeamLeague.updateMany({
-        where: { id: { in: sorted.slice(5, 10).map((p) => p.id) } },
+        where: { id: { in: sorted.slice(playersPerTeam, maxPlayers).map((p) => p.id) } },
         data: { teamLeagueId: teamRed.id },
       });
       await this.prisma.customLeagueMatch.update({
         where: { id: matchId },
-        data: { 
+        data: {
           teamBlueId: teamBlue.id,
           teamRedId: teamRed.id,
           Teams: { connect: [{ id: teamBlue.id }, { id: teamRed.id }] }
         },
       });
-    } else if (blueCount < 5 || redCount < 5) {
+    } else if (blueCount < playersPerTeam || redCount < playersPerTeam) {
       throw new BadRequestException('Sorteie os times antes de iniciar.');
     }
 
@@ -387,11 +498,7 @@ export class LeagueMatchService {
 
     const updated = await this.prisma.customLeagueMatch.update({
       where: { id: matchId },
-      data: {
-        status: MatchStatus.FINISHED,
-        finishedAt: new Date(),
-        winnerId: winnerTeamId,
-      },
+      data: { status: MatchStatus.FINISHED, finishedAt: new Date(), winnerId: winnerTeamId },
       include: MATCH_INCLUDE,
     });
 
@@ -407,10 +514,7 @@ export class LeagueMatchService {
       where: {
         OR: [
           { status: MatchStatus.EXPIRED },
-          {
-            status: { in: [MatchStatus.WAITING, MatchStatus.STARTED] },
-            expiresAt: { lt: new Date() },
-          },
+          { status: { in: [MatchStatus.WAITING, MatchStatus.STARTED] }, expiresAt: { lt: new Date() } },
         ],
       },
       select: { id: true, Teams: { select: { id: true } } },
@@ -424,19 +528,13 @@ export class LeagueMatchService {
         this.emit(match.id, { type: 'match_expired', payload: {} });
       }
 
-      await this.prisma.userTeamLeague.deleteMany({
-        where: { matchId: { in: matchIds } },
-      });
+      await this.prisma.userTeamLeague.deleteMany({ where: { matchId: { in: matchIds } } });
 
       if (teamIds.length > 0) {
-        await this.prisma.teamLeague.deleteMany({
-          where: { id: { in: teamIds } },
-        });
+        await this.prisma.teamLeague.deleteMany({ where: { id: { in: teamIds } } });
       }
 
-      await this.prisma.customLeagueMatch.deleteMany({
-        where: { id: { in: matchIds } },
-      });
+      await this.prisma.customLeagueMatch.deleteMany({ where: { id: { in: matchIds } } });
 
       for (const match of toDelete) {
         setTimeout(() => this.removeSubject(match.id), 2000);
@@ -454,9 +552,8 @@ export class LeagueMatchService {
     return arr;
   }
 
-  // ─── OFFLINE CREATE / GENERIC MATCH ─────────────────────────────────────
-  // Mantemos o behavior anterior para partidas criadas no modo offline (via bot).
-  
+  // ─── OFFLINE CREATE ───────────────────────────────────────────────────────
+
   async create(createLeagueMatchDto: CreateCustomLeagueMatchDto) {
     try {
       if (createLeagueMatchDto.matchType === MatchType.ALEATORIO_COMPLETO) {
@@ -466,7 +563,7 @@ export class LeagueMatchService {
       }
 
       await this.discordServerService.findOrCreate(createLeagueMatchDto.ServerDiscordId);
-      
+
       return await this.prisma.$transaction(async (prisma) => {
         const mapPlayersToConnect = async (
           players: { userId?: number; discordId?: string; position?: string }[],
@@ -505,15 +602,18 @@ export class LeagueMatchService {
           include: { players: true },
         });
 
+        const playersPerTeam = createLeagueMatchDto.teamBlue.players.length;
+
         return await prisma.customLeagueMatch.create({
           data: {
             riotMatchId: createLeagueMatchDto.riotMatchId,
             matchType: createLeagueMatchDto.matchType || MatchType.ALEATORIO,
+            playersPerTeam,
             ServerDiscordId: createLeagueMatchDto.ServerDiscordId,
             teamBlueId: teamBlue.id,
             teamRedId: teamRed.id,
             Teams: { connect: [{ id: teamBlue.id }, { id: teamRed.id }] },
-            status: MatchStatus.FINISHED, // Partida offline entra pronta
+            status: MatchStatus.FINISHED,
             creatorDiscordId: null,
             startedAt: new Date(),
             finishedAt: new Date(),
@@ -558,11 +658,9 @@ export class LeagueMatchService {
   async remove(id: number) {
     const match = await this.findOne(id);
     const teamsToDelete = match.Teams.map((t) => t.id);
-    
-    await this.prisma.teamLeague.deleteMany({
-      where: { id: { in: teamsToDelete } }
-    });
-    
+
+    await this.prisma.teamLeague.deleteMany({ where: { id: { in: teamsToDelete } } });
+
     return await this.prisma.customLeagueMatch.delete({ where: { id }, include: MATCH_INCLUDE });
   }
 }
