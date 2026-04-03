@@ -17,10 +17,10 @@ import { DiscordBotModule } from './discord/discord.module';
     ConfigModule.forRoot(),
     ScheduleModule.forRoot(),
     ThrottlerModule.forRoot([
-      // Default rate limit: 50 requests per 60 seconds
+      // Default rate limit: 300 requests per 60 seconds
       {
         ttl: 60000,
-        limit: 50,
+        limit: 300,
         name: 'default',
       },
       // Strict limit for auth endpoints: 5 requests per 60 seconds

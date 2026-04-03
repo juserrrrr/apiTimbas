@@ -11,8 +11,37 @@ const AMERICAS_BASE = 'https://americas.api.riotgames.com';
 const BR1_BASE = 'https://br1.api.riotgames.com';
 const DDRAGON_BASE = 'https://ddragon.leagueoflegends.com';
 
+const TTL = {
+  PLAYER_INFO: 5 * 60 * 1000,       // 5 min — ranked stats mudam com frequência
+  SUMMONER: 10 * 60 * 1000,         // 10 min — puuid→summonerId é estável
+  DDRAGON_VERSION: 24 * 60 * 60 * 1000, // 24h — patches são quinzenais
+  CHAMPIONS: 24 * 60 * 60 * 1000,   // 24h
+} as const;
+
+class TtlCache<V> {
+  private readonly store = new Map<string, { value: V; expiresAt: number }>();
+
+  get(key: string): V | undefined {
+    const entry = this.store.get(key);
+    if (!entry) return undefined;
+    if (Date.now() > entry.expiresAt) {
+      this.store.delete(key);
+      return undefined;
+    }
+    return entry.value;
+  }
+
+  set(key: string, value: V, ttlMs: number): void {
+    this.store.set(key, { value, expiresAt: Date.now() + ttlMs });
+  }
+}
+
 @Injectable()
 export class RiotService {
+  private readonly playerCache = new TtlCache<any>();
+  private readonly summonerCache = new TtlCache<any>();
+  private readonly miscCache = new TtlCache<any>();
+
   constructor(private readonly httpService: HttpService) {}
 
   private get riotHeaders() {
@@ -35,20 +64,32 @@ export class RiotService {
   // ─── LoL Account (Riot ID) ────────────────────────────────────────────────
 
   async getAccount(gameName: string, tagLine: string) {
+    const key = `account:${gameName.toLowerCase()}#${tagLine.toLowerCase()}`;
+    const cached = this.miscCache.get(key);
+    if (cached) return cached;
+
     try {
-      return await this.riotGet<any>(
+      const data = await this.riotGet<any>(
         `${AMERICAS_BASE}/riot/account/v1/accounts/by-riot-id/${encodeURIComponent(gameName)}/${encodeURIComponent(tagLine)}`,
       );
+      this.miscCache.set(key, data, TTL.SUMMONER);
+      return data;
     } catch {
       throw new NotFoundException(`Conta ${gameName}#${tagLine} não encontrada`);
     }
   }
 
   async getSummonerByPuuid(puuid: string) {
+    const key = `summoner:${puuid}`;
+    const cached = this.summonerCache.get(key);
+    if (cached) return cached;
+
     try {
-      return await this.riotGet<any>(
+      const data = await this.riotGet<any>(
         `${BR1_BASE}/lol/summoner/v4/summoners/by-puuid/${puuid}`,
       );
+      this.summonerCache.set(key, data, TTL.SUMMONER);
+      return data;
     } catch {
       throw new NotFoundException(`Summoner com PUUID ${puuid} não encontrado`);
     }
@@ -67,6 +108,10 @@ export class RiotService {
   // ─── Combined player info ─────────────────────────────────────────────────
 
   async getPlayerInfo(gameName: string, tagLine: string) {
+    const key = `player:${gameName.toLowerCase()}#${tagLine.toLowerCase()}`;
+    const cached = this.playerCache.get(key);
+    if (cached) return cached;
+
     const account = await this.getAccount(gameName, tagLine);
     const summoner = await this.getSummonerByPuuid(account.puuid);
     const ranked = await this.getRankedStats(summoner.id);
@@ -74,7 +119,7 @@ export class RiotService {
     const solo = ranked.find((r: any) => r.queueType === 'RANKED_SOLO_5x5') ?? {};
     const flex = ranked.find((r: any) => r.queueType === 'RANKED_FLEX_SR') ?? {};
 
-    return {
+    const result = {
       puuid: account.puuid,
       gameName: account.gameName,
       tagLine: account.tagLine,
@@ -97,13 +142,19 @@ export class RiotService {
         losses: flex.losses ?? 0,
       },
     };
+
+    this.playerCache.set(key, result, TTL.PLAYER_INFO);
+    return result;
   }
 
   // ─── Account verification ─────────────────────────────────────────────────
 
+  // Não usa cache — precisa de dados frescos para verificar a troca de ícone
   async verifyIcon(puuid: string, iconId: number): Promise<{ verified: boolean }> {
     try {
-      const summoner = await this.getSummonerByPuuid(puuid);
+      const summoner = await this.riotGet<any>(
+        `${BR1_BASE}/lol/summoner/v4/summoners/by-puuid/${puuid}`,
+      );
       return { verified: summoner.profileIconId === iconId };
     } catch {
       return { verified: false };
@@ -113,26 +164,36 @@ export class RiotService {
   // ─── Data Dragon ──────────────────────────────────────────────────────────
 
   private async getDdragonVersion(): Promise<string> {
+    const cached = this.miscCache.get('ddragon:version');
+    if (cached) return cached;
+
     try {
       const { data } = await firstValueFrom(
         this.httpService
           .get<string[]>(`${DDRAGON_BASE}/api/versions.json`)
           .pipe(catchError(() => { throw new Error(); })),
       );
-      return data[0];
+      const version = data[0];
+      this.miscCache.set('ddragon:version', version, TTL.DDRAGON_VERSION);
+      return version;
     } catch {
       return '15.6.1';
     }
   }
 
   async getAllChampions(): Promise<string[]> {
+    const cached = this.miscCache.get('ddragon:champions');
+    if (cached) return cached;
+
     const version = await this.getDdragonVersion();
     const { data } = await firstValueFrom(
       this.httpService
         .get<any>(`${DDRAGON_BASE}/cdn/${version}/data/pt_BR/champion.json`)
         .pipe(catchError(() => { throw new Error('Falha ao buscar campeões'); })),
     );
-    return Object.keys(data.data);
+    const champions = Object.keys(data.data);
+    this.miscCache.set('ddragon:champions', champions, TTL.CHAMPIONS);
+    return champions;
   }
 
   buildProfileIconUrl(iconId: number): string {
