@@ -58,7 +58,7 @@ import { AuthModule } from '../auth/auth.module';
     LeaderboardModule,
     AuthModule,
   ],
-  controllers: [DiscordVoiceController],
+  controllers: [],
   providers: [
     { provide: APP_INTERCEPTOR, useClass: DiscordErrorInterceptor },
     // Services
