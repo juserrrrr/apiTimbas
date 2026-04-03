@@ -32,9 +32,6 @@ import { OnlineLobbyInteraction } from './interactions/online-lobby.interaction'
 import { EventInteraction } from './interactions/event.interaction';
 import { LolVerificationInteraction } from './interactions/lol-verification.interaction';
 
-// Controllers
-import { DiscordVoiceController } from './controllers/discord-voice.controller';
-
 // NestJS module imports
 import { LeagueMatchModule } from '../customLeagueMath/leagueMatch.module';
 import { UserModule } from '../user/user.module';
