@@ -554,6 +554,54 @@ export class LeagueMatchService {
     return updated;
   }
 
+  async cancel(matchId: number, requesterDiscordId: string) {
+    const match = await this.findOne(matchId);
+
+    if (match.creatorDiscordId !== requesterDiscordId) {
+      throw new ForbiddenException('Apenas o criador pode encerrar a partida.');
+    }
+    if (match.status === MatchStatus.FINISHED || match.status === MatchStatus.EXPIRED) {
+      throw new BadRequestException('Não é possível encerrar uma partida que já foi finalizada ou expirada.');
+    }
+
+    const updated = await this.prisma.customLeagueMatch.update({
+      where: { id: matchId },
+      data: { status: MatchStatus.EXPIRED },
+      include: MATCH_INCLUDE,
+    });
+
+    this.emit(matchId, { type: 'match_expired', payload: updated });
+    setTimeout(() => this.removeSubject(matchId), 5000);
+    return updated;
+  }
+
+  async kickPlayer(matchId: number, requesterDiscordId: string, targetDiscordId: string) {
+    const match = await this.findOne(matchId);
+
+    if (match.creatorDiscordId !== requesterDiscordId) {
+      throw new ForbiddenException('Apenas o criador pode expulsar jogadores da fila.');
+    }
+    if (match.status !== MatchStatus.WAITING) {
+      throw new BadRequestException('A partida não está mais na fase de fila.');
+    }
+
+    const playerInQueue = match.queuePlayers.find((p) => p.user?.discordId === targetDiscordId);
+    if (!playerInQueue) {
+      throw new BadRequestException('Jogador não encontrado na fila.');
+    }
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      await tx.userTeamLeague.delete({ where: { id: playerInQueue.id } });
+      return tx.customLeagueMatch.findUniqueOrThrow({
+        where: { id: matchId },
+        include: MATCH_INCLUDE,
+      });
+    });
+
+    this.emit(matchId, { type: 'player_left', payload: updated });
+    return updated;
+  }
+
   @Cron('0 */30 * * * *')
   async cleanExpiredLobbies() {
     this.logger.log('Limpando partidas expiradas online...');

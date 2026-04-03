@@ -134,6 +134,31 @@ export class LeagueMatchController {
   }
 
   @UseGuards(AuthGuard)
+  @Post(':id/cancel')
+  async cancel(@Param('id', ParseIntPipe) id: number, @Body() dto: ActionMatchDto, @Req() req: any) {
+    const tokenPayload = req.tokenPayload;
+    let requester = dto.requesterDiscordId;
+    if (tokenPayload?.role !== Role.BOT && tokenPayload?.role !== Role.ADMIN) {
+      requester = tokenPayload?.discordId || requester;
+    }
+    return this.leagueMatchService.cancel(id, requester);
+  }
+
+  @UseGuards(AuthGuard)
+  @Post(':id/kick')
+  async kickPlayer(@Param('id', ParseIntPipe) id: number, @Body() dto: { requesterDiscordId: string; targetDiscordId: string }, @Req() req: any) {
+    const tokenPayload = req.tokenPayload;
+    let requester = dto.requesterDiscordId;
+    if (tokenPayload?.role !== Role.BOT && tokenPayload?.role !== Role.ADMIN) {
+      requester = tokenPayload?.discordId || requester;
+    }
+    if (!dto.targetDiscordId) {
+      throw new BadRequestException('ID do jogador a ser expulso é obrigatório.');
+    }
+    return this.leagueMatchService.kickPlayer(id, requester, dto.targetDiscordId);
+  }
+
+  @UseGuards(AuthGuard)
   @Post(':id/events/ticket')
   async createSseTicket(@Param('id', ParseIntPipe) id: number) {
     return { ticket: this.leagueMatchService.createSseTicket(id) };

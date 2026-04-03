@@ -51,10 +51,12 @@ export function buildOnlineLobbyButtons(
     new ButtonBuilder().setCustomId(`ol/join/${lobbyId}`).setLabel('Entrar').setStyle(ButtonStyle.Success).setEmoji('✅').setDisabled(started || finished),
     new ButtonBuilder().setCustomId(`ol/leave/${lobbyId}`).setLabel('Sair').setStyle(ButtonStyle.Danger).setEmoji('🚪').setDisabled(started || finished),
     new ButtonBuilder().setCustomId(`ol/draw/${lobbyId}`).setLabel('Sortear').setStyle(ButtonStyle.Primary).setEmoji('🎲').setDisabled(started || finished || isLivre),
+    new ButtonBuilder().setCustomId(`ol/manage/${lobbyId}`).setLabel('Gerenciar Fila').setStyle(ButtonStyle.Secondary).setEmoji('👥').setDisabled(started || finished),
   );
   const row2 = new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder().setCustomId(`ol/start/${lobbyId}`).setLabel('Iniciar').setStyle(ButtonStyle.Success).setEmoji('▶').setDisabled(started || finished),
     new ButtonBuilder().setCustomId(`ol/finish/${lobbyId}`).setLabel('Finalizar').setStyle(ButtonStyle.Danger).setEmoji('🏁').setDisabled(finished),
+    new ButtonBuilder().setCustomId(`ol/cancel/${lobbyId}`).setLabel('Encerrar').setStyle(ButtonStyle.Danger).setEmoji('🗑️').setDisabled(finished),
   );
   if (started && !finished) {
     row2.addComponents(

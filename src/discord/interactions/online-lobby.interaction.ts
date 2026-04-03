@@ -206,6 +206,65 @@ export class OnlineLobbyInteraction {
     }
   }
 
+  @Button('ol/cancel/:lobbyId')
+  async onCancel(@Context() [interaction]: ButtonContext, @ComponentParam('lobbyId') lobbyId: string) {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    try {
+      await this.leagueMatchService.cancel(parseInt(lobbyId), interaction.user.id);
+      await interaction.editReply({ content: '🗑️ Partida encerrada com sucesso!' });
+      setTimeout(() => interaction.deleteReply().catch(() => {}), 3000);
+    } catch (e: any) {
+      await interaction.editReply({ content: `❌ ${e?.message ?? 'Erro ao encerrar a partida.'}` });
+      setTimeout(() => interaction.deleteReply().catch(() => {}), 5000);
+    }
+  }
+
+  @Button('ol/manage/:lobbyId')
+  async onManageQueue(@Context() [interaction]: ButtonContext, @ComponentParam('lobbyId') lobbyId: string) {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    try {
+      const match = await this.leagueMatchService.findOne(parseInt(lobbyId));
+      if (match.creatorDiscordId !== interaction.user.id) {
+        throw new Error('Apenas o criador da partida pode gerenciar a fila.');
+      }
+      if (match.queuePlayers.length === 0) {
+        throw new Error('A fila está vazia.');
+      }
+
+      const select = new StringSelectMenuBuilder()
+        .setCustomId(`ol/kick/${lobbyId}`)
+        .setPlaceholder('Selecione o jogador para expulsar...')
+        .addOptions(
+          match.queuePlayers.map((p) => 
+            new StringSelectMenuOptionBuilder()
+              .setLabel(p.user?.name ?? 'Desconhecido')
+              .setValue(p.user?.discordId ?? '')
+              .setDescription(`Posição: ${p.position ?? 'Aleatório'}`)
+          ).filter(o => o.data.value !== '')
+        );
+
+      const row = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(select);
+      await interaction.editReply({ content: '👥 Selecione quem você deseja remover da fila:', components: [row] });
+    } catch (e: any) {
+      await interaction.editReply({ content: `❌ ${e?.message ?? 'Erro ao acessar a fila.'}` });
+      setTimeout(() => interaction.deleteReply().catch(() => {}), 5000);
+    }
+  }
+
+  @StringSelect('ol/kick/:lobbyId')
+  async onKickPlayer(@Context() [interaction]: StringSelectContext, @ComponentParam('lobbyId') lobbyId: string) {
+    await interaction.deferUpdate();
+    const targetDiscordId = interaction.values[0];
+    try {
+      const match = await this.leagueMatchService.kickPlayer(parseInt(lobbyId), interaction.user.id, targetDiscordId);
+      await this.refreshLobbyEmbed(interaction, match);
+      await interaction.editReply({ content: '✅ Jogador removido da fila com sucesso!', components: [] });
+      setTimeout(() => interaction.deleteReply().catch(() => {}), 3000);
+    } catch (e: any) {
+      await interaction.followUp({ content: `❌ ${e?.message ?? 'Erro ao remover jogador.'}`, flags: MessageFlags.Ephemeral });
+    }
+  }
+
   @Button('ol/finish/:lobbyId')
   async onFinish(@Context() [interaction]: ButtonContext, @ComponentParam('lobbyId') lobbyId: string) {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
