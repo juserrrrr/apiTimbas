@@ -276,10 +276,9 @@ export class LeagueMatchService {
     const webUrl = (!winner && !finished)
       ? `${process.env.WEB_URL ?? 'http://localhost:3000'}/dashboard/match/${lobby.id}`
       : undefined;
-    const gifAttachment = message.attachments?.find((a: any) => a.name === 'timbas.gif' || a.name === 'timbasQueueGif.gif');
-    const gifUrl = gifAttachment ? gifAttachment.url : false;
+    const hasGif = !!message.attachments?.find((a: any) => a.name === 'timbas.gif' || a.name === 'timbasQueueGif.gif');
     const formatName = MATCH_TYPE_LABELS[matchFormat ?? 'ALEATORIO'] ?? 'Aleatório';
-    const embed = buildMatchEmbed(blueDisplay, redDisplay, formatName, 'Online', footerMap[status] ?? '', webUrl, winner, showDetails, gifUrl, playersPerTeam, lobby.id);
+    const embed = buildMatchEmbed(blueDisplay, redDisplay, formatName, 'Online', footerMap[status] ?? '', webUrl, winner, showDetails, hasGif, playersPerTeam, lobby.id);
     const buttons = buildOnlineLobbyButtons(lobby.id, started, finished, matchFormat === 'LIVRE');
 
     try {

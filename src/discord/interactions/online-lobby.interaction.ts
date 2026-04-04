@@ -6,16 +6,11 @@ import {
   MessageFlags,
   StringSelectMenuBuilder,
   StringSelectMenuOptionBuilder,
-  VoiceChannel,
 } from 'discord.js';
 import { LeagueMatchService } from '../../customLeagueMath/leagueMatch.service';
 import { UserService } from '../../user/user.service';
-import { ChannelManagerService } from '../services/channel-manager.service';
 import { buildOnlineLobbyButtons } from '../helpers/match-buttons.helper';
 import { buildMatchEmbed, MATCH_TYPE_LABELS } from '../helpers/embed.helper';
-
-const lobbyUsers = new Map<string, Map<string, GuildMember>>();
-const lobbyOriginalChannels = new Map<string, Map<string, string>>();
 
 @Injectable()
 export class OnlineLobbyInteraction {
@@ -24,18 +19,7 @@ export class OnlineLobbyInteraction {
   constructor(
     private readonly leagueMatchService: LeagueMatchService,
     private readonly userService: UserService,
-    private readonly channelManager: ChannelManagerService,
   ) {}
-
-  private getLobbyUsers(lobbyId: string): Map<string, GuildMember> {
-    if (!lobbyUsers.has(lobbyId)) lobbyUsers.set(lobbyId, new Map());
-    return lobbyUsers.get(lobbyId)!;
-  }
-
-  private getLobbyOriginalChannels(lobbyId: string): Map<string, string> {
-    if (!lobbyOriginalChannels.has(lobbyId)) lobbyOriginalChannels.set(lobbyId, new Map());
-    return lobbyOriginalChannels.get(lobbyId)!;
-  }
 
   private async refreshLobbyEmbed(interaction: any, lobby: any) {
     const status = lobby?.status ?? 'WAITING';
@@ -74,9 +58,8 @@ export class OnlineLobbyInteraction {
     const webUrl = (!winner && !finished)
       ? `${process.env.WEB_URL ?? 'http://localhost:3000'}/dashboard/match/${lobby.id}`
       : undefined;
-    const gifAttachment = interaction.message.attachments?.find((a: any) => a.name === 'timbasQueueGif.gif' || a.name === 'timbas.gif');
-    const gifUrl = gifAttachment ? gifAttachment.url : false;
-    const embed = buildMatchEmbed(blueDisplay, redDisplay, formatName, 'Online', footerMap[status] ?? '', webUrl, winner, showDetails, gifUrl, playersPerTeam);
+    const hasGif = !!interaction.message.attachments?.find((a: any) => a.name === 'timbas.gif' || a.name === 'timbasQueueGif.gif');
+    const embed = buildMatchEmbed(blueDisplay, redDisplay, formatName, 'Online', footerMap[status] ?? '', webUrl, winner, showDetails, hasGif, playersPerTeam);
     const buttons = buildOnlineLobbyButtons(lobby.id, started, finished, isLivre);
 
     try { await interaction.message.edit({ embeds: [embed], components: buttons }); } catch {}
@@ -85,13 +68,6 @@ export class OnlineLobbyInteraction {
   @Button('ol/join/:lobbyId')
   async onJoin(@Context() [interaction]: ButtonContext, @ComponentParam('lobbyId') lobbyId: string) {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-    const member = interaction.member as GuildMember;
-
-    if (!member.voice.channel) {
-      await interaction.editReply({ content: '❌ Você precisa estar em um canal de voz.' });
-      setTimeout(() => interaction.deleteReply().catch(() => {}), 5000);
-      return;
-    }
 
     try {
       await this.userService.findOneByDiscordId(interaction.user.id);
@@ -107,17 +83,6 @@ export class OnlineLobbyInteraction {
 
     try {
       const lobby = await this.leagueMatchService.join(parseInt(lobbyId), { discordId: interaction.user.id });
-
-      this.getLobbyUsers(lobbyId).set(interaction.user.id, member);
-      if (member.voice.channel) {
-        this.getLobbyOriginalChannels(lobbyId).set(interaction.user.id, member.voice.channel.id);
-      }
-
-      const waitingChannel = interaction.guild!.channels.cache.find(
-        (c) => c.name === '| 🕘 | AGUARDANDO',
-      ) as VoiceChannel | undefined;
-      if (waitingChannel) await this.channelManager.moveToChannel(member, waitingChannel);
-
       await this.refreshLobbyEmbed(interaction, lobby);
       await interaction.editReply({ content: '✅ Você entrou na partida!' });
       setTimeout(() => interaction.deleteReply().catch(() => {}), 3000);
@@ -132,8 +97,6 @@ export class OnlineLobbyInteraction {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     try {
       const lobby = await this.leagueMatchService.leave(parseInt(lobbyId), interaction.user.id);
-      this.getLobbyUsers(lobbyId).delete(interaction.user.id);
-      this.getLobbyOriginalChannels(lobbyId).delete(interaction.user.id);
       await this.refreshLobbyEmbed(interaction, lobby);
       await interaction.editReply({ content: '🚪 Você saiu da partida.' });
       setTimeout(() => interaction.deleteReply().catch(() => {}), 3000);
@@ -162,28 +125,6 @@ export class OnlineLobbyInteraction {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     try {
       const lobby = await this.leagueMatchService.start(parseInt(lobbyId), interaction.user.id);
-
-      const blueChannel = interaction.guild!.channels.cache.find((c) => c.name === 'LADO [ |🔵| ]') as VoiceChannel | undefined;
-      const redChannel = interaction.guild!.channels.cache.find((c) => c.name === 'LADO [ |🔴| ]') as VoiceChannel | undefined;
-
-      if (blueChannel && redChannel) {
-        const teams = lobby?.Teams ?? [];
-        const blueTeam = teams.find((t: any) => t.id === lobby?.teamBlueId)?.players ?? [];
-        const redTeam = teams.find((t: any) => t.id === lobby?.teamRedId)?.players ?? [];
-        const users = this.getLobbyUsers(lobbyId);
-
-        for (const p of blueTeam) {
-          const discordId = (p as any)?.user?.discordId;
-          const m = users.get(discordId) ?? interaction.guild!.members.cache.get(discordId);
-          if (m) await this.channelManager.moveToChannel(m, blueChannel);
-        }
-        for (const p of redTeam) {
-          const discordId = (p as any)?.user?.discordId;
-          const m = users.get(discordId) ?? interaction.guild!.members.cache.get(discordId);
-          if (m) await this.channelManager.moveToChannel(m, redChannel);
-        }
-      }
-
       await this.refreshLobbyEmbed(interaction, lobby);
       await interaction.editReply({ content: '▶ Partida iniciada!' });
       setTimeout(() => interaction.deleteReply().catch(() => {}), 3000);
@@ -196,6 +137,12 @@ export class OnlineLobbyInteraction {
   @Button('ol/move/:lobbyId')
   async onMoveUser(@Context() [interaction]: ButtonContext, @ComponentParam('lobbyId') lobbyId: string) {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    const member = interaction.member as GuildMember;
+    if (!member.voice.channel) {
+      await interaction.editReply({ content: '❌ Você precisa estar conectado a um canal de voz para ser movido.' });
+      setTimeout(() => interaction.deleteReply().catch(() => {}), 5000);
+      return;
+    }
     try {
       await this.leagueMatchService.moveToRoom(parseInt(lobbyId), interaction.user.id);
       await interaction.editReply({ content: '🎧 Movendo você para a sala do seu time!' });
@@ -235,7 +182,7 @@ export class OnlineLobbyInteraction {
         .setCustomId(`ol/kick/${lobbyId}`)
         .setPlaceholder('Selecione o jogador para expulsar...')
         .addOptions(
-          match.queuePlayers.map((p) => 
+          match.queuePlayers.map((p) =>
             new StringSelectMenuOptionBuilder()
               .setLabel(p.user?.name ?? 'Desconhecido')
               .setValue(p.user?.discordId ?? '')
@@ -269,6 +216,19 @@ export class OnlineLobbyInteraction {
   async onFinish(@Context() [interaction]: ButtonContext, @ComponentParam('lobbyId') lobbyId: string) {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
+    try {
+      const match = await this.leagueMatchService.findOne(parseInt(lobbyId));
+      if (match.creatorDiscordId !== interaction.user.id) {
+        await interaction.editReply({ content: '❌ Apenas o criador da partida pode finalizar.' });
+        setTimeout(() => interaction.deleteReply().catch(() => {}), 5000);
+        return;
+      }
+    } catch (e: any) {
+      await interaction.editReply({ content: `❌ ${e?.message ?? 'Erro ao verificar partida.'}` });
+      setTimeout(() => interaction.deleteReply().catch(() => {}), 5000);
+      return;
+    }
+
     const select = new StringSelectMenuBuilder()
       .setCustomId(`ol/winner/${lobbyId}`)
       .setPlaceholder('Selecione o time vencedor...')
@@ -289,20 +249,6 @@ export class OnlineLobbyInteraction {
 
     try {
       const lobby = await this.leagueMatchService.finish(parseInt(lobbyId), interaction.user.id, winner);
-
-      const users = this.getLobbyUsers(lobbyId);
-      const originalChannels = this.getLobbyOriginalChannels(lobbyId);
-      const waitingChannel = interaction.guild!.channels.cache.find((c) => c.name === '| 🕘 | AGUARDANDO') as VoiceChannel | undefined;
-      for (const [userId, member] of users.entries()) {
-        const originalChannelId = originalChannels.get(userId);
-        const target = originalChannelId
-          ? (interaction.guild!.channels.cache.get(originalChannelId) as VoiceChannel | undefined) ?? waitingChannel
-          : waitingChannel;
-        if (target) await this.channelManager.moveToChannel(member, target);
-      }
-      lobbyUsers.delete(lobbyId);
-      lobbyOriginalChannels.delete(lobbyId);
-
       await this.refreshLobbyEmbed(interaction, lobby);
       await interaction.deleteReply().catch(() => {});
     } catch (e: any) {
