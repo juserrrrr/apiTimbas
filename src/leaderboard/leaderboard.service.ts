@@ -141,7 +141,6 @@ export class LeaderboardService {
     if (cached) return cached;
 
     const matches = await this.prisma.customLeagueMatch.findMany({
-      relationLoadStrategy: 'join',
       where: {
         ServerDiscordId: discordServerId,
         winnerId: { not: null },
@@ -247,7 +246,6 @@ export class LeaderboardService {
     if (cached) return cached;
 
     const matches = await this.prisma.customLeagueMatch.findMany({
-      relationLoadStrategy: 'join',
       where: {
         ServerDiscordId: discordServerId,
         status: 'FINISHED',
