@@ -106,6 +106,43 @@ export class LeagueMatchService {
     };
   }
 
+  private async sendToMatchChannel(guildId: string, message: string): Promise<void> {
+    const guild = this.client.guilds.cache.get(guildId);
+    if (!guild) return;
+    const channel = guild.channels.cache.find(
+      c => c.type === ChannelType.GuildText && c.name === 'custom_game'
+    ) as TextChannel | undefined;
+    if (!channel) return;
+    await channel.send(message).catch(() => {});
+  }
+
+  private async moveAllPlayersToVoice(guildId: string, match: any): Promise<void> {
+    const guild = this.client.guilds.cache.get(guildId);
+    if (!guild) return;
+
+    const blueTeam = match.Teams?.find((t: any) => t.id === match.teamBlueId);
+    const redTeam  = match.Teams?.find((t: any) => t.id === match.teamRedId);
+
+    const moves: Array<{ discordId: string; channelName: string }> = [
+      ...(blueTeam?.players ?? []).map((p: any) => ({ discordId: p.user?.discordId, channelName: 'LADO [ |🔵| ]' })),
+      ...(redTeam?.players  ?? []).map((p: any) => ({ discordId: p.user?.discordId, channelName: 'LADO [ |🔴| ]' })),
+    ].filter(m => !!m.discordId);
+
+    for (const { discordId, channelName } of moves) {
+      try {
+        let member = guild.members.cache.get(discordId);
+        if (!member) member = await guild.members.fetch(discordId).catch(() => undefined);
+        if (!member) continue;
+        const targetChannel = guild.channels.cache.find(c => c.type === 2 && c.name === channelName) as VoiceChannel | undefined;
+        if (!targetChannel) continue;
+        const voiceChannel = (member as any)?.voice?.channel as VoiceChannel | null;
+        if (voiceChannel && voiceChannel.id !== targetChannel.id) {
+          await (member as any)?.voice?.setChannel(targetChannel).catch(() => {});
+        }
+      } catch {}
+    }
+  }
+
   async findActiveMatchIdForUser(guildId: string, discordId: string): Promise<number | null> {
     const match = await this.prisma.customLeagueMatch.findFirst({
       where: {
@@ -298,26 +335,6 @@ export class LeagueMatchService {
         throw new BadRequestException('Você já está na partida.');
       }
 
-      // Voice Channel Validation
-      if (match.ServerDiscordId && user.discordId) {
-        const guild = this.client.guilds.cache.get(match.ServerDiscordId);
-        if (guild) {
-          let member = guild.members.cache.get(user.discordId);
-          if (!member) {
-            try { member = await guild.members.fetch(user.discordId); } catch {}
-          }
-          const channel = (member as any)?.voice?.channel as VoiceChannel | null;
-
-          const waitingChannel = guild.channels.cache.find(
-            (c) => c.type === 2 && c.name === '| 🕘 | AGUARDANDO'
-          ) as VoiceChannel | undefined;
-
-          if (channel && waitingChannel && channel.id !== waitingChannel.id) {
-            await (member as any)?.voice?.setChannel(waitingChannel).catch(() => {});
-          }
-        }
-      }
-
       await tx.userTeamLeague.create({
         data: { matchId: match.id, userId: user.id },
       });
@@ -494,6 +511,9 @@ export class LeagueMatchService {
     });
 
     this.emit(matchId, { type: 'match_started', payload: updated });
+    if (updated.ServerDiscordId) {
+      this.moveAllPlayersToVoice(updated.ServerDiscordId, updated).catch(() => {});
+    }
     return updated;
   }
 
@@ -586,6 +606,9 @@ export class LeagueMatchService {
     });
 
     this.emit(matchId, { type: 'match_expired', payload: updated });
+    if (match.ServerDiscordId) {
+      this.sendToMatchChannel(match.ServerDiscordId, `🚫 A partida **#${matchId}** foi encerrada pelo criador.`).catch(() => {});
+    }
     setTimeout(() => this.removeSubject(matchId), 5000);
     return updated;
   }
@@ -614,6 +637,9 @@ export class LeagueMatchService {
     });
 
     this.emit(matchId, { type: 'player_left', payload: updated });
+    if (match.ServerDiscordId) {
+      this.sendToMatchChannel(match.ServerDiscordId, `⛔ **${playerInQueue.user?.name ?? targetDiscordId}** foi removido da fila da partida **#${matchId}**.`).catch(() => {});
+    }
     return updated;
   }
 
