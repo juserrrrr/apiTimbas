@@ -108,12 +108,14 @@ export function buildMatchEmbed(
   showDetails = false,
   gifUrl?: string | boolean,
   playersPerTeam = 5,
+  matchId?: number,
 ): EmbedBuilder {
   const text = generateLeagueEmbedText(blueTeam, redTeam, matchFormat, onlineMode, winner, showDetails, playersPerTeam);
+  const footer = matchId != null ? `${footerText} · Partida #${matchId}` : footerText;
   const embed = new EmbedBuilder()
     .setDescription('```' + text + '```')
     .setColor(0x5865f2)
-    .setFooter({ text: footerText });
+    .setFooter({ text: footer });
   if (gifUrl) {
     if (typeof gifUrl === 'string') {
       embed.setImage(gifUrl);

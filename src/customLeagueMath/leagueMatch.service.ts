@@ -198,7 +198,7 @@ export class LeagueMatchService {
     const hasGif = fs.existsSync(gifPath);
     const files = hasGif ? [{ attachment: gifPath, name: 'timbas.gif' }] : [];
 
-    const embed = buildMatchEmbed([], [], formatName, 'Online', `Aguardando jogadores... 0/${maxPlayers}`, webUrl, null, false, hasGif, playersPerTeam);
+    const embed = buildMatchEmbed([], [], formatName, 'Online', `Aguardando jogadores... 0/${maxPlayers}`, webUrl, null, false, hasGif, playersPerTeam, matchId);
     const buttons = buildOnlineLobbyButtons(matchId, false, false, matchFormat === 'LIVRE');
 
     try {
@@ -278,7 +278,7 @@ export class LeagueMatchService {
     const gifAttachment = message.attachments?.find((a: any) => a.name === 'timbas.gif' || a.name === 'timbasQueueGif.gif');
     const gifUrl = gifAttachment ? gifAttachment.url : false;
     const formatName = MATCH_TYPE_LABELS[matchFormat ?? 'ALEATORIO'] ?? 'Aleatório';
-    const embed = buildMatchEmbed(blueDisplay, redDisplay, formatName, 'Online', footerMap[status] ?? '', webUrl, winner, showDetails, gifUrl, playersPerTeam);
+    const embed = buildMatchEmbed(blueDisplay, redDisplay, formatName, 'Online', footerMap[status] ?? '', webUrl, winner, showDetails, gifUrl, playersPerTeam, lobby.id);
     const buttons = buildOnlineLobbyButtons(lobby.id, started, finished, matchFormat === 'LIVRE');
 
     try {
