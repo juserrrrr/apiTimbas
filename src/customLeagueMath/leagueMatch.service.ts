@@ -91,6 +91,21 @@ export class LeagueMatchService {
     this.emit(matchId, { type: 'voice_status', payload });
   }
 
+  async getUserVoiceStatus(guildId: string, discordId: string): Promise<Omit<VoiceStatusPayload, 'discordId'>> {
+    const guild = this.client.guilds.cache.get(guildId);
+    const member = guild?.members.cache.get(discordId);
+    const channel = (member as any)?.voice?.channel as VoiceChannel | null;
+    const channelType = !channel ? null :
+      channel.name === '| 🕘 | AGUARDANDO' ? 'WAITING' :
+      channel.name === 'LADO [ |🔵| ]'     ? 'BLUE'    :
+      channel.name === 'LADO [ |🔴| ]'     ? 'RED'     : 'OTHER';
+    return {
+      channelId: channel?.id ?? null,
+      channelName: channel?.name ?? null,
+      channelType,
+    };
+  }
+
   async findActiveMatchIdForUser(guildId: string, discordId: string): Promise<number | null> {
     const match = await this.prisma.customLeagueMatch.findFirst({
       where: {

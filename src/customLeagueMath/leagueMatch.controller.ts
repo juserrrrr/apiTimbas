@@ -69,6 +69,16 @@ export class LeagueMatchController {
   }
 
   @UseGuards(AuthGuard)
+  @Get('server/:serverId/voice-status')
+  async getUserVoiceStatus(
+    @Param('serverId') serverId: string,
+    @Query('discordId') discordId: string,
+  ) {
+    if (!discordId) throw new BadRequestException('discordId é obrigatório');
+    return this.leagueMatchService.getUserVoiceStatus(serverId, discordId);
+  }
+
+  @UseGuards(AuthGuard)
   @Post(':id/join')
   async join(@Param('id', ParseIntPipe) id: number, @Body() dto: JoinMatchDto, @Req() req: any) {
     const tokenPayload = req.tokenPayload;
