@@ -224,4 +224,6 @@ model CustomLeagueMatch {
   @@index([playersPerTeam])
   @@index([status])
   @@index([creatorDiscordId])
+  @@index([ServerDiscordId, status])
+  @@index([ServerDiscordId, winnerId])
 }

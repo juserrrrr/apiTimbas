@@ -57,6 +57,12 @@ const MATCH_INCLUDE = {
   }
 } as const;
 
+// Use for read queries to consolidate nested includes into a single JOIN query
+const MATCH_FIND_OPTS = {
+  relationLoadStrategy: 'join' as const,
+  include: MATCH_INCLUDE,
+} as const;
+
 @Injectable()
 export class LeagueMatchService {
   private readonly logger = new Logger(LeagueMatchService.name);
@@ -307,8 +313,8 @@ export class LeagueMatchService {
 
   async findActiveByServer(discordServerId: string) {
     return this.prisma.customLeagueMatch.findMany({
+      ...MATCH_FIND_OPTS,
       where: { ServerDiscordId: discordServerId, status: { in: [MatchStatus.WAITING, MatchStatus.STARTED] } },
-      include: MATCH_INCLUDE,
       orderBy: { dateCreated: 'desc' },
     });
   }
@@ -318,8 +324,8 @@ export class LeagueMatchService {
 
     const updated = await this.prisma.$transaction(async (tx) => {
       const match = await tx.customLeagueMatch.findUnique({
+        ...MATCH_FIND_OPTS,
         where: { id: matchId },
-        include: MATCH_INCLUDE,
       });
 
       if (!match) throw new NotFoundException('Partida não encontrada.');
@@ -340,8 +346,8 @@ export class LeagueMatchService {
       });
 
       return tx.customLeagueMatch.findUnique({
+        ...MATCH_FIND_OPTS,
         where: { id: matchId },
-        include: MATCH_INCLUDE,
       });
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 
@@ -631,8 +637,8 @@ export class LeagueMatchService {
     const updated = await this.prisma.$transaction(async (tx) => {
       await tx.userTeamLeague.delete({ where: { id: playerInQueue.id } });
       return tx.customLeagueMatch.findUniqueOrThrow({
+        ...MATCH_FIND_OPTS,
         where: { id: matchId },
-        include: MATCH_INCLUDE,
       });
     });
 
@@ -768,13 +774,13 @@ export class LeagueMatchService {
   }
 
   async findAll() {
-    return await this.prisma.customLeagueMatch.findMany({ include: MATCH_INCLUDE, orderBy: { dateCreated: 'desc' } });
+    return await this.prisma.customLeagueMatch.findMany({ ...MATCH_FIND_OPTS, orderBy: { dateCreated: 'desc' } });
   }
 
   async findOne(id: number) {
     const match = await this.prisma.customLeagueMatch.findUnique({
+      ...MATCH_FIND_OPTS,
       where: { id },
-      include: MATCH_INCLUDE,
     });
     if (!match) throw new NotFoundException(`Partida com id ${id} não encontrada`);
     return match;

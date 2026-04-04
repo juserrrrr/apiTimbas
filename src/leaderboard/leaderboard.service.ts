@@ -1,7 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { DiscordServerService } from '../discordServer/discordServer.service';
 
 export interface PlayerStats {
   rank: number;
@@ -36,18 +35,32 @@ export interface MatchHistoryEntry {
   redTeam: { id: number; players: { userId: number; name: string; discordId: string; avatar: string | null; position: string | null }[] };
 }
 
+const CACHE_TTL = 5 * 60 * 1000;
+
 @Injectable()
 export class LeaderboardService {
-  constructor(
-    private readonly prisma: PrismaService,
-    private readonly discordServerService: DiscordServerService,
-  ) {}
+  private readonly cache = new Map<string, { data: unknown; expiresAt: number }>();
+
+  constructor(private readonly prisma: PrismaService) {}
+
+  private fromCache<T>(key: string): T | null {
+    const entry = this.cache.get(key);
+    if (entry && entry.expiresAt > Date.now()) return entry.data as T;
+    this.cache.delete(key);
+    return null;
+  }
+
+  private toCache(key: string, data: unknown): void {
+    this.cache.set(key, { data, expiresAt: Date.now() + CACHE_TTL });
+  }
 
   async getLeaderboardForServer(
     discordServerId: string,
     playersPerTeam?: number,
   ): Promise<PlayerStats[]> {
-    await this.discordServerService.findOrCreate(discordServerId);
+    const cacheKey = `leaderboard:${discordServerId}:${playersPerTeam ?? 'all'}`;
+    const cached = this.fromCache<PlayerStats[]>(cacheKey);
+    if (cached) return cached;
 
     const modeFilter = playersPerTeam
       ? Prisma.sql`AND ctm."playersPerTeam" = ${playersPerTeam}`
@@ -98,7 +111,7 @@ export class LeaderboardService {
           u.name ASC;
     `;
 
-    return results.map((player, index) => {
+    const data = results.map((player, index) => {
       const winRate = player.totalGames > 0 ? player.wins / player.totalGames : 0;
       return {
         rank: index + 1,
@@ -113,6 +126,9 @@ export class LeaderboardService {
         winRate: parseFloat(winRate.toFixed(2)),
       };
     });
+
+    this.toCache(cacheKey, data);
+    return data;
   }
 
   async getPlayerDetailStats(
@@ -120,9 +136,12 @@ export class LeaderboardService {
     userId: number,
     playersPerTeam?: number,
   ): Promise<PlayerDetailStats> {
-    await this.discordServerService.findOrCreate(discordServerId);
+    const cacheKey = `player:${discordServerId}:${userId}:${playersPerTeam ?? 'all'}`;
+    const cached = this.fromCache<PlayerDetailStats>(cacheKey);
+    if (cached) return cached;
 
     const matches = await this.prisma.customLeagueMatch.findMany({
+      relationLoadStrategy: 'join',
       where: {
         ServerDiscordId: discordServerId,
         winnerId: { not: null },
@@ -195,7 +214,7 @@ export class LeaderboardService {
       .slice(-8)
       .map(([, v]) => v);
 
-    return {
+    const data: PlayerDetailStats = {
       currentStreakCount,
       currentStreakType,
       longestWinStreak,
@@ -214,15 +233,21 @@ export class LeaderboardService {
       },
       weeklyPerformance,
     };
+
+    this.toCache(cacheKey, data);
+    return data;
   }
 
   async getMatchHistoryForServer(
     discordServerId: string,
     playersPerTeam?: number,
   ): Promise<MatchHistoryEntry[]> {
-    await this.discordServerService.findOrCreate(discordServerId);
+    const cacheKey = `history:${discordServerId}:${playersPerTeam ?? 'all'}`;
+    const cached = this.fromCache<MatchHistoryEntry[]>(cacheKey);
+    if (cached) return cached;
 
     const matches = await this.prisma.customLeagueMatch.findMany({
+      relationLoadStrategy: 'join',
       where: {
         ServerDiscordId: discordServerId,
         status: 'FINISHED',
@@ -240,7 +265,7 @@ export class LeaderboardService {
       orderBy: { dateCreated: 'desc' },
     });
 
-    return matches.map((match) => {
+    const data = matches.map((match) => {
       const blueTeamRaw = match.Teams.find((t) => t.side === 'BLUE');
       const redTeamRaw = match.Teams.find((t) => t.side === 'RED');
 
@@ -265,5 +290,8 @@ export class LeaderboardService {
         redTeam: { id: redTeamRaw?.id ?? 0, players: mapPlayers(redTeamRaw) },
       };
     });
+
+    this.toCache(cacheKey, data);
+    return data;
   }
 }
