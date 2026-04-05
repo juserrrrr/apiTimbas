@@ -20,9 +20,13 @@ export class LeaderboardController {
   async getMatchHistory(
     @Param('discordServerId') discordServerId: string,
     @Query('mode') mode?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
   ) {
     const playersPerTeam = mode ? parseInt(mode, 10) : undefined;
-    return this.leaderboardService.getMatchHistoryForServer(discordServerId, playersPerTeam);
+    const pageNum = page ? parseInt(page, 10) : 1;
+    const limitNum = limit ? parseInt(limit, 10) : 20;
+    return this.leaderboardService.getMatchHistoryForServer(discordServerId, playersPerTeam, pageNum, limitNum);
   }
 
   @Get(':discordServerId/player/:userId')
@@ -33,5 +37,15 @@ export class LeaderboardController {
   ) {
     const playersPerTeam = mode ? parseInt(mode, 10) : undefined;
     return this.leaderboardService.getPlayerDetailStats(discordServerId, userId, playersPerTeam);
+  }
+
+  @Get(':discordServerId/player/:userId/duo')
+  async getDuoStats(
+    @Param('discordServerId') discordServerId: string,
+    @Param('userId', ParseIntPipe) userId: number,
+    @Query('mode') mode?: string,
+  ) {
+    const playersPerTeam = mode ? parseInt(mode, 10) : undefined;
+    return this.leaderboardService.getDuoStats(discordServerId, userId, playersPerTeam);
   }
 }

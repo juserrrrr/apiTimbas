@@ -15,6 +15,23 @@ export interface PlayerStats {
   winRate: number;
 }
 
+export interface PositionStat {
+  position: string;
+  wins: number;
+  losses: number;
+  total: number;
+  winRate: number;
+}
+
+export interface MatchTypeStat {
+  type: string;
+  label: string;
+  wins: number;
+  losses: number;
+  total: number;
+  winRate: number;
+}
+
 export interface PlayerDetailStats {
   currentStreakCount: number;
   currentStreakType: 'W' | 'L' | null;
@@ -23,6 +40,24 @@ export interface PlayerDetailStats {
   blueSide: { wins: number; losses: number; total: number; winRate: number };
   redSide: { wins: number; losses: number; total: number; winRate: number };
   weeklyPerformance: { week: string; wins: number; losses: number }[];
+  positionStats: PositionStat[];
+  matchTypeStats: MatchTypeStat[];
+}
+
+export interface DuoStat {
+  userId: number;
+  name: string;
+  discordId: string;
+  avatar: string | null;
+  games: number;
+  wins: number;
+  losses: number;
+  winRate: number;
+}
+
+export interface DuoStats {
+  partners: DuoStat[];
+  opponents: DuoStat[];
 }
 
 export interface MatchHistoryEntry {
@@ -34,6 +69,21 @@ export interface MatchHistoryEntry {
   blueTeam: { id: number; players: { userId: number; name: string; discordId: string; avatar: string | null; position: string | null }[] };
   redTeam: { id: number; players: { userId: number; name: string; discordId: string; avatar: string | null; position: string | null }[] };
 }
+
+export interface PaginatedMatches {
+  data: MatchHistoryEntry[];
+  total: number;
+  page: number;
+  pages: number;
+  hasNext: boolean;
+}
+
+const MATCH_TYPE_LABELS: Record<string, string> = {
+  ALEATORIO: 'Aleatório',
+  LIVRE: 'Livre',
+  BALANCEADO: 'Balanceado',
+  ALEATORIO_COMPLETO: 'Aleat. Completo',
+};
 
 const CACHE_TTL = 5 * 60 * 1000;
 
@@ -159,10 +209,17 @@ export class LeaderboardService {
       .map((match) => {
         const playerTeam = match.Teams.find((t) => t.players.length > 0);
         if (!playerTeam) return null;
-        return { won: match.winnerId === playerTeam.id, side: playerTeam.side, date: match.dateCreated };
+        return {
+          won: match.winnerId === playerTeam.id,
+          side: playerTeam.side,
+          date: match.dateCreated,
+          position: playerTeam.players[0]?.position ?? null,
+          matchType: match.matchType,
+        };
       })
       .filter((r): r is NonNullable<typeof r> => r !== null);
 
+    // Streak
     let currentStreakCount = 0;
     let currentStreakType: 'W' | 'L' | null = null;
     for (const result of matchResults) {
@@ -189,11 +246,13 @@ export class LeaderboardService {
 
     const recentForm: ('W' | 'L')[] = matchResults.slice(0, 10).map((r) => (r.won ? 'W' : 'L'));
 
+    // Side stats
     const blueSideMatches = matchResults.filter((r) => r.side === 'BLUE');
     const redSideMatches = matchResults.filter((r) => r.side === 'RED');
     const blueSideWins = blueSideMatches.filter((r) => r.won).length;
     const redSideWins = redSideMatches.filter((r) => r.won).length;
 
+    // Weekly performance
     const weeklyMap = new Map<string, { week: string; wins: number; losses: number }>();
     for (const result of matchResults) {
       const d = new Date(result.date);
@@ -207,11 +266,48 @@ export class LeaderboardService {
       if (result.won) entry.wins++;
       else entry.losses++;
     }
-
     const weeklyPerformance = [...weeklyMap.entries()]
       .sort(([a], [b]) => a.localeCompare(b))
       .slice(-8)
       .map(([, v]) => v);
+
+    // Position stats
+    const positionMap = new Map<string, { wins: number; losses: number }>();
+    for (const result of matchResults) {
+      if (!result.position) continue;
+      if (!positionMap.has(result.position)) positionMap.set(result.position, { wins: 0, losses: 0 });
+      const entry = positionMap.get(result.position)!;
+      if (result.won) entry.wins++;
+      else entry.losses++;
+    }
+    const positionStats: PositionStat[] = [...positionMap.entries()]
+      .map(([position, s]) => ({
+        position,
+        wins: s.wins,
+        losses: s.losses,
+        total: s.wins + s.losses,
+        winRate: (s.wins + s.losses) > 0 ? parseFloat((s.wins / (s.wins + s.losses)).toFixed(2)) : 0,
+      }))
+      .sort((a, b) => b.winRate - a.winRate);
+
+    // Match type stats
+    const matchTypeMap = new Map<string, { wins: number; losses: number }>();
+    for (const result of matchResults) {
+      if (!matchTypeMap.has(result.matchType)) matchTypeMap.set(result.matchType, { wins: 0, losses: 0 });
+      const entry = matchTypeMap.get(result.matchType)!;
+      if (result.won) entry.wins++;
+      else entry.losses++;
+    }
+    const matchTypeStats: MatchTypeStat[] = [...matchTypeMap.entries()]
+      .map(([type, s]) => ({
+        type,
+        label: MATCH_TYPE_LABELS[type] ?? type,
+        wins: s.wins,
+        losses: s.losses,
+        total: s.wins + s.losses,
+        winRate: (s.wins + s.losses) > 0 ? parseFloat((s.wins / (s.wins + s.losses)).toFixed(2)) : 0,
+      }))
+      .sort((a, b) => b.winRate - a.winRate);
 
     const data: PlayerDetailStats = {
       currentStreakCount,
@@ -231,25 +327,29 @@ export class LeaderboardService {
         winRate: redSideMatches.length > 0 ? parseFloat((redSideWins / redSideMatches.length).toFixed(2)) : 0,
       },
       weeklyPerformance,
+      positionStats,
+      matchTypeStats,
     };
 
     this.toCache(cacheKey, data);
     return data;
   }
 
-  async getMatchHistoryForServer(
+  async getDuoStats(
     discordServerId: string,
+    userId: number,
     playersPerTeam?: number,
-  ): Promise<MatchHistoryEntry[]> {
-    const cacheKey = `history:${discordServerId}:${playersPerTeam ?? 'all'}`;
-    const cached = this.fromCache<MatchHistoryEntry[]>(cacheKey);
+  ): Promise<DuoStats> {
+    const cacheKey = `duo:${discordServerId}:${userId}:${playersPerTeam ?? 'all'}`;
+    const cached = this.fromCache<DuoStats>(cacheKey);
     if (cached) return cached;
 
     const matches = await this.prisma.customLeagueMatch.findMany({
       where: {
         ServerDiscordId: discordServerId,
-        status: 'FINISHED',
+        winnerId: { not: null },
         ...(playersPerTeam ? { playersPerTeam } : {}),
+        Teams: { some: { players: { some: { userId } } } },
       },
       include: {
         Teams: {
@@ -260,36 +360,127 @@ export class LeaderboardService {
           },
         },
       },
-      orderBy: { dateCreated: 'desc' },
     });
 
-    const data = matches.map((match) => {
-      const blueTeamRaw = match.Teams.find((t) => t.side === 'BLUE');
-      const redTeamRaw = match.Teams.find((t) => t.side === 'RED');
+    const partnerMap = new Map<number, { name: string; discordId: string; avatar: string | null; wins: number; games: number }>();
+    const opponentMap = new Map<number, { name: string; discordId: string; avatar: string | null; wins: number; games: number }>();
 
-      const mapPlayers = (team: typeof blueTeamRaw) =>
-        team
-          ? team.players.map((p) => ({
-              userId: p.user.id,
-              name: p.user.name,
-              discordId: p.user.discordId,
-              avatar: p.user.avatar ?? null,
-              position: p.position,
-            }))
-          : [];
+    for (const match of matches) {
+      const myTeam = match.Teams.find((t) => t.players.some((p) => p.userId === userId));
+      const enemyTeam = match.Teams.find((t) => t.id !== myTeam?.id);
+      if (!myTeam) continue;
+      const won = match.winnerId === myTeam.id;
 
-      return {
-        id: match.id,
-        matchType: match.matchType,
-        playersPerTeam: match.playersPerTeam,
-        dateCreated: match.dateCreated,
-        winnerId: match.winnerId,
-        blueTeam: { id: blueTeamRaw?.id ?? 0, players: mapPlayers(blueTeamRaw) },
-        redTeam: { id: redTeamRaw?.id ?? 0, players: mapPlayers(redTeamRaw) },
-      };
+      for (const player of myTeam.players) {
+        if (player.userId === userId) continue;
+        if (!partnerMap.has(player.userId)) {
+          partnerMap.set(player.userId, { name: player.user.name, discordId: player.user.discordId, avatar: player.user.avatar ?? null, wins: 0, games: 0 });
+        }
+        const entry = partnerMap.get(player.userId)!;
+        entry.games++;
+        if (won) entry.wins++;
+      }
+
+      if (enemyTeam) {
+        for (const player of enemyTeam.players) {
+          if (!opponentMap.has(player.userId)) {
+            opponentMap.set(player.userId, { name: player.user.name, discordId: player.user.discordId, avatar: player.user.avatar ?? null, wins: 0, games: 0 });
+          }
+          const entry = opponentMap.get(player.userId)!;
+          entry.games++;
+          if (won) entry.wins++;
+        }
+      }
+    }
+
+    const toStat = (id: number, d: { name: string; discordId: string; avatar: string | null; wins: number; games: number }): DuoStat => ({
+      userId: id,
+      name: d.name,
+      discordId: d.discordId,
+      avatar: d.avatar,
+      games: d.games,
+      wins: d.wins,
+      losses: d.games - d.wins,
+      winRate: d.games > 0 ? parseFloat((d.wins / d.games).toFixed(2)) : 0,
     });
+
+    const data: DuoStats = {
+      partners: [...partnerMap.entries()].map(([id, d]) => toStat(id, d)).sort((a, b) => b.winRate - a.winRate || b.wins - a.wins),
+      opponents: [...opponentMap.entries()].map(([id, d]) => toStat(id, d)).sort((a, b) => b.games - a.games),
+    };
 
     this.toCache(cacheKey, data);
     return data;
+  }
+
+  async getMatchHistoryForServer(
+    discordServerId: string,
+    playersPerTeam?: number,
+    page: number = 1,
+    limit: number = 20,
+  ): Promise<PaginatedMatches> {
+    const cacheKey = `history:${discordServerId}:${playersPerTeam ?? 'all'}`;
+    let allMatches = this.fromCache<MatchHistoryEntry[]>(cacheKey);
+
+    if (!allMatches) {
+      const matches = await this.prisma.customLeagueMatch.findMany({
+        where: {
+          ServerDiscordId: discordServerId,
+          status: 'FINISHED',
+          ...(playersPerTeam ? { playersPerTeam } : {}),
+        },
+        include: {
+          Teams: {
+            include: {
+              players: {
+                include: { user: { select: { id: true, name: true, discordId: true, avatar: true } } },
+              },
+            },
+          },
+        },
+        orderBy: { dateCreated: 'desc' },
+      });
+
+      allMatches = matches.map((match) => {
+        const blueTeamRaw = match.Teams.find((t) => t.side === 'BLUE');
+        const redTeamRaw = match.Teams.find((t) => t.side === 'RED');
+
+        const mapPlayers = (team: typeof blueTeamRaw) =>
+          team
+            ? team.players.map((p) => ({
+                userId: p.user.id,
+                name: p.user.name,
+                discordId: p.user.discordId,
+                avatar: p.user.avatar ?? null,
+                position: p.position,
+              }))
+            : [];
+
+        return {
+          id: match.id,
+          matchType: match.matchType,
+          playersPerTeam: match.playersPerTeam,
+          dateCreated: match.dateCreated,
+          winnerId: match.winnerId,
+          blueTeam: { id: blueTeamRaw?.id ?? 0, players: mapPlayers(blueTeamRaw) },
+          redTeam: { id: redTeamRaw?.id ?? 0, players: mapPlayers(redTeamRaw) },
+        };
+      });
+
+      this.toCache(cacheKey, allMatches);
+    }
+
+    const total = allMatches.length;
+    const pages = Math.max(1, Math.ceil(total / limit));
+    const safePage = Math.min(Math.max(1, page), pages);
+    const start = (safePage - 1) * limit;
+
+    return {
+      data: allMatches.slice(start, start + limit),
+      total,
+      page: safePage,
+      pages,
+      hasNext: safePage < pages,
+    };
   }
 }
