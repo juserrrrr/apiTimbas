@@ -95,10 +95,10 @@ export class RiotService {
     }
   }
 
-  async getRankedStats(summonerId: string) {
+  async getRankedStats(puuid: string) {
     try {
       return await this.riotGet<any[]>(
-        `${BR1_BASE}/lol/league/v4/entries/by-summoner/${summonerId}`,
+        `${BR1_BASE}/lol/league/v4/entries/by-puuid/${puuid}`,
       );
     } catch {
       return [];
@@ -114,7 +114,7 @@ export class RiotService {
 
     const account = await this.getAccount(gameName, tagLine);
     const summoner = await this.getSummonerByPuuid(account.puuid);
-    const ranked = await this.getRankedStats(summoner.id);
+    const ranked = await this.getRankedStats(account.puuid);
 
     const solo = ranked.find((r: any) => r.queueType === 'RANKED_SOLO_5x5') ?? {};
     const flex = ranked.find((r: any) => r.queueType === 'RANKED_FLEX_SR') ?? {};
@@ -145,6 +145,121 @@ export class RiotService {
 
     this.playerCache.set(key, result, TTL.PLAYER_INFO);
     return result;
+  }
+
+  async getAccountByPuuid(puuid: string) {
+    const key = `account-puuid:${puuid}`;
+    const cached = this.miscCache.get(key);
+    if (cached) return cached;
+
+    try {
+      const data = await this.riotGet<any>(
+        `${AMERICAS_BASE}/riot/account/v1/accounts/by-puuid/${puuid}`,
+      );
+      this.miscCache.set(key, data, TTL.SUMMONER);
+      return data;
+    } catch {
+      throw new NotFoundException(`Account com PUUID ${puuid} não encontrado`);
+    }
+  }
+
+  async getSummonerById(summonerId: string) {
+    const key = `summoner-id:${summonerId}`;
+    const cached = this.summonerCache.get(key);
+    if (cached) return cached;
+
+    try {
+      const data = await this.riotGet<any>(
+        `${BR1_BASE}/lol/summoner/v4/summoners/${encodeURIComponent(summonerId)}`,
+      );
+      this.summonerCache.set(key, data, TTL.SUMMONER);
+      return data;
+    } catch {
+      throw new NotFoundException(`Summoner ${summonerId} não encontrado`);
+    }
+  }
+
+  async getClashPlayersByPuuid(puuid: string): Promise<any[]> {
+    try {
+      return await this.riotGet<any[]>(
+        `${BR1_BASE}/lol/clash/v1/players/by-puuid/${puuid}`,
+      );
+    } catch {
+      return [];
+    }
+  }
+
+  async getClashTeam(teamId: string): Promise<any> {
+    try {
+      return await this.riotGet<any>(`${BR1_BASE}/lol/clash/v1/teams/${encodeURIComponent(teamId)}`);
+    } catch {
+      throw new NotFoundException(`Time de Clash ${teamId} não encontrado`);
+    }
+  }
+
+  async getMatchHistory(puuid: string, count = 20, queueId?: number): Promise<string[]> {
+    try {
+      let url = `${AMERICAS_BASE}/lol/match/v5/matches/by-puuid/${puuid}/ids?start=0&count=${count}`;
+      if (queueId) url += `&queue=${queueId}`;
+      return await this.riotGet<string[]>(url);
+    } catch {
+      return [];
+    }
+  }
+
+  async getMatch(matchId: string): Promise<any> {
+    const key = `match:${matchId}`;
+    const cached = this.miscCache.get(key);
+    if (cached) return cached;
+
+    try {
+      const data = await this.riotGet<any>(
+        `${AMERICAS_BASE}/lol/match/v5/matches/${matchId}`,
+      );
+      this.miscCache.set(key, data, 60 * 60 * 1000);
+      return data;
+    } catch {
+      return null;
+    }
+  }
+
+  async getChampionMastery(puuid: string, count = 10): Promise<any[]> {
+    try {
+      return await this.riotGet<any[]>(
+        `${BR1_BASE}/lol/champion-mastery/v4/champion-masteries/by-puuid/${puuid}/top?count=${count}`,
+      );
+    } catch {
+      return [];
+    }
+  }
+
+  async getChampionIdNameMap(): Promise<Map<number, string>> {
+    const cached = this.miscCache.get('ddragon:id-name-map');
+    if (cached) return cached;
+
+    try {
+      const version = await this.getDdragonVersion();
+      const { data } = await firstValueFrom(
+        this.httpService
+          .get<any>(`${DDRAGON_BASE}/cdn/${version}/data/pt_BR/champion.json`)
+          .pipe(catchError(() => { throw new Error(); })),
+      );
+      const map = new Map<number, string>();
+      for (const champ of Object.values(data.data) as any[]) {
+        map.set(Number(champ.key), champ.id);
+      }
+      this.miscCache.set('ddragon:id-name-map', map, TTL.CHAMPIONS);
+      return map;
+    } catch {
+      return new Map();
+    }
+  }
+
+  async getSummonerCurrentIcon(puuid: string): Promise<number> {
+    const summoner = await this.riotGet<any>(
+      `${BR1_BASE}/lol/summoner/v4/summoners/by-puuid/${puuid}`,
+    );
+    return summoner.profileIconId as number;
   }
 
   // ─── Account verification ─────────────────────────────────────────────────

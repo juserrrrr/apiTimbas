@@ -227,3 +227,27 @@ model CustomLeagueMatch {
   @@index([ServerDiscordId, status])
   @@index([ServerDiscordId, winnerId])
 }
+
+model VerifiedAccount {
+  id          String   @id @default(cuid())
+  discordId   String   @unique
+  puuid       String   @unique
+  riotId      String
+  summonerId  String
+  verifiedAt  DateTime @default(now())
+  iconId      Int
+}
+
+model PendingVerification {
+  id           String   @id @default(cuid())
+  discordId    String
+  puuid        String
+  summonerId   String
+  riotId       String
+  targetIconId Int
+  expiresAt    DateTime
+  attempts     Int      @default(0)
+  createdAt    DateTime @default(now())
+
+  @@index([discordId])
+}

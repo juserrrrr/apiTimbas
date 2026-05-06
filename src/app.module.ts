@@ -11,6 +11,9 @@ import { DiscordServerModule } from './discordServer/discordServer.module';
 import { RiotModule } from './riot/riot.module';
 import { LeaderboardModule } from './leaderboard/leaderboard.module';
 import { DiscordBotModule } from './discord/discord.module';
+import { ClashModule } from './clash/clash.module';
+import { AiModule } from './ai/ai.module';
+import { VerifyModule } from './verify/verify.module';
 
 @Module({
   imports: [
@@ -38,6 +41,9 @@ import { DiscordBotModule } from './discord/discord.module';
     RiotModule,
     LeaderboardModule,
     DiscordBotModule,
+    ClashModule,
+    AiModule,
+    VerifyModule,
   ],
   controllers: [],
   providers: [{ provide: APP_GUARD, useClass: AppThrottlerGuard }],
