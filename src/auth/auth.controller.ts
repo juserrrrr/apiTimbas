@@ -4,13 +4,14 @@ import {
   Get,
   Post,
   Query,
+  Req,
   Res,
   UseGuards,
   Request,
   Logger,
 } from '@nestjs/common';
 import { randomBytes } from 'crypto';
-import { Response } from 'express';
+import { Request as ExpressRequest, Response } from 'express';
 import { AuthService } from './auth.service';
 import { AuthLoginDto } from './dto/auth-login.dto';
 import { AuthRegisterDto } from './dto/auth-register.dto';
@@ -27,9 +28,31 @@ import { AuthBotSecretDto } from './dto/auth-bot-secret.dto';
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
+  private getClientIp(req: ExpressRequest) {
+    const headerValue = (value: string | string[] | undefined) => {
+      const rawValue = Array.isArray(value) ? value[0] : value;
+      const ip = rawValue?.split(',')[0]?.trim();
+      if (!ip || ip.toLowerCase() === 'unknown') return undefined;
+      return ip.replace(/^::ffff:/, '');
+    };
+
+    return (
+      headerValue(req.headers['cf-connecting-ip']) ??
+      headerValue(req.headers['true-client-ip']) ??
+      headerValue(req.headers['x-vercel-forwarded-for']) ??
+      headerValue(req.headers['x-real-ip']) ??
+      headerValue(req.headers['x-forwarded-for']) ??
+      headerValue(req.ip) ??
+      headerValue(req.socket.remoteAddress)
+    );
+  }
+
   @Post('login')
-  async login(@Body() { email, password }: AuthLoginDto) {
-    return this.authService.login(email, password);
+  async login(
+    @Body() { email, password }: AuthLoginDto,
+    @Req() req: ExpressRequest,
+  ) {
+    return this.authService.login(email, password, this.getClientIp(req));
   }
 
   @Post('register')
@@ -45,7 +68,10 @@ export class AuthController {
   @UseGuards(AuthGuard)
   @Post('reset-password')
   async resetPassword(@Body() { password }: AuthResetDto, @Request() req) {
-    return this.authService.resetPassword(password, Number(req.tokenPayload.sub));
+    return this.authService.resetPassword(
+      password,
+      Number(req.tokenPayload.sub),
+    );
   }
 
   @UseGuards(AuthGuard)
@@ -122,11 +148,17 @@ export class AuthController {
       // Validate CSRF state token
       const storedState = req.cookies?.oauth_state;
       if (!state || state !== storedState) {
-        Logger.error(`[Discord OAuth] CSRF falhou. Recebido: ${state}, Cookie: ${storedState}`, 'AuthController');
+        Logger.error(
+          `[Discord OAuth] CSRF falhou. Recebido: ${state}, Cookie: ${storedState}`,
+          'AuthController',
+        );
         throw new Error('CSRF state validation failed');
       }
 
-      const { acessToken, refreshToken } = await this.authService.discordLogin(code);
+      const { acessToken, refreshToken } = await this.authService.discordLogin(
+        code,
+        this.getClientIp(req),
+      );
 
       // Set tokens in secure httpOnly cookies instead of URL
       res.cookie('acessToken', acessToken, {
@@ -145,7 +177,9 @@ export class AuthController {
 
       // Clear state and redirect cookies
       res.clearCookie('oauth_state');
-      const originalRedirect = req.cookies?.oauth_redirect ? decodeURIComponent(req.cookies.oauth_redirect) : null;
+      const originalRedirect = req.cookies?.oauth_redirect
+        ? decodeURIComponent(req.cookies.oauth_redirect)
+        : null;
       res.clearCookie('oauth_redirect');
 
       // Redirect to auth success page - O FRONTEND PRECISA DESTES DADOS NA URL PARA FUNCIONAR
@@ -155,9 +189,16 @@ export class AuthController {
       }
       res.redirect(redirectUrl);
     } catch (e) {
-      Logger.error('[Discord OAuth] discordCallback error:', e.stack, 'AuthController');
+      Logger.error(
+        '[Discord OAuth] discordCallback error:',
+        e.stack,
+        'AuthController',
+      );
       if (e.response) {
-        Logger.error(`Discord API Error Data: ${JSON.stringify(e.response.data)}`, 'AuthController');
+        Logger.error(
+          `Discord API Error Data: ${JSON.stringify(e.response.data)}`,
+          'AuthController',
+        );
       } else {
         Logger.error(`Error Message: ${e.message}`, 'AuthController');
       }

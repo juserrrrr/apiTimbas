@@ -1,4 +1,8 @@
-import { Injectable, UnauthorizedException, ForbiddenException } from '@nestjs/common';
+import {
+  Injectable,
+  UnauthorizedException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { timingSafeEqual } from 'crypto';
 import { JwtService } from '@nestjs/jwt';
 import { AuthRegisterDto } from './dto/auth-register.dto';
@@ -19,7 +23,14 @@ export class AuthService {
     private readonly httpService: HttpService,
   ) {}
 
-  createToken(id: string, name: string, email: string, role: string, discordId?: string, avatar?: string) {
+  createToken(
+    id: string,
+    name: string,
+    email: string,
+    role: string,
+    discordId?: string,
+    avatar?: string,
+  ) {
     const acessToken = this.jwtService.sign(
       {
         id,
@@ -109,7 +120,7 @@ export class AuthService {
     }
   }
 
-  async login(emailLogin: string, password: string) {
+  async login(emailLogin: string, password: string, lastLoginIp?: string) {
     const user = await this.prisma.user.findUnique({
       where: {
         email: emailLogin,
@@ -122,6 +133,13 @@ export class AuthService {
 
     if (user.role !== Role.USER && user.role !== Role.ADMIN) {
       throw new UnauthorizedException('Only users and admins can login');
+    }
+
+    if (lastLoginIp) {
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: { lastLoginIp },
+      });
     }
 
     const { id, name, email, role } = user;
@@ -180,7 +198,7 @@ export class AuthService {
     return bot;
   }
 
-  async discordLogin(code: string) {
+  async discordLogin(code: string, lastLoginIp?: string) {
     // 1. Trocar code por access token do Discord
     const tokenRes = await firstValueFrom(
       this.httpService.post(
@@ -219,13 +237,21 @@ export class AuthService {
           name: discordUser.username,
           role: Role.PLAYER,
           avatar: incomingAvatar,
+          ...(lastLoginIp && { lastLoginIp }),
         },
       });
-    } else if (user.avatar !== incomingAvatar) {
-      user = await this.prisma.user.update({
-        where: { id: user.id },
-        data: { avatar: incomingAvatar },
-      });
+    } else {
+      const updateData = {
+        ...(user.avatar !== incomingAvatar && { avatar: incomingAvatar }),
+        ...(lastLoginIp && { lastLoginIp }),
+      };
+
+      if (Object.keys(updateData).length > 0) {
+        user = await this.prisma.user.update({
+          where: { id: user.id },
+          data: updateData,
+        });
+      }
     }
 
     return this.createToken(

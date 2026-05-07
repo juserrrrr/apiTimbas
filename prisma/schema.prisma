@@ -124,6 +124,7 @@ model User {
   password       String?
   role           Role             @default(PLAYER)
   avatar         String?
+  lastLoginIp    String?
   dateOfBirth    DateTime?
   dateCreated    DateTime         @default(now())
   dateUpdated    DateTime         @updatedAt
