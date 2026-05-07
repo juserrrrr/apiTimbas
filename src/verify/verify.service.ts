@@ -32,6 +32,10 @@ export class VerifyService {
     const [gameName, tagLine] = dto.riotId.split('#');
     const account = await this.riotService.getAccount(gameName.trim(), tagLine.trim());
     const summoner = await this.riotService.getSummonerByPuuid(account.puuid);
+    const summonerId = summoner.id;
+    if (!summonerId) {
+      throw new BadRequestException('Não foi possível obter o ID da conta no LoL. Tente novamente em instantes.');
+    }
 
     const currentIcon: number = summoner.profileIconId;
     const availableIcons = DEFAULT_ICON_IDS.filter((id) => id !== currentIcon);
@@ -45,7 +49,7 @@ export class VerifyService {
       data: {
         discordId,
         puuid: account.puuid,
-        summonerId: summoner.id,
+        summonerId,
         riotId: dto.riotId,
         targetIconId,
         expiresAt,
