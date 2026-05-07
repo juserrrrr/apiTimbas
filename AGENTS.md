@@ -1,4 +1,4 @@
-# Timbas API — Claude Context
+# Timbas API — Agent Context
 
 ## Project Overview
 NestJS REST API + Discord bot for managing custom League of Legends matches.

@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import Anthropic from '@anthropic-ai/sdk';
+import axios from 'axios';
 
 // ─── Input types ─────────────────────────────────────────────────────────────
 
@@ -77,18 +77,19 @@ export interface AiAnalysis {
 @Injectable()
 export class AiService {
   private readonly logger = new Logger(AiService.name);
-  private readonly anthropic: Anthropic | null;
+  private readonly geminiApiKey: string | null;
+  private readonly geminiModel: string;
 
   constructor() {
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    this.anthropic = apiKey ? new Anthropic({ apiKey }) : null;
-    if (!apiKey) this.logger.warn('ANTHROPIC_API_KEY não configurado — análise de IA desabilitada');
+    this.geminiApiKey = process.env.GEMINI_API_KEY || null;
+    this.geminiModel = (process.env.GEMINI_MODEL || 'gemini-2.5-flash').replace(/^models\//, '');
+    if (!this.geminiApiKey) this.logger.warn('GEMINI_API_KEY não configurado — análise de IA desabilitada');
   }
 
   async analyzeOpponents(players: FullPlayerData[]): Promise<AiAnalysis> {
     const empty: AiAnalysis = { bans: [], counterplays: [], predictedPicks: [], strategy: '' };
-    if (!this.anthropic) {
-      return { ...empty, strategy: 'Configure ANTHROPIC_API_KEY para ativar análise de IA.' };
+    if (!this.geminiApiKey) {
+      return { ...empty, strategy: 'Configure GEMINI_API_KEY para ativar análise de IA.' };
     }
 
     const prompt = `Você é um analista profissional de League of Legends especializado em Clash. Analise os dados completos dos 5 jogadores adversários e gere uma análise tática detalhada.
@@ -162,17 +163,44 @@ Regras:
 - Seja específico e acionável, não genérico`;
 
     try {
-      const response = await this.anthropic.messages.create({
-        model: 'claude-sonnet-4-6',
-        max_tokens: 2000,
-        messages: [{ role: 'user', content: prompt }],
-      });
+      const response = await axios.post(
+        `https://generativelanguage.googleapis.com/v1beta/models/${this.geminiModel}:generateContent`,
+        {
+          contents: [
+            {
+              role: 'user',
+              parts: [{ text: prompt }],
+            },
+          ],
+          generationConfig: {
+            temperature: 0.2,
+            maxOutputTokens: 2000,
+            responseMimeType: 'application/json',
+          },
+        },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'x-goog-api-key': this.geminiApiKey,
+          },
+          timeout: 30000,
+        },
+      );
 
-      const text = response.content[0].type === 'text' ? response.content[0].text : '';
-      return JSON.parse(text) as AiAnalysis;
+      const text = response.data?.candidates?.[0]?.content?.parts?.map((part) => part.text ?? '').join('') ?? '';
+      return JSON.parse(this.stripJsonFence(text)) as AiAnalysis;
     } catch (err) {
       this.logger.error('Erro ao chamar IA para análise', err);
       return { ...empty, strategy: 'Erro ao gerar análise. Tente novamente.' };
     }
+  }
+
+  private stripJsonFence(text: string): string {
+    return text
+      .trim()
+      .replace(/^```json\s*/i, '')
+      .replace(/^```\s*/i, '')
+      .replace(/\s*```$/i, '')
+      .trim();
   }
 }
