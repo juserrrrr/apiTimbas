@@ -36,7 +36,12 @@ export class PlayerStatsService {
     clashPosition?: string,
     accountOverride?: { gameName: string; tagLine: string },
   ): Promise<RiotPlayerStats> {
-    const summoner = await this.riotService.getSummonerByPuuid(puuid);
+    let summoner: any;
+    try {
+      summoner = await this.riotService.getSummonerByPuuid(puuid);
+    } catch {
+      summoner = { profileIconId: 0, summonerLevel: 0 };
+    }
     const account = accountOverride ?? await this.getAccountFallback(puuid);
     const ranked = await this.riotService.getRankedStats(puuid);
     const mastery = await this.riotService.getChampionMastery(puuid, 10);

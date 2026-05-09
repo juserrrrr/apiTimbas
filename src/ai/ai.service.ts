@@ -197,6 +197,7 @@ Regras:
             maxOutputTokens: 8192,
             responseMimeType: 'application/json',
             responseSchema: this.analysisSchema(),
+            thinkingConfig: { thinkingBudget: 0 },
           },
         },
         {
