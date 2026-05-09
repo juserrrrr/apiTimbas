@@ -17,4 +17,14 @@ export class ClashController {
     if (!gameName || !tagLine) throw new BadRequestException('gameName e tagLine são obrigatórios');
     return this.clashService.scout(gameName, tagLine);
   }
+
+  @Get('player')
+  @UseGuards(ClashScoutRateLimitGuard)
+  async player(
+    @Query('gameName') gameName: string,
+    @Query('tagLine') tagLine: string,
+  ) {
+    if (!gameName || !tagLine) throw new BadRequestException('gameName e tagLine são obrigatórios');
+    return this.clashService.player(gameName, tagLine);
+  }
 }

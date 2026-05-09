@@ -9,6 +9,12 @@ interface ChampAccum {
   kills: number; deaths: number; assists: number;
 }
 
+type PlayerStatsData = FullPlayerData & {
+  topPositions: string[];
+  profileIconId: number;
+  profileIconUrl: string;
+};
+
 @Injectable()
 export class ClashService {
   private readonly logger = new Logger(ClashService.name);
@@ -32,69 +38,7 @@ export class ClashService {
 
     for (const member of team.players as { puuid: string; position: string }[]) {
       try {
-        const summoner = await this.riotService.getSummonerByPuuid(member.puuid);
-        const memberAccount = await this.riotService.getAccountByPuuid(member.puuid);
-        const ranked = await this.riotService.getRankedStats(member.puuid);
-        const mastery = await this.riotService.getChampionMastery(summoner.puuid, 10);
-
-        const solo = ranked.find((r: any) => r.queueType === 'RANKED_SOLO_5x5') ?? {};
-        const flex = ranked.find((r: any) => r.queueType === 'RANKED_FLEX_SR') ?? {};
-
-        const [soloIds, flexIds, clashIds] = await Promise.all([
-          this.riotService.getMatchHistory(summoner.puuid, 20, 420),
-          this.riotService.getMatchHistory(summoner.puuid, 10, 440),
-          this.riotService.getMatchHistory(summoner.puuid, 10, 700),
-        ]);
-
-        const [soloQueue, flexQueue, clashHistory] = await Promise.all([
-          this.buildQueuePerf(summoner.puuid, soloIds),
-          this.buildQueuePerf(summoner.puuid, flexIds),
-          this.buildQueuePerf(summoner.puuid, clashIds),
-        ]);
-
-        const combinedTopChamps = this.buildCombinedStats(soloQueue, flexQueue, clashHistory);
-
-        const masteryTop10 = mastery.slice(0, 10).map((m: any) => ({
-          championId: m.championId,
-          championName: championMap.get(m.championId) ?? String(m.championId),
-          masteryLevel: m.championLevel,
-          masteryPoints: m.championPoints,
-        }));
-
-        const soloWins = solo.wins ?? 0;
-        const soloLosses = solo.losses ?? 0;
-        const flexWins = flex.wins ?? 0;
-        const flexLosses = flex.losses ?? 0;
-
-        players.push({
-          riotId: `${memberAccount.gameName}#${memberAccount.tagLine}`,
-          position: this.normalizePosition(member.position),
-          soloRank: {
-            tier: solo.tier ?? 'UNRANKED',
-            rank: solo.rank ?? '',
-            lp: solo.leaguePoints ?? 0,
-            wins: soloWins,
-            losses: soloLosses,
-          },
-          flexRank: {
-            tier: flex.tier ?? 'UNRANKED',
-            rank: flex.rank ?? '',
-            lp: flex.leaguePoints ?? 0,
-            wins: flexWins,
-            losses: flexLosses,
-          },
-          soloSeasonWinrate: soloWins + soloLosses > 0
-            ? Math.round((soloWins / (soloWins + soloLosses)) * 100) : 0,
-          flexSeasonWinrate: flexWins + flexLosses > 0
-            ? Math.round((flexWins / (flexWins + flexLosses)) * 100) : 0,
-          masteryTop10,
-          soloQueue,
-          flexQueue,
-          clashHistory,
-          combinedTopChamps,
-          profileIconId: summoner.profileIconId,
-          profileIconUrl: this.riotService.buildProfileIconUrl(summoner.profileIconId),
-        } as any);
+        players.push(await this.buildPlayerStats(member.puuid, championMap, member.position));
       } catch (err) {
         this.logger.warn(`Falha ao processar ${member.puuid}: ${(err as any)?.message}`);
       }
@@ -123,7 +67,85 @@ export class ClashService {
     };
   }
 
+  async player(gameName: string, tagLine: string) {
+    const account = await this.riotService.getAccount(gameName, tagLine);
+    const championMap = await this.riotService.getChampionIdNameMap();
+    const player = await this.buildPlayerStats(account.puuid, championMap, undefined, account);
+
+    return { player };
+  }
+
   // ─── Helpers ──────────────────────────────────────────────────────────────
+
+  private async buildPlayerStats(
+    puuid: string,
+    championMap: Map<number, string>,
+    clashPosition?: string,
+    accountOverride?: { gameName: string; tagLine: string },
+  ): Promise<PlayerStatsData> {
+    const summoner = await this.riotService.getSummonerByPuuid(puuid);
+    const memberAccount = accountOverride ?? await this.riotService.getAccountByPuuid(puuid);
+    const ranked = await this.riotService.getRankedStats(puuid);
+    const mastery = await this.riotService.getChampionMastery(puuid, 10);
+
+    const solo = ranked.find((r: any) => r.queueType === 'RANKED_SOLO_5x5') ?? {};
+    const flex = ranked.find((r: any) => r.queueType === 'RANKED_FLEX_SR') ?? {};
+
+    const [soloIds, flexIds, clashIds] = await Promise.all([
+      this.riotService.getMatchHistory(puuid, 20, 420),
+      this.riotService.getMatchHistory(puuid, 10, 440),
+      this.riotService.getMatchHistory(puuid, 10, 700),
+    ]);
+
+    const [soloQueue, flexQueue, clashHistory] = await Promise.all([
+      this.buildQueuePerf(puuid, soloIds),
+      this.buildQueuePerf(puuid, flexIds),
+      this.buildQueuePerf(puuid, clashIds),
+    ]);
+
+    const soloWins = solo.wins ?? 0;
+    const soloLosses = solo.losses ?? 0;
+    const flexWins = flex.wins ?? 0;
+    const flexLosses = flex.losses ?? 0;
+    const topPositions = this.buildTopPositions(soloQueue, flexQueue, clashHistory);
+    const normalizedClashPosition = clashPosition ? this.normalizePosition(clashPosition) : '';
+
+    return {
+      riotId: `${memberAccount.gameName}#${memberAccount.tagLine}`,
+      position: normalizedClashPosition || topPositions[0] || 'FILL',
+      topPositions,
+      soloRank: {
+        tier: solo.tier ?? 'UNRANKED',
+        rank: solo.rank ?? '',
+        lp: solo.leaguePoints ?? 0,
+        wins: soloWins,
+        losses: soloLosses,
+      },
+      flexRank: {
+        tier: flex.tier ?? 'UNRANKED',
+        rank: flex.rank ?? '',
+        lp: flex.leaguePoints ?? 0,
+        wins: flexWins,
+        losses: flexLosses,
+      },
+      soloSeasonWinrate: soloWins + soloLosses > 0
+        ? Math.round((soloWins / (soloWins + soloLosses)) * 100) : 0,
+      flexSeasonWinrate: flexWins + flexLosses > 0
+        ? Math.round((flexWins / (flexWins + flexLosses)) * 100) : 0,
+      masteryTop10: mastery.slice(0, 10).map((m: any) => ({
+        championId: m.championId,
+        championName: championMap.get(m.championId) ?? String(m.championId),
+        masteryLevel: m.championLevel,
+        masteryPoints: m.championPoints,
+      })),
+      soloQueue,
+      flexQueue,
+      clashHistory,
+      combinedTopChamps: this.buildCombinedStats(soloQueue, flexQueue, clashHistory),
+      profileIconId: summoner.profileIconId,
+      profileIconUrl: this.riotService.buildProfileIconUrl(summoner.profileIconId),
+    };
+  }
 
   private async buildQueuePerf(puuid: string, matchIds: string[]): Promise<QueuePerf> {
     if (!matchIds.length) return { games: 0, winrate: 0, avgKda: 0, topChampions: [], roleDistribution: [] };
@@ -199,6 +221,20 @@ export class ClashService {
         share: Math.round((games / totalGames) * 100),
       }))
       .sort((a, b) => b.games - a.games);
+  }
+
+  private buildTopPositions(...queues: QueuePerf[]): string[] {
+    const roleMap = new Map<string, number>();
+    for (const queue of queues) {
+      for (const role of queue.roleDistribution) {
+        roleMap.set(role.role, (roleMap.get(role.role) ?? 0) + role.games);
+      }
+    }
+
+    return [...roleMap.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 2)
+      .map(([role]) => role);
   }
 
   private buildCombinedStats(solo: QueuePerf, flex: QueuePerf, clash: QueuePerf): QueueChampStat[] {
