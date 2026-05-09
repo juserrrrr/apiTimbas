@@ -206,11 +206,20 @@ Regras:
             'x-goog-api-key': this.geminiApiKey,
           },
           timeout: 30000,
+          transformResponse: [(data: string) => data],
         },
       );
 
-      const text = response.data?.candidates?.[0]?.content?.parts?.map((part) => part.text ?? '').join('') ?? '';
-      const finishReason = response.data?.candidates?.[0]?.finishReason ?? 'unknown';
+      let responseData: any;
+      try {
+        responseData = JSON.parse(response.data as string);
+      } catch {
+        this.logger.warn(`[AI] Resposta HTTP inválida (não-JSON) — raw=${String(response.data).slice(0, 200)}`);
+        return this.buildStatAnalysis(players, 'Gemini retornou resposta inválida; análise gerada pelos dados recentes.');
+      }
+
+      const text = responseData?.candidates?.[0]?.content?.parts?.map((part: any) => part.text ?? '').join('') ?? '';
+      const finishReason = responseData?.candidates?.[0]?.finishReason ?? 'unknown';
       this.logger.log(`[AI] finishReason=${finishReason} | chars=${text.length} | preview=${text.slice(0, 300).replace(/\n/g, ' ')}`);
       return this.parseAnalysis(text, players);
     } catch (err) {
