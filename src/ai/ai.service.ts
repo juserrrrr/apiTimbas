@@ -98,6 +98,8 @@ export class AiService {
     if (!this.geminiApiKey) {
       return { ...empty, strategy: 'Configure GEMINI_API_KEY para ativar análise de IA.' };
     }
+    const expectedPlayers = players.length;
+    const expectedBans = Math.min(5, expectedPlayers);
 
     const prompt = `Você é um analista profissional de League of Legends especializado em Clash. Analise os dados dos 5 jogadores adversários e gere uma análise tática precisa, orientada para draft.
 
@@ -167,7 +169,7 @@ Responda APENAS com JSON válido, sem markdown, sem texto fora do JSON:
 }
 
 Regras:
-- Exatamente 5 bans, prioridade 1 a 5 (sem repetir campeões)
+- Gere exatamente ${expectedBans} bans, prioridade 1 a ${expectedBans} (sem repetir campeões)
 - Se clashPosition for TOP, JUNGLE, MID, ADC ou SUPPORT, use essa rota como a rota principal do jogador.
 - Só inferir rota por histórico recente quando clashPosition estiver ausente, FILL, UNSELECTED ou inválida.
 - Se clashPosition vier válido mas o histórico recente divergir, mantenha clashPosition e trate a divergência como risco de flex no motivo.
@@ -175,8 +177,8 @@ Regras:
 - Não bana um campeão só por maestria se ele não aparece em jogos recentes, a menos que seja ameaça clara e sem alternativa melhor.
 - Soloqueue pesa mais para forma mecânica; Clash/Flex pesam mais para draft coordenado e rota provável.
 - predictedPicks: os 2 campeões mais prováveis caso o ban principal não atinja o jogador
-- counterplays: uma entrada por jogador (5 total)
-- predictedPicks: uma entrada por jogador (5 total)
+- counterplays: uma entrada por jogador recebido (${expectedPlayers} total)
+- predictedPicks: uma entrada por jogador recebido (${expectedPlayers} total)
 - Seja específico e acionável, não genérico
 - Use termos curtos em português nos motivos: "mono recente", "alta taxa de vitória", "rota provável MID", "flexível no draft"`;
 
@@ -192,8 +194,9 @@ Regras:
           ],
           generationConfig: {
             temperature: 0.2,
-            maxOutputTokens: 6000,
+            maxOutputTokens: 8192,
             responseMimeType: 'application/json',
+            responseSchema: this.analysisSchema(),
           },
         },
         {
@@ -206,7 +209,7 @@ Regras:
       );
 
       const text = response.data?.candidates?.[0]?.content?.parts?.map((part) => part.text ?? '').join('') ?? '';
-      return JSON.parse(this.stripJsonFence(text)) as AiAnalysis;
+      return this.parseAnalysis(text);
     } catch (err) {
       this.logger.error('Erro ao chamar IA para análise', err);
       return { ...empty, strategy: 'Erro ao gerar análise. Tente novamente.' };
@@ -220,5 +223,84 @@ Regras:
       .replace(/^```\s*/i, '')
       .replace(/\s*```$/i, '')
       .trim();
+  }
+
+  private parseAnalysis(text: string): AiAnalysis {
+    const stripped = this.stripJsonFence(text);
+    try {
+      return JSON.parse(stripped) as AiAnalysis;
+    } catch {
+      const start = stripped.indexOf('{');
+      const end = stripped.lastIndexOf('}');
+      if (start >= 0 && end > start) {
+        return JSON.parse(stripped.slice(start, end + 1)) as AiAnalysis;
+      }
+      throw new Error('Gemini returned invalid JSON');
+    }
+  }
+
+  private analysisSchema() {
+    return {
+      type: 'OBJECT',
+      properties: {
+        bans: {
+          type: 'ARRAY',
+          items: {
+            type: 'OBJECT',
+            properties: {
+              championId: { type: 'INTEGER' },
+              championName: { type: 'STRING' },
+              targetPlayer: { type: 'STRING' },
+              reason: { type: 'STRING' },
+              priority: { type: 'INTEGER' },
+            },
+            required: ['championId', 'championName', 'targetPlayer', 'reason', 'priority'],
+          },
+        },
+        counterplays: {
+          type: 'ARRAY',
+          items: {
+            type: 'OBJECT',
+            properties: {
+              riotId: { type: 'STRING' },
+              position: { type: 'STRING' },
+              likelyPick: { type: 'STRING' },
+              howToCounter: { type: 'STRING' },
+              keyThreats: { type: 'ARRAY', items: { type: 'STRING' } },
+            },
+            required: ['riotId', 'position', 'likelyPick', 'howToCounter', 'keyThreats'],
+          },
+        },
+        predictedPicks: {
+          type: 'ARRAY',
+          items: {
+            type: 'OBJECT',
+            properties: {
+              riotId: { type: 'STRING' },
+              position: { type: 'STRING' },
+              option1: {
+                type: 'OBJECT',
+                properties: {
+                  champion: { type: 'STRING' },
+                  reason: { type: 'STRING' },
+                },
+                required: ['champion', 'reason'],
+              },
+              option2: {
+                type: 'OBJECT',
+                properties: {
+                  champion: { type: 'STRING' },
+                  reason: { type: 'STRING' },
+                },
+                required: ['champion', 'reason'],
+              },
+            },
+            required: ['riotId', 'position', 'option1', 'option2'],
+          },
+        },
+        strategy: { type: 'STRING' },
+      },
+      required: ['bans', 'counterplays', 'predictedPicks', 'strategy'],
+    };
   }
 }
