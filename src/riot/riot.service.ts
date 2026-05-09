@@ -337,7 +337,7 @@ export class RiotService {
   }
 
   buildProfileIconUrl(iconId: number): string {
-    return `http://ddragon.leagueoflegends.com/cdn/img/profileicon/${iconId}.png`;
+    return `https://ddragon.leagueoflegends.com/cdn/img/profileicon/${iconId}.png`;
   }
 
   async buildChampionIconUrl(championName: string): Promise<string> {

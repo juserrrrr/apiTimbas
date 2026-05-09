@@ -209,10 +209,10 @@ Regras:
       );
 
       const text = response.data?.candidates?.[0]?.content?.parts?.map((part) => part.text ?? '').join('') ?? '';
-      return this.parseAnalysis(text);
+      return this.parseAnalysis(text, players);
     } catch (err) {
       this.logger.error('Erro ao chamar IA para análise', err);
-      return { ...empty, strategy: 'Erro ao gerar análise. Tente novamente.' };
+      return this.buildStatAnalysis(players, 'Gemini indisponível; análise gerada pelos dados recentes.');
     }
   }
 
@@ -225,7 +225,7 @@ Regras:
       .trim();
   }
 
-  private parseAnalysis(text: string): AiAnalysis {
+  private parseAnalysis(text: string, players: FullPlayerData[]): AiAnalysis {
     const stripped = this.stripJsonFence(text);
     try {
       return JSON.parse(stripped) as AiAnalysis;
@@ -233,10 +233,73 @@ Regras:
       const start = stripped.indexOf('{');
       const end = stripped.lastIndexOf('}');
       if (start >= 0 && end > start) {
-        return JSON.parse(stripped.slice(start, end + 1)) as AiAnalysis;
+        try {
+          return JSON.parse(stripped.slice(start, end + 1)) as AiAnalysis;
+        } catch {
+          return this.buildStatAnalysis(players, 'Gemini retornou JSON inválido; análise gerada pelos dados recentes.');
+        }
       }
-      throw new Error('Gemini returned invalid JSON');
+      return this.buildStatAnalysis(players, 'Gemini retornou JSON inválido; análise gerada pelos dados recentes.');
     }
+  }
+
+  private buildStatAnalysis(players: FullPlayerData[], strategyPrefix: string): AiAnalysis {
+    const threats = players.flatMap((player) =>
+      player.combinedTopChamps.slice(0, 5).map((champ) => ({
+        ...champ,
+        player,
+        score: champ.games * 3 + champ.winrate + champ.kda * 4 + (player.clashHistory.topChampions.some((c) => c.championId === champ.championId) ? 25 : 0),
+      })),
+    );
+
+    const usedChampionIds = new Set<number>();
+    const bans: BanSuggestion[] = [];
+    for (const threat of threats.sort((a, b) => b.score - a.score)) {
+      if (bans.length >= Math.min(5, players.length)) break;
+      if (usedChampionIds.has(threat.championId)) continue;
+      usedChampionIds.add(threat.championId);
+      bans.push({
+        championId: threat.championId,
+        championName: threat.championName,
+        targetPlayer: threat.player.riotId,
+        reason: `${threat.games} jogos recentes, ${threat.winrate}% WR e ${threat.kda} KDA`,
+        priority: (bans.length + 1) as 1 | 2 | 3 | 4 | 5,
+      });
+    }
+
+    const counterplays: CounterplayAdvice[] = players.map((player) => {
+      const likely = player.combinedTopChamps[0] ?? player.soloQueue.topChampions[0] ?? player.masteryTop10[0];
+      return {
+        riotId: player.riotId,
+        position: player.position,
+        likelyPick: likely?.championName ?? 'Flex',
+        howToCounter: likely
+          ? `Pressione a rota ${player.position} e negue conforto no ${likely.championName}.`
+          : `Poucos dados recentes; jogue por visão e force escolhas cedo na rota ${player.position}.`,
+        keyThreats: player.combinedTopChamps.slice(0, 3).map((c) => c.championName),
+      };
+    });
+
+    const predictedPicks: PredictedPick[] = players.map((player) => {
+      const picks = player.combinedTopChamps.length ? player.combinedTopChamps : player.soloQueue.topChampions;
+      return {
+        riotId: player.riotId,
+        position: player.position,
+        option1: {
+          champion: picks[0]?.championName ?? 'Flex',
+          reason: picks[0] ? `${picks[0].games} jogos recentes` : 'Sem amostra recente clara',
+        },
+        option2: {
+          champion: picks[1]?.championName ?? picks[0]?.championName ?? 'Flex',
+          reason: picks[1] ? `${picks[1].winrate}% WR recente` : 'Alternativa por histórico disponível',
+        },
+      };
+    });
+
+    const playerCount = players.length;
+    const strategy = `${strategyPrefix} ${playerCount} jogador(es) processado(s). Priorize bans nos campeões com mais jogos, maior winrate e presença em Clash/Flex; trate rotas divergentes como possibilidade de flex no draft.`;
+
+    return { bans, counterplays, predictedPicks, strategy };
   }
 
   private analysisSchema() {
