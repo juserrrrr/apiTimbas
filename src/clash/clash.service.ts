@@ -126,7 +126,7 @@ export class ClashService {
   // ─── Helpers ──────────────────────────────────────────────────────────────
 
   private async buildQueuePerf(puuid: string, matchIds: string[]): Promise<QueuePerf> {
-    if (!matchIds.length) return { games: 0, winrate: 0, avgKda: 0, topChampions: [] };
+    if (!matchIds.length) return { games: 0, winrate: 0, avgKda: 0, topChampions: [], roleDistribution: [] };
 
     const BATCH = 5;
     const allMatches: any[] = [];
@@ -138,12 +138,15 @@ export class ClashService {
     }
 
     const champMap = new Map<number, ChampAccum>();
+    const roleMap = new Map<string, number>();
     let wins = 0, kills = 0, deaths = 0, assists = 0;
 
     for (const match of allMatches) {
       const p = (match.info?.participants ?? []).find((x: any) => x.puuid === puuid);
       if (!p) continue;
       if (p.win) wins++;
+      const role = this.normalizePosition(p.teamPosition || p.individualPosition || p.lane || p.role);
+      if (role !== 'FILL') roleMap.set(role, (roleMap.get(role) ?? 0) + 1);
       kills += p.kills ?? 0;
       deaths += p.deaths ?? 0;
       assists += p.assists ?? 0;
@@ -182,7 +185,20 @@ export class ClashService {
       winrate: total > 0 ? Math.round((wins / total) * 100) : 0,
       avgKda: deaths === 0 ? kills + assists : Math.round(((kills + assists) / deaths) * 10) / 10,
       topChampions,
+      roleDistribution: this.buildRoleDistribution(roleMap, total),
     };
+  }
+
+  private buildRoleDistribution(roleMap: Map<string, number>, totalGames: number) {
+    if (!totalGames) return [];
+
+    return [...roleMap.entries()]
+      .map(([role, games]) => ({
+        role,
+        games,
+        share: Math.round((games / totalGames) * 100),
+      }))
+      .sort((a, b) => b.games - a.games);
   }
 
   private buildCombinedStats(solo: QueuePerf, flex: QueuePerf, clash: QueuePerf): QueueChampStat[] {

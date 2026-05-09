@@ -19,11 +19,18 @@ export interface QueueChampStat {
   kda: number;
 }
 
+export interface RoleStat {
+  role: string;
+  games: number;
+  share: number;
+}
+
 export interface QueuePerf {
   games: number;
   winrate: number;
   avgKda: number;
   topChampions: QueueChampStat[];
+  roleDistribution: RoleStat[];
 }
 
 export interface FullPlayerData {
@@ -92,13 +99,19 @@ export class AiService {
       return { ...empty, strategy: 'Configure GEMINI_API_KEY para ativar análise de IA.' };
     }
 
-    const prompt = `Você é um analista profissional de League of Legends especializado em Clash. Analise os dados completos dos 5 jogadores adversários e gere uma análise tática detalhada.
+    const prompt = `Você é um analista profissional de League of Legends especializado em Clash. Analise os dados dos 5 jogadores adversários e gere uma análise tática precisa, orientada para draft.
 
 DADOS DOS ADVERSÁRIOS (JSON):
 ${JSON.stringify(
   players.map((p) => ({
     riotId: p.riotId,
-    position: p.position,
+    clashPosition: p.position,
+    roleEvidence: {
+      observacao: 'Se clashPosition for TOP/JUNGLE/MID/ADC/SUPPORT, trate como rota principal. Use histórico recente apenas para desempatar picks e risco de flex.',
+      soloQueueRoles: p.soloQueue.roleDistribution,
+      flexQueueRoles: p.flexQueue.roleDistribution,
+      clashRoles: p.clashHistory.roleDistribution,
+    },
     soloRank: `${p.soloRank.tier} ${p.soloRank.rank} (${p.soloRank.wins}W/${p.soloRank.losses}L — ${p.soloSeasonWinrate}% WR season)`,
     flexRank: `${p.flexRank.tier} ${p.flexRank.rank} (${p.flexSeasonWinrate}% WR season)`,
     maestria_top5: p.masteryTop10.slice(0, 5).map((m) => `${m.championName} M${m.masteryLevel}`),
@@ -136,7 +149,7 @@ Responda APENAS com JSON válido, sem markdown, sem texto fora do JSON:
   "counterplays": [
     {
       "riotId": "string",
-      "position": "string",
+      "position": "clashPosition quando vier TOP/JUNGLE/MID/ADC/SUPPORT; caso contrário rota mais provável ou FLEX",
       "likelyPick": "campeão que ele provavelmente vai pegar",
       "howToCounter": "como jogar contra esse jogador/pick (máx 150 chars, português)",
       "keyThreats": ["ameaça1", "ameaça2", "ameaça3"]
@@ -145,7 +158,7 @@ Responda APENAS com JSON válido, sem markdown, sem texto fora do JSON:
   "predictedPicks": [
     {
       "riotId": "string",
-      "position": "string",
+      "position": "clashPosition quando vier TOP/JUNGLE/MID/ADC/SUPPORT; caso contrário rota mais provável ou FLEX",
       "option1": { "champion": "string", "reason": "string (máx 80 chars, português)" },
       "option2": { "champion": "string", "reason": "string (máx 80 chars, português)" }
     }
@@ -155,12 +168,17 @@ Responda APENAS com JSON válido, sem markdown, sem texto fora do JSON:
 
 Regras:
 - Exatamente 5 bans, prioridade 1 a 5 (sem repetir campeões)
-- Priorize: winrate > 60% com >= 5 jogos, campeões de Clash, maestria alta
-- Soloqueue tem peso 2x maior que flex para determinar picks prováveis
-- predictedPicks: os 2 campeões mais prováveis caso os bans não o atinjam
+- Se clashPosition for TOP, JUNGLE, MID, ADC ou SUPPORT, use essa rota como a rota principal do jogador.
+- Só inferir rota por histórico recente quando clashPosition estiver ausente, FILL, UNSELECTED ou inválida.
+- Se clashPosition vier válido mas o histórico recente divergir, mantenha clashPosition e trate a divergência como risco de flex no motivo.
+- Para bans, priorize campeões com alta confiança de rota + alta ameaça: winrate > 60% com >= 5 jogos, presença em Clash, maestria alta, KDA forte e repetição em filas recentes.
+- Não bana um campeão só por maestria se ele não aparece em jogos recentes, a menos que seja ameaça clara e sem alternativa melhor.
+- Soloqueue pesa mais para forma mecânica; Clash/Flex pesam mais para draft coordenado e rota provável.
+- predictedPicks: os 2 campeões mais prováveis caso o ban principal não atinja o jogador
 - counterplays: uma entrada por jogador (5 total)
 - predictedPicks: uma entrada por jogador (5 total)
-- Seja específico e acionável, não genérico`;
+- Seja específico e acionável, não genérico
+- Use termos curtos em português nos motivos: "mono recente", "alta taxa de vitória", "rota provável MID", "flexível no draft"`;
 
     try {
       const response = await axios.post(

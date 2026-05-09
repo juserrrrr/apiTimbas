@@ -269,8 +269,17 @@ describe('ClashService', () => {
         riot.getChampionMastery.mockResolvedValue([]);
       };
 
-      const makeParticipant = (puuid: string, win: boolean, k: number, d: number, a: number, champId: number, champName: string) => ({
-        info: { participants: [{ puuid, win, kills: k, deaths: d, assists: a, championId: champId, championName: champName }] },
+      const makeParticipant = (
+        puuid: string,
+        win: boolean,
+        k: number,
+        d: number,
+        a: number,
+        champId: number,
+        champName: string,
+        teamPosition = 'BOTTOM',
+      ) => ({
+        info: { participants: [{ puuid, win, kills: k, deaths: d, assists: a, championId: champId, championName: champName, teamPosition }] },
       });
 
       it('calculates winrate and KDA from match data', async () => {
@@ -293,6 +302,28 @@ describe('ClashService', () => {
         expect(p.soloQueue.games).toBe(3);
         expect(p.soloQueue.winrate).toBe(67); // 2/3 → 67%
         expect(p.soloQueue.avgKda).toBe(3.6); // (5+8+7+4+2+3)/(2+1+5) = 29/8 → 3.6
+      });
+
+      it('includes recent role distribution from match participant positions', async () => {
+        setupOnePlayer();
+        riot.getRankedStats.mockResolvedValue([]);
+        riot.getMatchHistory.mockImplementation((_puuid: string, _count: number, queue?: number) =>
+          queue === 420 ? Promise.resolve(['m1', 'm2', 'm3']) : Promise.resolve([]),
+        );
+        riot.getMatch.mockImplementation((id: string) => {
+          const pu = 'p1';
+          if (id === 'm1') return Promise.resolve(makeParticipant(pu, true, 5, 2, 8, 81, 'Ezreal', 'BOTTOM'));
+          if (id === 'm2') return Promise.resolve(makeParticipant(pu, true, 7, 1, 4, 81, 'Ezreal', 'BOTTOM'));
+          if (id === 'm3') return Promise.resolve(makeParticipant(pu, false, 2, 5, 3, 134, 'Syndra', 'MIDDLE'));
+          return Promise.resolve(null);
+        });
+
+        const result = await service.scout(GAME_NAME, TAG_LINE);
+
+        expect(result.players[0].soloQueue.roleDistribution).toEqual([
+          { role: 'ADC', games: 2, share: 67 },
+          { role: 'MID', games: 1, share: 33 },
+        ]);
       });
 
       it('reads season winrate from ranked stats', async () => {

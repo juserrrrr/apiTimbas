@@ -10,6 +10,9 @@ import { TournamentMatchDto } from './dto/tournament-match.dto';
 const AMERICAS_BASE = 'https://americas.api.riotgames.com';
 const BR1_BASE = 'https://br1.api.riotgames.com';
 const DDRAGON_BASE = 'https://ddragon.leagueoflegends.com';
+const RIOT_MAX_RETRIES = 2;
+const RIOT_DEFAULT_RETRY_AFTER_MS = 1500;
+const RIOT_MAX_RETRY_AFTER_MS = 10000;
 
 const TTL = {
   PLAYER_INFO: 5 * 60 * 1000,       // 5 min — ranked stats mudam com frequência
@@ -49,16 +52,38 @@ export class RiotService {
   }
 
   private async riotGet<T>(absoluteUrl: string): Promise<T> {
-    const { data } = await firstValueFrom(
-      this.httpService
-        .get<T>(absoluteUrl, { headers: this.riotHeaders })
-        .pipe(
-          catchError((error: AxiosError) => {
-            throw error;
-          }),
-        ),
-    );
-    return data;
+    for (let attempt = 0; attempt <= RIOT_MAX_RETRIES; attempt++) {
+      try {
+        const { data } = await firstValueFrom(
+          this.httpService.get<T>(absoluteUrl, { headers: this.riotHeaders }),
+        );
+        return data;
+      } catch (error) {
+        const axiosError = error as AxiosError;
+        if (axiosError.response?.status !== 429 || attempt === RIOT_MAX_RETRIES) {
+          throw error;
+        }
+
+        await this.wait(this.getRetryAfterMs(axiosError));
+      }
+    }
+
+    throw new Error('Riot API request failed');
+  }
+
+  private getRetryAfterMs(error: AxiosError): number {
+    const retryAfter = error.response?.headers?.['retry-after'];
+    const seconds = Array.isArray(retryAfter) ? retryAfter[0] : retryAfter;
+    const parsed = Number(seconds);
+    const waitMs = Number.isFinite(parsed) && parsed > 0
+      ? parsed * 1000
+      : RIOT_DEFAULT_RETRY_AFTER_MS;
+
+    return Math.min(waitMs, RIOT_MAX_RETRY_AFTER_MS);
+  }
+
+  private wait(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   // ─── LoL Account (Riot ID) ────────────────────────────────────────────────
