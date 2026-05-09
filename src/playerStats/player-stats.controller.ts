@@ -1,20 +1,20 @@
 import { BadRequestException, Controller, Get, Query, UseGuards } from '@nestjs/common';
-import { ClashService } from './clash.service';
 import { AuthGuard } from '../auth/guards/auth.guard';
-import { ClashScoutRateLimitGuard } from './guards/clash-scout-rate-limit.guard';
+import { ClashScoutRateLimitGuard } from '../clash/guards/clash-scout-rate-limit.guard';
+import { PlayerStatsService } from './player-stats.service';
 
 @UseGuards(AuthGuard)
-@Controller('clash')
-export class ClashController {
-  constructor(private readonly clashService: ClashService) {}
+@Controller('player-stats')
+export class PlayerStatsController {
+  constructor(private readonly playerStatsService: PlayerStatsService) {}
 
-  @Get('scout')
+  @Get('riot')
   @UseGuards(ClashScoutRateLimitGuard)
-  async scout(
+  async riot(
     @Query('gameName') gameName: string,
     @Query('tagLine') tagLine: string,
   ) {
     if (!gameName || !tagLine) throw new BadRequestException('gameName e tagLine são obrigatórios');
-    return this.clashService.scout(gameName, tagLine);
+    return this.playerStatsService.getRiotPlayer(gameName, tagLine);
   }
 }

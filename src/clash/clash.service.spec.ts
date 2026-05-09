@@ -3,6 +3,7 @@ import { BadRequestException } from '@nestjs/common';
 import { ClashService } from './clash.service';
 import { RiotService } from '../riot/riot.service';
 import { AiService } from '../ai/ai.service';
+import { PlayerStatsService } from '../playerStats/player-stats.service';
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 
@@ -82,6 +83,7 @@ describe('ClashService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ClashService,
+        PlayerStatsService,
         { provide: RiotService, useValue: riot },
         { provide: AiService, useValue: ai },
       ],
@@ -227,31 +229,6 @@ describe('ClashService', () => {
       // Service must work without any prisma calls
       // If PrismaService were injected it would error on module creation
       await expect(service.scout(GAME_NAME, TAG_LINE)).resolves.toBeDefined();
-    });
-
-    it('builds a single-player stats response without Clash team lookup or AI analysis', async () => {
-      riot.getAccount.mockResolvedValue(ACCOUNT);
-      riot.getSummonerByPuuid.mockResolvedValue(makeSummoner(PUUID));
-      riot.getRankedStats.mockResolvedValue([]);
-      riot.getChampionMastery.mockResolvedValue([]);
-      riot.getMatchHistory.mockImplementation((_puuid: string, _count: number, queue?: number) =>
-        queue === 420 ? Promise.resolve(['m1', 'm2', 'm3']) : Promise.resolve([]),
-      );
-      riot.getMatch.mockImplementation((id: string) => {
-        if (id === 'm1') return Promise.resolve({ info: { participants: [{ puuid: PUUID, win: true, kills: 5, deaths: 2, assists: 8, championId: 81, championName: 'Ezreal', teamPosition: 'BOTTOM' }] } });
-        if (id === 'm2') return Promise.resolve({ info: { participants: [{ puuid: PUUID, win: true, kills: 7, deaths: 1, assists: 4, championId: 81, championName: 'Ezreal', teamPosition: 'BOTTOM' }] } });
-        if (id === 'm3') return Promise.resolve({ info: { participants: [{ puuid: PUUID, win: false, kills: 2, deaths: 5, assists: 3, championId: 134, championName: 'Syndra', teamPosition: 'MIDDLE' }] } });
-        return Promise.resolve(null);
-      });
-
-      const result = await service.player(GAME_NAME, TAG_LINE);
-
-      expect(result.player.riotId).toBe('TestPlayer#BR1');
-      expect(result.player.topPositions).toEqual(['ADC', 'MID']);
-      expect(result.player.position).toBe('ADC');
-      expect(riot.getClashPlayersByPuuid).not.toHaveBeenCalled();
-      expect(riot.getClashTeam).not.toHaveBeenCalled();
-      expect(ai.analyzeOpponents).not.toHaveBeenCalled();
     });
 
     describe('position normalization', () => {

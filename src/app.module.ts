@@ -14,6 +14,7 @@ import { DiscordBotModule } from './discord/discord.module';
 import { ClashModule } from './clash/clash.module';
 import { AiModule } from './ai/ai.module';
 import { VerifyModule } from './verify/verify.module';
+import { PlayerStatsModule } from './playerStats/player-stats.module';
 
 @Module({
   imports: [
@@ -44,6 +45,7 @@ import { VerifyModule } from './verify/verify.module';
     ClashModule,
     AiModule,
     VerifyModule,
+    PlayerStatsModule,
   ],
   controllers: [],
   providers: [{ provide: APP_GUARD, useClass: AppThrottlerGuard }],

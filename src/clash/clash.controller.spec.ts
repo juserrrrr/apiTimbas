@@ -15,10 +15,10 @@ const SCOUT_RESULT = {
 
 describe('ClashController', () => {
   let controller: ClashController;
-  let service: jest.Mocked<Pick<ClashService, 'scout' | 'player'>>;
+  let service: jest.Mocked<Pick<ClashService, 'scout'>>;
 
   beforeEach(async () => {
-    service = { scout: jest.fn(), player: jest.fn() };
+    service = { scout: jest.fn() };
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [ClashController],
@@ -81,22 +81,6 @@ describe('ClashController', () => {
       // scout() takes only gameName+tagLine, no discordId
       expect(service.scout).toHaveBeenCalledWith('AnyPlayer', 'BR1');
       expect(service.scout).toHaveBeenCalledTimes(1);
-    });
-  });
-
-  describe('player', () => {
-    it('delegates to ClashService.player with gameName and tagLine', async () => {
-      service.player.mockResolvedValue({ player: { riotId: 'PlayerName#BR1' } } as any);
-
-      await controller.player('PlayerName', 'BR1');
-
-      expect(service.player).toHaveBeenCalledWith('PlayerName', 'BR1');
-    });
-
-    it('throws BadRequestException when params are missing', async () => {
-      await expect(controller.player('', 'BR1')).rejects.toThrow(BadRequestException);
-      await expect(controller.player('PlayerName', '')).rejects.toThrow(BadRequestException);
-      expect(service.player).not.toHaveBeenCalled();
     });
   });
 });
