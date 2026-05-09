@@ -210,6 +210,8 @@ Regras:
       );
 
       const text = response.data?.candidates?.[0]?.content?.parts?.map((part) => part.text ?? '').join('') ?? '';
+      const finishReason = response.data?.candidates?.[0]?.finishReason ?? 'unknown';
+      this.logger.log(`[AI] finishReason=${finishReason} | chars=${text.length} | preview=${text.slice(0, 300).replace(/\n/g, ' ')}`);
       return this.parseAnalysis(text, players);
     } catch (err) {
       this.logger.error('Erro ao chamar IA para análise', err);

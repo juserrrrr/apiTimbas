@@ -101,7 +101,7 @@ export class PlayerStatsService {
       clashHistory,
       combinedTopChamps: this.buildCombinedStats(soloQueue, flexQueue, clashHistory),
       profileIconId: summoner.profileIconId,
-      profileIconUrl: this.riotService.buildProfileIconUrl(summoner.profileIconId),
+      profileIconUrl: await this.riotService.buildProfileIconUrl(summoner.profileIconId),
     };
   }
 

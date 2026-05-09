@@ -151,7 +151,7 @@ export class RiotService {
       summonerId: summoner.id,
       summonerLevel: summoner.summonerLevel,
       profileIconId: summoner.profileIconId,
-      profileIconUrl: this.buildProfileIconUrl(summoner.profileIconId),
+      profileIconUrl: await this.buildProfileIconUrl(summoner.profileIconId),
       solo: {
         tier: solo.tier ?? 'Unranked',
         rank: solo.rank ?? '',
@@ -336,8 +336,9 @@ export class RiotService {
     return champions;
   }
 
-  buildProfileIconUrl(iconId: number): string {
-    return `https://ddragon.leagueoflegends.com/cdn/img/profileicon/${iconId}.png`;
+  async buildProfileIconUrl(iconId: number): Promise<string> {
+    const version = await this.getDdragonVersion();
+    return `${DDRAGON_BASE}/cdn/${version}/img/profileicon/${iconId}.png`;
   }
 
   async buildChampionIconUrl(championName: string): Promise<string> {
