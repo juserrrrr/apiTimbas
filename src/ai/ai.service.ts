@@ -89,8 +89,9 @@ export class AiService {
 
   constructor() {
     this.geminiApiKey = process.env.GEMINI_API_KEY || null;
-    this.geminiModel = (process.env.GEMINI_MODEL || 'gemini-2.5-flash').replace(/^models\//, '');
+    this.geminiModel = (process.env.GEMINI_MODEL || 'gemini-2.0-flash').replace(/^models\//, '');
     if (!this.geminiApiKey) this.logger.warn('GEMINI_API_KEY não configurado — análise de IA desabilitada');
+    this.logger.log(`AiService ready — model=${this.geminiModel}`);
   }
 
   async analyzeOpponents(players: FullPlayerData[]): Promise<AiAnalysis> {
@@ -197,7 +198,6 @@ Regras:
             maxOutputTokens: 8192,
             responseMimeType: 'application/json',
             responseSchema: this.analysisSchema(),
-            thinkingConfig: { thinkingBudget: 0 },
           },
         },
         {
