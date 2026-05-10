@@ -16,7 +16,7 @@ services:
       PORT: 3333
       TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:-1}
       DATABASE_URL: postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-admin}@db:5432/${POSTGRES_DB:-timbas_db}?schema=public
-      WEB_URL: ${WEB_URL:-http://localhost:3000}
+      WEB_URL: ${WEB_URL:?WEB_URL is required}
       EXTRA_ALLOWED_ORIGINS: ${EXTRA_ALLOWED_ORIGINS:-}
       JWT_SECRET: ${JWT_SECRET:-}
       RIOT_API_KEY: ${RIOT_API_KEY:-}
@@ -27,7 +27,7 @@ services:
       BOT_SECRET: ${BOT_SECRET:-}
       DISCORD_CLIENT_ID: ${DISCORD_CLIENT_ID:-}
       DISCORD_CLIENT_SECRET: ${DISCORD_CLIENT_SECRET:-}
-      DISCORD_REDIRECT_URI: ${DISCORD_REDIRECT_URI:-http://localhost:3333/auth/discord/callback}
+      DISCORD_REDIRECT_URI: ${DISCORD_REDIRECT_URI:?DISCORD_REDIRECT_URI is required}
       DISCORD_GUILD_ID: ${DISCORD_GUILD_ID:-}
       ADMIN_NAME: ${ADMIN_NAME:-}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-}
