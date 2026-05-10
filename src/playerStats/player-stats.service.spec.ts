@@ -57,11 +57,37 @@ describe('PlayerStatsService', () => {
 
   it('keeps building stats when Riot ID lookup by PUUID fails', async () => {
     riot.getSummonerByPuuid.mockResolvedValue({ id: 'sid', puuid: PUUID, profileIconId: 123 });
-    riot.getAccountByPuuid.mockRejectedValue(new Error('not found'));
+    riot.getAccountByPuuid.mockResolvedValue(null);
 
     const result = await service.buildFromPuuid(PUUID, new Map());
 
-    expect(result.riotId).toBe('Jogador#puuid-');
+    expect(result.riotId).toBe('Jogador#puui');
     expect(result.profileIconId).toBe(123);
+  });
+
+  it('keeps champion icons when Riot omits participant position but filters explicit offrole games', async () => {
+    riot.getSummonerByPuuid.mockResolvedValue({ id: 'sid', puuid: PUUID, profileIconId: 123 });
+    riot.getAccountByPuuid.mockResolvedValue({ gameName: 'Support', tagLine: 'BR1' });
+    riot.getMatchHistory.mockImplementation((_puuid: string, _count: number, queue?: number) =>
+      queue === 700 ? Promise.resolve(['unknown-role', 'offrole-adc']) : Promise.resolve([]),
+    );
+    riot.getMatch.mockImplementation((id: string) => {
+      if (id === 'unknown-role') {
+        return Promise.resolve({
+          info: { participants: [{ puuid: PUUID, win: true, kills: 1, deaths: 2, assists: 12, championId: 412, championName: 'Thresh', teamPosition: '' }] },
+        });
+      }
+      if (id === 'offrole-adc') {
+        return Promise.resolve({
+          info: { participants: [{ puuid: PUUID, win: false, kills: 8, deaths: 4, assists: 4, championId: 81, championName: 'Ezreal', teamPosition: 'BOTTOM' }] },
+        });
+      }
+      return Promise.resolve(null);
+    });
+
+    const result = await service.buildFromPuuid(PUUID, new Map([[412, 'Thresh'], [81, 'Ezreal']]), 'UTILITY');
+
+    expect(result.clashHistory.games).toBe(2);
+    expect(result.clashHistory.topChampions.map((c) => c.championName)).toEqual(['Thresh']);
   });
 });

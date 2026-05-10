@@ -6,8 +6,9 @@ import { AiModule } from '../ai/ai.module';
 import { AuthModule } from '../auth/auth.module';
 import { ClashScoutRateLimitGuard } from './guards/clash-scout-rate-limit.guard';
 import { PlayerStatsModule } from '../playerStats/player-stats.module';
+import { PrismaModule } from '../prisma/prisma.module';
 @Module({
-  imports: [RiotModule, AiModule, AuthModule, PlayerStatsModule],
+  imports: [RiotModule, AiModule, AuthModule, PlayerStatsModule, PrismaModule],
   controllers: [ClashController],
   providers: [ClashService, ClashScoutRateLimitGuard],
 })

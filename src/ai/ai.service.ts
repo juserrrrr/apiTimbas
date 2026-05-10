@@ -1,5 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import axios from 'axios';
+import { createHash } from 'crypto';
+
+const GEMINI_CACHE_TTL_MS = 30 * 60 * 1000;
+const GEMINI_FALLBACK_CACHE_TTL_MS = 2 * 60 * 1000;
+const GEMINI_MAX_RETRIES = 1;
+const GEMINI_MAX_RETRY_DELAY_MS = 65_000;
 
 // ─── Input types ─────────────────────────────────────────────────────────────
 
@@ -86,6 +92,8 @@ export class AiService {
   private readonly logger = new Logger(AiService.name);
   private readonly geminiApiKey: string | null;
   private readonly geminiModel: string;
+  private readonly analysisCache = new Map<string, { value: AiAnalysis; expiresAt: number }>();
+  private geminiBlockedUntil = 0;
 
   constructor() {
     this.geminiApiKey = process.env.GEMINI_API_KEY || null;
@@ -99,6 +107,10 @@ export class AiService {
     if (!this.geminiApiKey) {
       return { ...empty, strategy: 'Configure GEMINI_API_KEY para ativar análise de IA.' };
     }
+    const cacheKey = this.buildAnalysisCacheKey(players);
+    const cached = this.getCachedAnalysis(cacheKey);
+    if (cached) return cached;
+
     const expectedPlayers = players.length;
     const expectedBans = Math.min(5, expectedPlayers);
 
@@ -184,7 +196,7 @@ Regras:
 - Use termos curtos em português nos motivos: "mono recente", "alta taxa de vitória", "rota provável MID", "flexível no draft"`;
 
     try {
-      const response = await axios.post(
+      const response = await this.postGeminiWithRetry(
         `https://generativelanguage.googleapis.com/v1beta/models/${this.geminiModel}:generateContent`,
         {
           contents: [
@@ -215,17 +227,129 @@ Regras:
         responseData = JSON.parse(response.data as string);
       } catch {
         this.logger.warn(`[AI] Resposta HTTP inválida (não-JSON) — raw=${String(response.data).slice(0, 200)}`);
-        return this.buildStatAnalysis(players, 'Gemini retornou resposta inválida; análise gerada pelos dados recentes.');
+        const fallback = this.buildStatAnalysis(players, 'Gemini retornou resposta inválida; análise gerada pelos dados recentes.');
+        this.setCachedAnalysis(cacheKey, fallback, GEMINI_FALLBACK_CACHE_TTL_MS);
+        return fallback;
       }
 
       const text = responseData?.candidates?.[0]?.content?.parts?.map((part: any) => part.text ?? '').join('') ?? '';
       const finishReason = responseData?.candidates?.[0]?.finishReason ?? 'unknown';
       this.logger.log(`[AI] finishReason=${finishReason} | chars=${text.length} | preview=${text.slice(0, 300).replace(/\n/g, ' ')}`);
-      return this.parseAnalysis(text, players);
+      const analysis = this.parseAnalysis(text, players);
+      this.setCachedAnalysis(cacheKey, analysis, GEMINI_CACHE_TTL_MS);
+      return analysis;
     } catch (err) {
-      this.logger.error('Erro ao chamar IA para análise', err);
-      return this.buildStatAnalysis(players, 'Gemini indisponível; análise gerada pelos dados recentes.');
+      this.logger.warn(`Erro ao chamar IA para análise: ${this.describeGeminiError(err)}`);
+      const fallback = this.buildStatAnalysis(players, 'Gemini indisponível; análise gerada pelos dados recentes.');
+      this.setCachedAnalysis(cacheKey, fallback, GEMINI_FALLBACK_CACHE_TTL_MS);
+      return fallback;
     }
+  }
+
+  private async postGeminiWithRetry(url: string, body: any, config: any): Promise<any> {
+    const waitFromPrevious429 = this.geminiBlockedUntil - Date.now();
+    if (waitFromPrevious429 > 0 && waitFromPrevious429 <= GEMINI_MAX_RETRY_DELAY_MS) {
+      this.logger.warn(`[AI] Gemini em cooldown; aguardando ${Math.ceil(waitFromPrevious429 / 1000)}s`);
+      await this.wait(waitFromPrevious429);
+    } else if (waitFromPrevious429 > GEMINI_MAX_RETRY_DELAY_MS) {
+      throw new Error(`Gemini em cooldown por ${Math.ceil(waitFromPrevious429 / 1000)}s`);
+    }
+
+    for (let attempt = 0; attempt <= GEMINI_MAX_RETRIES; attempt++) {
+      try {
+        return await axios.post(url, body, config);
+      } catch (err) {
+        const status = (err as any)?.response?.status;
+        const retryDelayMs = this.getGeminiRetryDelayMs(err);
+        if (status !== 429 || attempt === GEMINI_MAX_RETRIES || retryDelayMs > GEMINI_MAX_RETRY_DELAY_MS) {
+          throw err;
+        }
+
+        this.geminiBlockedUntil = Date.now() + retryDelayMs;
+        this.logger.warn(`[AI] Gemini 429; aguardando ${Math.ceil(retryDelayMs / 1000)}s antes de tentar novamente`);
+        await this.wait(retryDelayMs);
+      }
+    }
+
+    throw new Error('Gemini request failed');
+  }
+
+  private getGeminiRetryDelayMs(err: unknown): number {
+    const data = this.getGeminiErrorData(err);
+    const retryDelay = data?.error?.details?.find((d: any) => d?.['@type']?.includes('RetryInfo'))?.retryDelay;
+    const fromDetails = this.parseDurationMs(retryDelay);
+    if (fromDetails) return fromDetails;
+
+    const message = String(data?.error?.message ?? '');
+    const match = message.match(/retry in\s+([\d.]+)s/i);
+    if (match) return Math.ceil(Number(match[1]) * 1000);
+
+    const retryAfter = (err as any)?.response?.headers?.['retry-after'];
+    const retryAfterValue = Array.isArray(retryAfter) ? retryAfter[0] : retryAfter;
+    const retryAfterSeconds = Number(retryAfterValue);
+    return Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0
+      ? retryAfterSeconds * 1000
+      : 60_000;
+  }
+
+  private parseDurationMs(value: unknown): number | null {
+    if (typeof value !== 'string') return null;
+    const match = value.match(/^([\d.]+)s$/);
+    if (!match) return null;
+    const seconds = Number(match[1]);
+    return Number.isFinite(seconds) && seconds > 0 ? Math.ceil(seconds * 1000) : null;
+  }
+
+  private describeGeminiError(err: unknown): string {
+    const status = (err as any)?.response?.status;
+    const data = this.getGeminiErrorData(err);
+    const code = data?.error?.status;
+    const retryMs = status === 429 ? this.getGeminiRetryDelayMs(err) : null;
+    const message = String(data?.error?.message ?? (err as any)?.message ?? 'erro desconhecido')
+      .replace(/\s+/g, ' ')
+      .slice(0, 240);
+    return `status=${status ?? 'n/a'} code=${code ?? 'n/a'}${retryMs ? ` retry=${Math.ceil(retryMs / 1000)}s` : ''} msg=${message}`;
+  }
+
+  private getGeminiErrorData(err: unknown): any {
+    const data = (err as any)?.response?.data;
+    if (typeof data !== 'string') return data;
+    try {
+      return JSON.parse(data);
+    } catch {
+      return { error: { message: data } };
+    }
+  }
+
+  private buildAnalysisCacheKey(players: FullPlayerData[]): string {
+    const payload = players.map((p) => ({
+      riotId: p.riotId,
+      position: p.position,
+      solo: p.soloQueue.topChampions.slice(0, 5),
+      flex: p.flexQueue.topChampions.slice(0, 3),
+      clash: p.clashHistory.topChampions.slice(0, 3),
+      combined: p.combinedTopChamps.slice(0, 5),
+    }));
+    return createHash('sha256').update(JSON.stringify(payload)).digest('hex');
+  }
+
+  private getCachedAnalysis(key: string): AiAnalysis | null {
+    const cached = this.analysisCache.get(key);
+    if (!cached) return null;
+    if (Date.now() > cached.expiresAt) {
+      this.analysisCache.delete(key);
+      return null;
+    }
+    this.logger.log('[AI] usando análise em cache');
+    return cached.value;
+  }
+
+  private setCachedAnalysis(key: string, value: AiAnalysis, ttlMs: number): void {
+    this.analysisCache.set(key, { value, expiresAt: Date.now() + ttlMs });
+  }
+
+  private wait(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   private stripJsonFence(text: string): string {

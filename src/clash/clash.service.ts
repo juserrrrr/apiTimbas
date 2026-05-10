@@ -1,7 +1,8 @@
-import { Injectable, Logger, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
 import { RiotService } from '../riot/riot.service';
 import { AiService, FullPlayerData, AiAnalysis } from '../ai/ai.service';
 import { PlayerStatsService } from '../playerStats/player-stats.service';
+import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
 export class ClashService {
@@ -11,6 +12,7 @@ export class ClashService {
     private readonly riotService: RiotService,
     private readonly aiService: AiService,
     private readonly playerStatsService: PlayerStatsService,
+    private readonly prisma: PrismaService,
   ) {}
 
   async scout(gameName: string, tagLine: string) {
@@ -54,5 +56,21 @@ export class ClashService {
       predictedPicks: analysis.predictedPicks,
       strategy: analysis.strategy,
     };
+  }
+
+  async saveAnalysis(data: any): Promise<{ id: string }> {
+    const record = await this.prisma.clashAnalysis.create({
+      data: {
+        teamName: data.team?.name ?? 'Desconhecido',
+        data,
+      },
+    });
+    return { id: record.id };
+  }
+
+  async getAnalysis(id: string): Promise<{ data: any; teamName: string; createdAt: Date }> {
+    const record = await this.prisma.clashAnalysis.findUnique({ where: { id } });
+    if (!record) throw new NotFoundException('Análise não encontrada');
+    return { data: record.data, teamName: record.teamName, createdAt: record.createdAt };
   }
 }

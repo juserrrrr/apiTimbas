@@ -252,3 +252,12 @@ model PendingVerification {
 
   @@index([discordId])
 }
+
+model ClashAnalysis {
+  id        String   @id @default(cuid())
+  teamName  String
+  data      Json
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}

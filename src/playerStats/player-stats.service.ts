@@ -12,6 +12,12 @@ interface ChampAccum {
   assists: number;
 }
 
+const MATCH_HISTORY_COUNTS = {
+  SOLO: 12,
+  FLEX: 6,
+  CLASH: 5,
+} as const;
+
 export type RiotPlayerStats = FullPlayerData & {
   topPositions: string[];
   profileIconId: number;
@@ -42,7 +48,7 @@ export class PlayerStatsService {
     } catch {
       summoner = { profileIconId: 0, summonerLevel: 0 };
     }
-    const account = accountOverride ?? await this.getAccountFallback(puuid);
+    const account = accountOverride ?? await this.getAccountFallback(puuid, summoner);
     const ranked = await this.riotService.getRankedStats(puuid);
     const mastery = await this.riotService.getChampionMastery(puuid, 10);
 
@@ -50,15 +56,17 @@ export class PlayerStatsService {
     const flex = ranked.find((r: any) => r.queueType === 'RANKED_FLEX_SR') ?? {};
 
     const [soloIds, flexIds, clashIds] = await Promise.all([
-      this.riotService.getMatchHistory(puuid, 20, 420),
-      this.riotService.getMatchHistory(puuid, 10, 440),
-      this.riotService.getMatchHistory(puuid, 10, 700),
+      this.riotService.getMatchHistory(puuid, MATCH_HISTORY_COUNTS.SOLO, 420),
+      this.riotService.getMatchHistory(puuid, MATCH_HISTORY_COUNTS.FLEX, 440),
+      this.riotService.getMatchHistory(puuid, MATCH_HISTORY_COUNTS.CLASH, 700),
     ]);
 
+    const posFilter = clashPosition ? this.normalizePosition(clashPosition) : undefined;
+    const effectivePosFilter = posFilter && posFilter !== 'FILL' ? posFilter : undefined;
     const [soloQueue, flexQueue, clashHistory] = await Promise.all([
-      this.buildQueuePerf(puuid, soloIds),
-      this.buildQueuePerf(puuid, flexIds),
-      this.buildQueuePerf(puuid, clashIds),
+      this.buildQueuePerf(puuid, soloIds, effectivePosFilter),
+      this.buildQueuePerf(puuid, flexIds, effectivePosFilter),
+      this.buildQueuePerf(puuid, clashIds, effectivePosFilter),
     ]);
 
     const soloWins = solo.wins ?? 0;
@@ -105,7 +113,7 @@ export class PlayerStatsService {
     };
   }
 
-  private async buildQueuePerf(puuid: string, matchIds: string[]): Promise<QueuePerf> {
+  private async buildQueuePerf(puuid: string, matchIds: string[], positionFilter?: string): Promise<QueuePerf> {
     if (!matchIds.length) return { games: 0, winrate: 0, avgKda: 0, topChampions: [], roleDistribution: [] };
 
     const allMatches: any[] = [];
@@ -127,6 +135,11 @@ export class PlayerStatsService {
       kills += p.kills ?? 0;
       deaths += p.deaths ?? 0;
       assists += p.assists ?? 0;
+
+      // Only count this game's champion toward topChampions when it matches the
+      // Clash position. If Riot does not expose a usable role, keep the champion
+      // instead of showing Clash games with no champion icons.
+      if (positionFilter && role !== positionFilter && role !== 'FILL') continue;
 
       const cid: number = p.championId;
       const ex = champMap.get(cid) ?? {
@@ -217,14 +230,13 @@ export class PlayerStatsService {
     return map[pos?.toUpperCase()] ?? pos ?? 'FILL';
   }
 
-  private async getAccountFallback(puuid: string): Promise<{ gameName: string; tagLine: string }> {
-    try {
-      return await this.riotService.getAccountByPuuid(puuid);
-    } catch {
-      return {
-        gameName: 'Jogador',
-        tagLine: puuid.slice(0, 6),
-      };
-    }
+  private async getAccountFallback(puuid: string, summoner?: any): Promise<{ gameName: string; tagLine: string }> {
+    const data = await this.riotService.getAccountByPuuid(puuid);
+    if (data) return data;
+    const name = summoner?.name ?? summoner?.gameName;
+    return {
+      gameName: name || 'Jogador',
+      tagLine: puuid.slice(0, 4),
+    };
   }
 }

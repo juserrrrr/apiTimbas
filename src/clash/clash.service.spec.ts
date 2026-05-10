@@ -4,6 +4,7 @@ import { ClashService } from './clash.service';
 import { RiotService } from '../riot/riot.service';
 import { AiService } from '../ai/ai.service';
 import { PlayerStatsService } from '../playerStats/player-stats.service';
+import { PrismaService } from '../prisma/prisma.service';
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 
@@ -69,16 +70,25 @@ const mockAi = () => ({
   }),
 });
 
+const mockPrisma = () => ({
+  clashAnalysis: {
+    create: jest.fn(),
+    findUnique: jest.fn(),
+  },
+});
+
 // ─── Suite ────────────────────────────────────────────────────────────────────
 
 describe('ClashService', () => {
   let service: ClashService;
   let riot: ReturnType<typeof mockRiot>;
   let ai: ReturnType<typeof mockAi>;
+  let prisma: ReturnType<typeof mockPrisma>;
 
   beforeEach(async () => {
     riot = mockRiot();
     ai = mockAi();
+    prisma = mockPrisma();
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -86,6 +96,7 @@ describe('ClashService', () => {
         PlayerStatsService,
         { provide: RiotService, useValue: riot },
         { provide: AiService, useValue: ai },
+        { provide: PrismaService, useValue: prisma },
       ],
     }).compile();
 
@@ -169,9 +180,9 @@ describe('ClashService', () => {
       await service.scout(GAME_NAME, TAG_LINE);
 
       TEAM_DTO.players.forEach(({ puuid }) => {
-        expect(riot.getMatchHistory).toHaveBeenCalledWith(puuid, 20, 420);
-        expect(riot.getMatchHistory).toHaveBeenCalledWith(puuid, 10, 440);
-        expect(riot.getMatchHistory).toHaveBeenCalledWith(puuid, 10, 700);
+        expect(riot.getMatchHistory).toHaveBeenCalledWith(puuid, 12, 420);
+        expect(riot.getMatchHistory).toHaveBeenCalledWith(puuid, 6, 440);
+        expect(riot.getMatchHistory).toHaveBeenCalledWith(puuid, 5, 700);
       });
     });
 
@@ -198,7 +209,7 @@ describe('ClashService', () => {
       expect(result.strategy).toBe('Poke and objective control.');
     });
 
-    it('returns partial results when individual player lookup fails', async () => {
+    it('keeps a player with fallback summoner data when summoner lookup fails', async () => {
       setupHappy();
       let calls = 0;
       riot.getSummonerByPuuid.mockImplementation((puuid: string) => {
@@ -209,7 +220,8 @@ describe('ClashService', () => {
 
       const result = await service.scout(GAME_NAME, TAG_LINE);
 
-      expect(result.players).toHaveLength(4);
+      expect(result.players).toHaveLength(5);
+      expect((result.players[1] as any).profileIconId).toBe(0);
       expect(result.team.name).toBe('Test Team');
     });
 
@@ -226,9 +238,9 @@ describe('ClashService', () => {
     it('no PrismaService dependency — does not require account verification', async () => {
       setupHappy();
 
-      // Service must work without any prisma calls
-      // If PrismaService were injected it would error on module creation
       await expect(service.scout(GAME_NAME, TAG_LINE)).resolves.toBeDefined();
+      expect(prisma.clashAnalysis.create).not.toHaveBeenCalled();
+      expect(prisma.clashAnalysis.findUnique).not.toHaveBeenCalled();
     });
 
     describe('position normalization', () => {
@@ -354,8 +366,8 @@ describe('ClashService', () => {
         });
         riot.getMatch.mockImplementation((id: string) => {
           const pu = 'p1';
-          if (id.startsWith('s')) return Promise.resolve(makeParticipant(pu, true, 5, 2, 3, 81, 'Ezreal'));
-          if (id === 'c1')        return Promise.resolve(makeParticipant(pu, true, 3, 1, 5, 412, 'Thresh'));
+          if (id.startsWith('s')) return Promise.resolve(makeParticipant(pu, true, 5, 2, 3, 81, 'Ezreal', 'TOP'));
+          if (id === 'c1')        return Promise.resolve(makeParticipant(pu, true, 3, 1, 5, 412, 'Thresh', 'TOP'));
           return Promise.resolve(null);
         });
 

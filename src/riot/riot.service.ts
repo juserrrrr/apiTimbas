@@ -10,15 +10,15 @@ import { TournamentMatchDto } from './dto/tournament-match.dto';
 const AMERICAS_BASE = 'https://americas.api.riotgames.com';
 const BR1_BASE = 'https://br1.api.riotgames.com';
 const DDRAGON_BASE = 'https://ddragon.leagueoflegends.com';
-const RIOT_MAX_RETRIES = 2;
-const RIOT_DEFAULT_RETRY_AFTER_MS = 1500;
-const RIOT_MAX_RETRY_AFTER_MS = 10000;
+const RIOT_MAX_RETRIES = 8;
+const RIOT_DEFAULT_RETRY_AFTER_MS = 2000;
+const RIOT_MAX_RETRY_AFTER_MS = 130000; // respect up to the full 2-min window reset
 
 const TTL = {
-  PLAYER_INFO: 5 * 60 * 1000,       // 5 min — ranked stats mudam com frequência
-  SUMMONER: 10 * 60 * 1000,         // 10 min — puuid→summonerId é estável
-  DDRAGON_VERSION: 24 * 60 * 60 * 1000, // 24h — patches são quinzenais
-  CHAMPIONS: 24 * 60 * 60 * 1000,   // 24h
+  PLAYER_INFO: 5 * 60 * 1000,
+  SUMMONER: 10 * 60 * 1000,
+  DDRAGON_VERSION: 24 * 60 * 60 * 1000,
+  CHAMPIONS: 24 * 60 * 60 * 1000,
 } as const;
 
 class TtlCache<V> {
@@ -39,11 +39,51 @@ class TtlCache<V> {
   }
 }
 
+// Token bucket that enforces both Riot dev-key limits simultaneously:
+//   • 18 req / 1 s  (buffer under the 20/s hard limit)
+//   • 90 req / 2 min (buffer under the 100/2min hard limit)
+// When either bucket is empty the call waits until a token is available,
+// so requests are automatically spread out without ever hitting a 429.
+class RateLimiter {
+  private tokens: number;
+  private lastRefill: number;
+
+  constructor(
+    private readonly maxTokens: number,
+    private readonly refillRatePerMs: number, // tokens added per millisecond
+  ) {
+    this.tokens = maxTokens;
+    this.lastRefill = Date.now();
+  }
+
+  async acquire(): Promise<void> {
+    for (;;) {
+      const now = Date.now();
+      const elapsed = now - this.lastRefill;
+      this.tokens = Math.min(this.maxTokens, this.tokens + elapsed * this.refillRatePerMs);
+      this.lastRefill = now;
+
+      if (this.tokens >= 1) {
+        this.tokens -= 1;
+        return;
+      }
+
+      const waitMs = Math.ceil((1 - this.tokens) / this.refillRatePerMs);
+      await new Promise<void>((resolve) => setTimeout(resolve, waitMs));
+    }
+  }
+}
+
 @Injectable()
 export class RiotService {
   private readonly playerCache = new TtlCache<any>();
   private readonly summonerCache = new TtlCache<any>();
   private readonly miscCache = new TtlCache<any>();
+
+  // 18 req/s bucket  (hard limit = 20/s)
+  private readonly perSecondBucket = new RateLimiter(18, 18 / 1000);
+  // 90 req/2min bucket  (hard limit = 100/120s)
+  private readonly perTwoMinBucket = new RateLimiter(90, 90 / 120_000);
 
   constructor(private readonly httpService: HttpService) {}
 
@@ -52,6 +92,12 @@ export class RiotService {
   }
 
   private async riotGet<T>(absoluteUrl: string): Promise<T> {
+    // acquire a token from both buckets before sending the request
+    await Promise.all([
+      this.perSecondBucket.acquire(),
+      this.perTwoMinBucket.acquire(),
+    ]);
+
     for (let attempt = 0; attempt <= RIOT_MAX_RETRIES; attempt++) {
       try {
         const { data } = await firstValueFrom(
@@ -63,7 +109,7 @@ export class RiotService {
         if (axiosError.response?.status !== 429 || attempt === RIOT_MAX_RETRIES) {
           throw error;
         }
-
+        // unexpected 429 despite throttle — respect Retry-After and retry
         await this.wait(this.getRetryAfterMs(axiosError));
       }
     }
@@ -172,7 +218,7 @@ export class RiotService {
     return result;
   }
 
-  async getAccountByPuuid(puuid: string) {
+  async getAccountByPuuid(puuid: string): Promise<{ gameName: string; tagLine: string } | null> {
     const key = `account-puuid:${puuid}`;
     const cached = this.miscCache.get(key);
     if (cached) return cached;
@@ -184,7 +230,7 @@ export class RiotService {
       this.miscCache.set(key, data, TTL.SUMMONER);
       return data;
     } catch {
-      throw new NotFoundException(`Account com PUUID ${puuid} não encontrado`);
+      return null;
     }
   }
 
