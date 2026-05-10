@@ -199,7 +199,7 @@ ${JSON.stringify(
       estilo: this.formatPlaystyle(p.clashHistory.playstyle, p.position),
       topChamps: p.clashHistory.topChampions.slice(0, 3).map((c) => `${c.championName} (${c.games}G ${c.winrate}% WR)`),
     },
-    campeons_combinados_top5: p.combinedTopChamps.slice(0, 5).map((c) => `${c.championName} (${c.games}G ${c.winrate}% WR)`),
+    campeoes_combinados_top10: p.combinedTopChamps.slice(0, 10).map((c) => `${c.championName} (${c.games}G ${c.winrate}% WR ${c.kda} KDA)`),
   })),
   null,
   2,
@@ -237,6 +237,12 @@ Responda APENAS com JSON válido, sem markdown, sem texto fora do JSON:
 }
 
 Regras:
+- Bans devem ser baseados primeiro em PREDICT de pick provavel, nao em maior winrate isolado.
+- Para prever pick, pese nesta ordem: campeoes repetidos nas partidas recentes da rota do Clash, campeoes jogados em Clash/Flex, volume recente em SoloQ, campeoes repetidos no campeoes_combinados_top10, e maestria apenas como desempate.
+- Winrate alto aumenta prioridade somente quando o campeao tambem aparece recente ou faz sentido para a rota do Clash. Nao bana campeao de 1 jogo 100% WR acima de um comfort pick com mais volume.
+- Se um campeao tem winrate ruim mas aparece muitas vezes recentemente e combina com a rota, trate como comfort pick provavel e considere ban se ele define o estilo do jogador.
+- Cada jogador deve ter ao menos 1 ban candidato quando houver dados de campeao suficientes; os bans extras devem cobrir segundos picks provaveis ou flex picks reais.
+- Para bans, explique o motivo com linguagem de predict: "pick recente", "comfort da rota", "aparece em Clash/Flex", "segundo pick provavel", "flex real", "bom desempenho recente".
 - Use os campos "estilo" para explicar mortes, lutas, dano, visao, drag/baron, invade e roubo de objetivo.
 - Para JUNGLE, pese mais dragoes/baroes do time, dragon takedowns, objective steals e enemy jungle monster kills.
 - Gere exatamente ${expectedBans} bans, prioridade 1 a ${expectedBans} (sem repetir campeões)
@@ -594,23 +600,49 @@ Responda APENAS JSON valido:
   private buildPlayerProfileFallback(player: FullPlayerData, prefix: string): PlayerProfileAnalysis {
     const bestQueue = [player.soloQueue, player.flexQueue, player.clashHistory].sort((a, b) => b.games - a.games)[0];
     const style = bestQueue.playstyle;
+    const map = player.mapProfile;
     const mainChamp = player.combinedTopChamps[0]?.championName ?? player.masteryTop10[0]?.championName ?? 'sem campeao claro';
+    const secondaryChamp = player.combinedTopChamps[1]?.championName;
+    const champPool = secondaryChamp ? `${mainChamp}/${secondaryChamp}` : mainChamp;
+    const queueName = this.queueLabel(player, bestQueue);
+    const topPositions = (player as any).topPositions as string[] | undefined;
+    const roleText = topPositions?.length ? topPositions.join('/') : player.position;
+    const mapSummary = map?.games
+      ? ` Timeline: aparece mais em ${map.mostVisited}, luta mais em ${map.mostFought}, morre mais em ${map.mostDeaths} e pressiona ${map.likelyGankFocus}.`
+      : '';
     const objective = player.position === 'JUNGLE'
-      ? `${style.avgTeamDragons} dragoes/time por jogo, ${style.avgObjectiveSteals} roubos e ${style.avgEnemyJungleMonsterKills} camps inimigos/jogo.`
-      : `${style.avgVisionScore} visao/jogo e ${style.avgKillParticipation}% KP; objetivos dependem mais do time.`;
+      ? `${style.avgTeamDragons} dragoes/time por jogo, ${style.avgDragonTakedowns} dragon takedowns, ${style.avgObjectiveSteals} roubos e ${style.avgEnemyJungleMonsterKills} camps inimigos/jogo.${map?.games ? ` Timeline marcou ${map.invades} sinais de invade e ${map.objectiveFights} fights de objetivo.` : ''}`
+      : `${style.avgVisionScore} visao/jogo, ${style.avgKillParticipation}% KP e ${style.avgTeamDragons} dragoes do time/jogo.${map?.games ? ` Timeline marcou ${map.objectiveFights} fights de objetivo.` : ''}`;
+    const fightStyle = style.avgKillParticipation >= 55
+      ? 'participa bastante das lutas'
+      : style.avgKillParticipation >= 40
+        ? 'entra em lutas selecionadas'
+        : 'tem baixa participacao em kills e pode jogar mais lateral/isolado';
+    const riskStyle = style.avgDeaths >= 6
+      ? 'morre muito e costuma dar janela clara de punish'
+      : style.avgDeaths >= 4
+        ? 'morre em ritmo moderado; punir sem visao ainda funciona'
+        : 'morre pouco e tende a escolher melhor quando entrar';
 
     return {
-      summary: `${prefix} Perfil tende a jogar em torno de ${mainChamp}, com ${bestQueue.avgKda} KDA medio e ${style.avgDeaths} mortes/jogo.`,
-      fightPattern: `${style.avgKillParticipation}% KP, ${style.avgDamageToChampions} dano em campeoes/jogo e ${style.avgKills}/${style.avgDeaths}/${style.avgAssists} KDA bruto medio.`,
+      summary: `${prefix} ${player.riotId} aparece como ${roleText}, com conforto recente em ${champPool}. Na amostra mais forte (${queueName}, ${bestQueue.games} jogos), ${fightStyle}: ${style.avgKillParticipation}% KP, ${style.avgDamageToChampions} dano/jogo, ${bestQueue.avgKda} KDA e ${style.avgDeaths} mortes/jogo.${mapSummary}`,
+      fightPattern: `${fightStyle}: ${style.avgKillParticipation}% KP, ${style.avgDamageToChampions} dano em campeoes/jogo e ${style.avgKills}/${style.avgDeaths}/${style.avgAssists} K/A/D medio. Se estiver de ${mainChamp}, tende a escalar e brigar melhor quando tem espaco para DPS.`,
       objectivePattern: objective,
-      riskPattern: style.avgDeaths >= 6 ? 'Morre bastante; pode ser punido em fights longas ou entradas sem visao.' : 'Morre pouco/moderado; tende a preservar recursos e escolher melhor as lutas.',
+      riskPattern: `${riskStyle}. O ponto de punish mais claro e cortar visao antes de fight e forcar luta quando os campeoes de conforto estiverem sem setup.`,
       mapPattern: this.buildMapFallback(player),
       tips: [
-        'Negue campeoes de conforto mais recentes.',
-        'Force visao antes de objetivos neutros.',
-        style.avgDeaths >= 6 ? 'Acelere picks quando ele entrar sem informacao.' : 'Evite entregar lutas curtas favoraveis.',
+        `Priorize negar ${mainChamp}${secondaryChamp ? ` ou ${secondaryChamp}` : ''} se o draft depender dele.`,
+        map?.games ? `Prepare visao e cover no lado ${map.likelyGankFocus}, onde a timeline indica mais pressao.` : 'Prepare visao antes de objetivos neutros.',
+        style.avgDeaths >= 6 ? 'Acelere picks quando ele entrar sem informacao.' : 'Force lutas com engage claro; nao entregue fight lenta de escala.',
       ],
     };
+  }
+
+  private queueLabel(player: FullPlayerData, queue: QueuePerf): string {
+    if (queue === player.soloQueue) return 'SoloQ';
+    if (queue === player.flexQueue) return 'Flex';
+    if (queue === player.clashHistory) return 'Clash';
+    return 'recente';
   }
 
   private buildMapFallback(player: FullPlayerData): string {
@@ -626,13 +658,7 @@ Responda APENAS JSON valido:
   }
 
   private buildStatAnalysis(players: FullPlayerData[], strategyPrefix: string): AiAnalysis {
-    const threats = players.flatMap((player) =>
-      player.combinedTopChamps.slice(0, 5).map((champ) => ({
-        ...champ,
-        player,
-        score: champ.games * 3 + champ.winrate + champ.kda * 4 + (player.clashHistory.topChampions.some((c) => c.championId === champ.championId) ? 25 : 0),
-      })),
-    );
+    const threats = players.flatMap((player) => this.buildPredictiveBanCandidates(player));
 
     const usedChampionIds = new Set<number>();
     const bans: BanSuggestion[] = [];
@@ -644,13 +670,14 @@ Responda APENAS JSON valido:
         championId: threat.championId,
         championName: threat.championName,
         targetPlayer: threat.player.riotId,
-        reason: `${threat.games} jogos recentes, ${threat.winrate}% WR e ${threat.kda} KDA`,
+        reason: threat.reason,
         priority: bans.length + 1,
       });
     }
 
     const counterplays: CounterplayAdvice[] = players.map((player) => {
-      const likely = player.combinedTopChamps[0] ?? player.soloQueue.topChampions[0] ?? player.masteryTop10[0];
+      const predicted = this.buildPredictiveBanCandidates(player);
+      const likely = predicted[0] ?? player.combinedTopChamps[0] ?? player.soloQueue.topChampions[0] ?? player.masteryTop10[0];
       return {
         riotId: player.riotId,
         position: player.position,
@@ -658,12 +685,12 @@ Responda APENAS JSON valido:
         howToCounter: likely
           ? `Pressione a rota ${player.position} e negue conforto no ${likely.championName}.`
           : `Poucos dados recentes; jogue por visão e force escolhas cedo na rota ${player.position}.`,
-        keyThreats: player.combinedTopChamps.slice(0, 3).map((c) => c.championName),
+        keyThreats: predicted.slice(0, 3).map((c) => c.championName),
       };
     });
 
     const predictedPicks: PredictedPick[] = players.map((player) => {
-      const picks = player.combinedTopChamps.length ? player.combinedTopChamps : player.soloQueue.topChampions;
+      const picks = this.buildPredictiveBanCandidates(player);
       return {
         riotId: player.riotId,
         position: player.position,
@@ -682,6 +709,54 @@ Responda APENAS JSON valido:
     const strategy = `${strategyPrefix} ${playerCount} jogador(es) processado(s). Priorize bans nos campeões com mais jogos, maior winrate e presença em Clash/Flex; trate rotas divergentes como possibilidade de flex no draft.`;
 
     return { bans, counterplays, predictedPicks, strategy };
+  }
+
+  private buildPredictiveBanCandidates(player: FullPlayerData) {
+    const candidates = new Map<number, QueueChampStat & { player: FullPlayerData; score: number; signals: string[] }>();
+
+    const add = (champ: QueueChampStat, weight: number, signal: string) => {
+      const existing = candidates.get(champ.championId);
+      if (existing) {
+        existing.games += champ.games;
+        existing.wins += champ.wins;
+        existing.kda = Math.max(existing.kda, champ.kda);
+        existing.score += champ.games * weight;
+        existing.signals.push(signal);
+        return;
+      }
+
+      candidates.set(champ.championId, {
+        ...champ,
+        player,
+        score: champ.games * weight,
+        signals: [signal],
+      });
+    };
+
+    for (const champ of player.clashHistory.topChampions.slice(0, 5)) add(champ, 16, 'aparece em Clash');
+    for (const champ of player.flexQueue.topChampions.slice(0, 5)) add(champ, 12, 'aparece em Flex');
+    for (const champ of player.soloQueue.topChampions.slice(0, 8)) add(champ, 9, 'pick recente');
+    for (const champ of player.combinedTopChamps.slice(0, 10)) add(champ, 5, 'comfort combinado');
+
+    for (const mastery of player.masteryTop10.slice(0, 5)) {
+      const existing = candidates.get(mastery.championId);
+      if (existing) {
+        existing.score += Math.min(8, mastery.masteryLevel);
+        existing.signals.push('maestria desempata');
+      }
+    }
+
+    return [...candidates.values()].map((candidate) => {
+      const winrateSignal = candidate.games >= 3 ? Math.max(0, candidate.winrate - 50) * 0.25 : 0;
+      const kdaSignal = Math.min(10, candidate.kda * 1.5);
+      const uniqueSignals = [...new Set(candidate.signals)];
+      const reason = `${uniqueSignals.slice(0, 2).join(' + ')}; ${candidate.games} jogos, ${candidate.winrate}% WR`;
+      return {
+        ...candidate,
+        score: candidate.score + winrateSignal + kdaSignal,
+        reason,
+      };
+    }).sort((a, b) => b.score - a.score);
   }
 
   private analysisSchema() {
