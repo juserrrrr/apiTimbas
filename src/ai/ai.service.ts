@@ -45,6 +45,29 @@ export interface PlaystyleStats {
   avgEnemyJungleMonsterKills: number;
 }
 
+export interface MapRegionStats {
+  top: number;
+  mid: number;
+  bot: number;
+  alliedJungle: number;
+  enemyJungle: number;
+  river: number;
+  unknown: number;
+}
+
+export interface MapProfile {
+  games: number;
+  earlyPresence: MapRegionStats;
+  fightRegions: MapRegionStats;
+  deathRegions: MapRegionStats;
+  objectiveFights: number;
+  invades: number;
+  mostVisited: string;
+  mostFought: string;
+  mostDeaths: string;
+  likelyGankFocus: string;
+}
+
 export interface QueuePerf {
   games: number;
   winrate: number;
@@ -66,6 +89,7 @@ export interface FullPlayerData {
   flexQueue: QueuePerf;    // last 10
   clashHistory: QueuePerf; // last 10
   combinedTopChamps: QueueChampStat[];
+  mapProfile?: MapProfile;
 }
 
 // ─── Output types ─────────────────────────────────────────────────────────────
@@ -294,12 +318,16 @@ Regras:
       flexQueue: this.profileQueuePayload(player.flexQueue),
       clashHistory: this.profileQueuePayload(player.clashHistory),
       combinedTopChamps: player.combinedTopChamps.slice(0, 10),
-      note: 'Gank lane exata (top/mid/bot) exige match timeline; com estes dados, inferir apenas estilo geral e objetivos.',
+      mapProfile: player.mapProfile,
+      note: player.mapProfile?.games
+        ? 'mapProfile foi calculado a partir de timelines recentes; use como sinal aproximado de presenca, fights, mortes, invade e foco de pressao.'
+        : 'Sem timeline suficiente; nao invente foco de gank.',
     };
 
     const prompt = `Analise o estilo de jogo deste jogador de League of Legends para um perfil individual.
 Use os dados recentes para dizer como ele joga: lutas, mortes, dano, visao, objetivos, jungle invade/roubo se for jungler.
-Nao invente lane de gank exata; se nao houver timeline, diga que o foco de gank e inconclusivo.
+Use mapProfile quando existir para falar onde ele aparece no mapa, onde luta, onde morre e qual rota parece receber mais gank/pressao.
+Se mapProfile.games for 0, diga que foco de gank e inconclusivo.
 
 DADOS:
 ${JSON.stringify(payload, null, 2)}
@@ -445,6 +473,7 @@ Responda APENAS JSON valido:
       flex: this.profileQueuePayload(player.flexQueue),
       clash: this.profileQueuePayload(player.clashHistory),
       combined: player.combinedTopChamps.slice(0, 10),
+      mapProfile: player.mapProfile,
     })).digest('hex');
   }
 
@@ -575,15 +604,25 @@ Responda APENAS JSON valido:
       fightPattern: `${style.avgKillParticipation}% KP, ${style.avgDamageToChampions} dano em campeoes/jogo e ${style.avgKills}/${style.avgDeaths}/${style.avgAssists} KDA bruto medio.`,
       objectivePattern: objective,
       riskPattern: style.avgDeaths >= 6 ? 'Morre bastante; pode ser punido em fights longas ou entradas sem visao.' : 'Morre pouco/moderado; tende a preservar recursos e escolher melhor as lutas.',
-      mapPattern: player.position === 'JUNGLE'
-        ? 'Foco de gank por rota fica inconclusivo sem timeline, mas os numeros indicam pressao por objetivos/invade quando altos.'
-        : 'Foco de mapa por rota fica inconclusivo sem timeline; use KP, visao e campeoes para inferir presenca em fights.',
+      mapPattern: this.buildMapFallback(player),
       tips: [
         'Negue campeoes de conforto mais recentes.',
         'Force visao antes de objetivos neutros.',
         style.avgDeaths >= 6 ? 'Acelere picks quando ele entrar sem informacao.' : 'Evite entregar lutas curtas favoraveis.',
       ],
     };
+  }
+
+  private buildMapFallback(player: FullPlayerData): string {
+    const map = player.mapProfile;
+    if (!map?.games) {
+      return 'Sem timeline suficiente para mapear foco de rota; use campeoes, KP e visao como sinais secundarios.';
+    }
+    const base = `Presenca inicial maior em ${map.mostVisited}; lutas mais frequentes em ${map.mostFought}; mortes mais comuns em ${map.mostDeaths}.`;
+    const jungle = player.position === 'JUNGLE'
+      ? ` Foco provavel de gank/pressao: ${map.likelyGankFocus}; ${map.invades} sinais de invade e ${map.objectiveFights} fights de objetivo nas timelines.`
+      : ` Pressao de mapa mais clara: ${map.likelyGankFocus}; ${map.objectiveFights} fights de objetivo nas timelines.`;
+    return base + jungle;
   }
 
   private buildStatAnalysis(players: FullPlayerData[], strategyPrefix: string): AiAnalysis {

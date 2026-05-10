@@ -14,6 +14,7 @@ const mockRiot = () => ({
   getChampionIdNameMap: jest.fn().mockResolvedValue(new Map()),
   getMatchHistory: jest.fn().mockResolvedValue([]),
   getMatch: jest.fn().mockResolvedValue(null),
+  getMatchTimeline: jest.fn().mockResolvedValue(null),
   buildProfileIconUrl: jest.fn().mockReturnValue('https://example.com/icon.png'),
 });
 

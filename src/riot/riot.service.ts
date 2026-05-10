@@ -294,6 +294,22 @@ export class RiotService {
     }
   }
 
+  async getMatchTimeline(matchId: string): Promise<any> {
+    const key = `timeline:${matchId}`;
+    const cached = this.miscCache.get(key);
+    if (cached) return cached;
+
+    try {
+      const data = await this.riotGet<any>(
+        `${AMERICAS_BASE}/lol/match/v5/matches/${matchId}/timeline`,
+      );
+      this.miscCache.set(key, data, 60 * 60 * 1000);
+      return data;
+    } catch {
+      return null;
+    }
+  }
+
   async getChampionMastery(puuid: string, count = 10): Promise<any[]> {
     try {
       return await this.riotGet<any[]>(

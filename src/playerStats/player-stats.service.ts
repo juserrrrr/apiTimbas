@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { AiService } from '../ai/ai.service';
 import { RiotService } from '../riot/riot.service';
-import { FullPlayerData, PlaystyleStats, QueueChampStat, QueuePerf } from '../ai/ai.service';
+import { FullPlayerData, MapProfile, MapRegionStats, PlaystyleStats, QueueChampStat, QueuePerf } from '../ai/ai.service';
 
 interface ChampAccum {
   championId: number;
@@ -18,6 +18,8 @@ const MATCH_HISTORY_COUNTS = {
   FLEX: 6,
   CLASH: 5,
 } as const;
+
+const PROFILE_TIMELINE_MATCH_LIMIT = 8;
 
 export type RiotPlayerStats = FullPlayerData & {
   topPositions: string[];
@@ -39,6 +41,29 @@ const EMPTY_PLAYSTYLE: PlaystyleStats = {
   avgEnemyJungleMonsterKills: 0,
 };
 
+const EMPTY_REGIONS: MapRegionStats = {
+  top: 0,
+  mid: 0,
+  bot: 0,
+  alliedJungle: 0,
+  enemyJungle: 0,
+  river: 0,
+  unknown: 0,
+};
+
+const EMPTY_MAP_PROFILE: MapProfile = {
+  games: 0,
+  earlyPresence: EMPTY_REGIONS,
+  fightRegions: EMPTY_REGIONS,
+  deathRegions: EMPTY_REGIONS,
+  objectiveFights: 0,
+  invades: 0,
+  mostVisited: 'inconclusivo',
+  mostFought: 'inconclusivo',
+  mostDeaths: 'inconclusivo',
+  likelyGankFocus: 'inconclusivo',
+};
+
 @Injectable()
 export class PlayerStatsService {
   constructor(
@@ -49,7 +74,7 @@ export class PlayerStatsService {
   async getRiotPlayer(gameName: string, tagLine: string) {
     const account = await this.riotService.getAccount(gameName, tagLine);
     const championMap = await this.riotService.getChampionIdNameMap();
-    const player = await this.buildFromPuuid(account.puuid, championMap, undefined, account);
+    const player = await this.buildFromPuuid(account.puuid, championMap, undefined, account, true);
     const analysis = await this.aiService.analyzePlayerProfile(player);
 
     return { player, analysis };
@@ -60,6 +85,7 @@ export class PlayerStatsService {
     championMap: Map<number, string>,
     clashPosition?: string,
     accountOverride?: { gameName: string; tagLine: string },
+    includeTimeline = false,
   ): Promise<RiotPlayerStats> {
     let summoner: any;
     try {
@@ -87,6 +113,9 @@ export class PlayerStatsService {
       this.buildQueuePerf(puuid, flexIds, effectivePosFilter),
       this.buildQueuePerf(puuid, clashIds, effectivePosFilter),
     ]);
+    const mapProfile = includeTimeline
+      ? await this.buildMapProfile(puuid, [...soloIds.slice(0, 4), ...flexIds.slice(0, 2), ...clashIds.slice(0, 2)])
+      : undefined;
 
     const soloWins = solo.wins ?? 0;
     const soloLosses = solo.losses ?? 0;
@@ -127,6 +156,7 @@ export class PlayerStatsService {
       flexQueue,
       clashHistory,
       combinedTopChamps: this.buildCombinedStats(soloQueue, flexQueue, clashHistory),
+      mapProfile,
       profileIconId: summoner.profileIconId,
       profileIconUrl: await this.riotService.buildProfileIconUrl(summoner.profileIconId),
     };
@@ -281,6 +311,125 @@ export class PlayerStatsService {
       avgObjectiveSteals: avg(stats.objectiveSteals),
       avgEnemyJungleMonsterKills: avg(stats.enemyJungleMonsterKills),
     };
+  }
+
+  private async buildMapProfile(puuid: string, matchIds: string[]): Promise<MapProfile> {
+    const ids = [...new Set(matchIds)].slice(0, PROFILE_TIMELINE_MATCH_LIMIT);
+    if (!ids.length) return EMPTY_MAP_PROFILE;
+
+    const earlyPresence = this.emptyRegions();
+    const fightRegions = this.emptyRegions();
+    const deathRegions = this.emptyRegions();
+    let objectiveFights = 0;
+    let invades = 0;
+    let games = 0;
+
+    for (let i = 0; i < ids.length; i += 2) {
+      const pairs = await Promise.all(ids.slice(i, i + 2).map(async (id) => ({
+        match: await this.riotService.getMatch(id),
+        timeline: await this.riotService.getMatchTimeline(id),
+      })));
+
+      for (const { match, timeline } of pairs) {
+        const participant = (match?.info?.participants ?? []).find((p: any) => p.puuid === puuid);
+        const timelineParticipant = (timeline?.info?.participants ?? []).find((p: any) => p.puuid === puuid);
+        const participantId = timelineParticipant?.participantId;
+        if (!participant || !participantId || !timeline?.info?.frames?.length) continue;
+        games++;
+
+        for (const frame of timeline.info.frames) {
+          const minute = Math.floor((frame.timestamp ?? 0) / 60000);
+          const participantFrame = frame.participantFrames?.[String(participantId)];
+          const position = participantFrame?.position;
+          if (position && minute <= 14) {
+            const region = this.classifyMapRegion(position.x, position.y, participant.teamId);
+            earlyPresence[region]++;
+            if (region === 'enemyJungle') invades++;
+          }
+
+          for (const event of frame.events ?? []) {
+            const region = this.classifyMapRegion(event.position?.x, event.position?.y, participant.teamId);
+            if (event.type === 'CHAMPION_KILL') {
+              const involved = event.killerId === participantId || (event.assistingParticipantIds ?? []).includes(participantId);
+              if (involved) fightRegions[region]++;
+              if (event.victimId === participantId) deathRegions[region]++;
+            }
+            if (event.type === 'ELITE_MONSTER_KILL') {
+              const involved = event.killerId === participantId || (event.assistingParticipantIds ?? []).includes(participantId);
+              if (involved) objectiveFights++;
+            }
+          }
+        }
+      }
+    }
+
+    return {
+      games,
+      earlyPresence,
+      fightRegions,
+      deathRegions,
+      objectiveFights,
+      invades,
+      mostVisited: this.topRegionName(earlyPresence),
+      mostFought: this.topRegionName(fightRegions),
+      mostDeaths: this.topRegionName(deathRegions),
+      likelyGankFocus: this.likelyGankFocus(fightRegions),
+    };
+  }
+
+  private emptyRegions(): MapRegionStats {
+    return { ...EMPTY_REGIONS };
+  }
+
+  private classifyMapRegion(x?: number, y?: number, teamId?: number): keyof MapRegionStats {
+    if (typeof x !== 'number' || typeof y !== 'number') return 'unknown';
+    if (y > 9800 && x < 6800) return 'top';
+    if (x > 9800 && y < 6800) return 'bot';
+    if (Math.abs(x - y) < 2300 && x > 3500 && x < 11500 && y > 3500 && y < 11500) return 'mid';
+    if (x > 4500 && x < 10500 && y > 4500 && y < 10500) return 'river';
+
+    const blueSideJungle = x < 7200 && y < 7200;
+    const redSideJungle = x > 7200 && y > 7200;
+    if (teamId === 100) {
+      if (redSideJungle) return 'enemyJungle';
+      if (blueSideJungle) return 'alliedJungle';
+    }
+    if (teamId === 200) {
+      if (blueSideJungle) return 'enemyJungle';
+      if (redSideJungle) return 'alliedJungle';
+    }
+    return 'unknown';
+  }
+
+  private topRegionName(stats: MapRegionStats): string {
+    const [region, count] = Object.entries(stats)
+      .filter(([key]) => key !== 'unknown')
+      .sort((a, b) => b[1] - a[1])[0] ?? ['inconclusivo', 0];
+    return count > 0 ? this.regionLabel(region) : 'inconclusivo';
+  }
+
+  private likelyGankFocus(stats: MapRegionStats): string {
+    const lanes: [string, number][] = [
+      ['top', stats.top],
+      ['mid', stats.mid],
+      ['bot', stats.bot],
+    ];
+    const [lane, count] = lanes.sort((a, b) => b[1] - a[1])[0];
+    return count > 0 ? this.regionLabel(lane) : 'inconclusivo';
+  }
+
+  private regionLabel(region: string): string {
+    const labels: Record<string, string> = {
+      top: 'top',
+      mid: 'mid',
+      bot: 'bot',
+      alliedJungle: 'jungle aliada',
+      enemyJungle: 'jungle inimiga',
+      river: 'rio/objetivos',
+      unknown: 'inconclusivo',
+      inconclusivo: 'inconclusivo',
+    };
+    return labels[region] ?? region;
   }
 
   private buildRoleDistribution(roleMap: Map<string, number>, totalGames: number) {
