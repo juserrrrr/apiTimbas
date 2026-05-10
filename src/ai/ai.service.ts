@@ -323,6 +323,7 @@ Responda APENAS JSON valido:
             temperature: 0.2,
             maxOutputTokens: 2048,
             responseMimeType: 'application/json',
+            responseSchema: this.playerProfileAnalysisSchema(),
           },
         },
         {
@@ -337,12 +338,13 @@ Responda APENAS JSON valido:
 
       const responseData = JSON.parse(response.data as string);
       const text = responseData?.candidates?.[0]?.content?.parts?.map((part: any) => part.text ?? '').join('') ?? '';
+      this.logger.log(`[AI] profile chars=${text.length} | preview=${text.slice(0, 300).replace(/\n/g, ' ')}`);
       const analysis = this.parsePlayerProfileAnalysis(text, player);
       this.profileAnalysisCache.set(cacheKey, { value: analysis, expiresAt: Date.now() + GEMINI_CACHE_TTL_MS });
       return analysis;
     } catch (err) {
       this.logger.warn(`Erro ao chamar IA para perfil: ${this.describeGeminiError(err)}`);
-      const fallback = this.buildPlayerProfileFallback(player, 'Gemini indisponivel; leitura gerada por dados recentes.');
+      const fallback = this.buildPlayerProfileFallback(player, 'Leitura gerada pelos dados recentes.');
       this.profileAnalysisCache.set(cacheKey, { value: fallback, expiresAt: Date.now() + GEMINI_FALLBACK_CACHE_TTL_MS });
       return fallback;
     }
@@ -527,19 +529,37 @@ Responda APENAS JSON valido:
   private parsePlayerProfileAnalysis(text: string, player: FullPlayerData): PlayerProfileAnalysis {
     const stripped = this.stripJsonFence(text);
     try {
-      return JSON.parse(stripped) as PlayerProfileAnalysis;
+      return this.normalizePlayerProfileAnalysis(JSON.parse(stripped), player);
     } catch {
       const start = stripped.indexOf('{');
       const end = stripped.lastIndexOf('}');
       if (start >= 0 && end > start) {
         try {
-          return JSON.parse(stripped.slice(start, end + 1)) as PlayerProfileAnalysis;
+          return this.normalizePlayerProfileAnalysis(JSON.parse(stripped.slice(start, end + 1)), player);
         } catch {
-          return this.buildPlayerProfileFallback(player, 'Gemini retornou JSON invalido; leitura gerada por dados recentes.');
+          return this.buildPlayerProfileFallback(player, 'Leitura gerada pelos dados recentes.');
         }
       }
-      return this.buildPlayerProfileFallback(player, 'Gemini retornou JSON invalido; leitura gerada por dados recentes.');
+      return this.buildPlayerProfileFallback(player, 'Leitura gerada pelos dados recentes.');
     }
+  }
+
+  private normalizePlayerProfileAnalysis(value: any, player: FullPlayerData): PlayerProfileAnalysis {
+    const fallback = this.buildPlayerProfileFallback(player, 'Analise gerada pelos dados recentes.');
+    return {
+      summary: this.cleanText(value?.summary) || fallback.summary,
+      fightPattern: this.cleanText(value?.fightPattern) || fallback.fightPattern,
+      objectivePattern: this.cleanText(value?.objectivePattern) || fallback.objectivePattern,
+      riskPattern: this.cleanText(value?.riskPattern) || fallback.riskPattern,
+      mapPattern: this.cleanText(value?.mapPattern) || fallback.mapPattern,
+      tips: Array.isArray(value?.tips)
+        ? value.tips.map((tip: unknown) => this.cleanText(tip)).filter(Boolean).slice(0, 3)
+        : fallback.tips,
+    };
+  }
+
+  private cleanText(value: unknown): string {
+    return typeof value === 'string' ? value.trim() : '';
   }
 
   private buildPlayerProfileFallback(player: FullPlayerData, prefix: string): PlayerProfileAnalysis {
@@ -687,6 +707,24 @@ Responda APENAS JSON valido:
         strategy: { type: 'STRING' },
       },
       required: ['bans', 'counterplays', 'predictedPicks', 'strategy'],
+    };
+  }
+
+  private playerProfileAnalysisSchema() {
+    return {
+      type: 'OBJECT',
+      properties: {
+        summary: { type: 'STRING' },
+        fightPattern: { type: 'STRING' },
+        objectivePattern: { type: 'STRING' },
+        riskPattern: { type: 'STRING' },
+        mapPattern: { type: 'STRING' },
+        tips: {
+          type: 'ARRAY',
+          items: { type: 'STRING' },
+        },
+      },
+      required: ['summary', 'fightPattern', 'objectivePattern', 'riskPattern', 'mapPattern', 'tips'],
     };
   }
 }
