@@ -1,16 +1,59 @@
 services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: timbas-api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "${API_PORT:-3333}:3333"
+    environment:
+      NODE_ENV: production
+      ENV_TYPE: PRODUCTION
+      PORT: 3333
+      TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:-1}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-admin}@db:5432/${POSTGRES_DB:-timbas_db}?schema=public
+      WEB_URL: ${WEB_URL:-http://localhost:3000}
+      EXTRA_ALLOWED_ORIGINS: ${EXTRA_ALLOWED_ORIGINS:-}
+      JWT_SECRET: ${JWT_SECRET:-}
+      RIOT_API_KEY: ${RIOT_API_KEY:-}
+      RIOT_CALLBACK_SECRET: ${RIOT_CALLBACK_SECRET:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
+      TOKEN_BOT: ${TOKEN_BOT:-}
+      BOT_SECRET: ${BOT_SECRET:-}
+      DISCORD_CLIENT_ID: ${DISCORD_CLIENT_ID:-}
+      DISCORD_CLIENT_SECRET: ${DISCORD_CLIENT_SECRET:-}
+      DISCORD_REDIRECT_URI: ${DISCORD_REDIRECT_URI:-http://localhost:3333/auth/discord/callback}
+      DISCORD_GUILD_ID: ${DISCORD_GUILD_ID:-}
+      ADMIN_NAME: ${ADMIN_NAME:-}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      ADMIN_DISCORD_ID: ${ADMIN_DISCORD_ID:-}
+    volumes:
+      - timbas_api_data:/app/data
+
   db:
-    image: postgres:latest
+    image: postgres:16-alpine
     container_name: timbas-db
-    restart: always
+    restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-admin}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-admin}
       POSTGRES_DB: ${POSTGRES_DB:-timbas_db}
-    ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+    expose:
+      - "5432"
     volumes:
-      - timbas_pgdata:/var/lib/postgresql
+      - timbas_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-admin} -d $${POSTGRES_DB:-timbas_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
 volumes:
-  timbas_pgdata:
+  timbas_postgres_data:
+  timbas_api_data:
