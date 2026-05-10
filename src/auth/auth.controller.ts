@@ -104,6 +104,17 @@ export class AuthController {
     return this.authService.refresh(body.refreshToken);
   }
 
+  // ─── Dev bypass (non-production only) ────────────────────────────────────
+
+  @Get('dev-token')
+  async devToken(@Res() res: Response) {
+    if (process.env.ENV_TYPE === 'PRODUCTION') {
+      return res.status(403).json({ message: 'Not available in production' });
+    }
+    const { acessToken, refreshToken } = await this.authService.getOrCreateDevUser();
+    return res.json({ token: acessToken, refreshToken });
+  }
+
   // ─── Discord OAuth ────────────────────────────────────────────────────────
 
   @Get('discord')

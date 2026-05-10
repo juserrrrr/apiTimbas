@@ -264,6 +264,16 @@ export class AuthService {
     );
   }
 
+  async getOrCreateDevUser() {
+    const devDiscordId = 'dev-user-local';
+    const user = await this.prisma.user.upsert({
+      where: { discordId: devDiscordId },
+      update: {},
+      create: { discordId: devDiscordId, name: 'Dev User', role: Role.PLAYER },
+    });
+    return this.createToken(user.id.toString(), user.name, user.email ?? '', user.role, user.discordId);
+  }
+
   async authenticateBot(botId: string) {
     const bot = await this.prisma.user.findUnique({
       where: {
