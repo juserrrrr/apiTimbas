@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
+import { AiService } from '../ai/ai.service';
 import { RiotService } from '../riot/riot.service';
-import { FullPlayerData, QueueChampStat, QueuePerf } from '../ai/ai.service';
+import { FullPlayerData, PlaystyleStats, QueueChampStat, QueuePerf } from '../ai/ai.service';
 
 interface ChampAccum {
   championId: number;
@@ -24,16 +25,34 @@ export type RiotPlayerStats = FullPlayerData & {
   profileIconUrl: string;
 };
 
+const EMPTY_PLAYSTYLE: PlaystyleStats = {
+  avgKills: 0,
+  avgDeaths: 0,
+  avgAssists: 0,
+  avgDamageToChampions: 0,
+  avgVisionScore: 0,
+  avgKillParticipation: 0,
+  avgTeamDragons: 0,
+  avgTeamBarons: 0,
+  avgDragonTakedowns: 0,
+  avgObjectiveSteals: 0,
+  avgEnemyJungleMonsterKills: 0,
+};
+
 @Injectable()
 export class PlayerStatsService {
-  constructor(private readonly riotService: RiotService) {}
+  constructor(
+    private readonly riotService: RiotService,
+    private readonly aiService: AiService,
+  ) {}
 
   async getRiotPlayer(gameName: string, tagLine: string) {
     const account = await this.riotService.getAccount(gameName, tagLine);
     const championMap = await this.riotService.getChampionIdNameMap();
     const player = await this.buildFromPuuid(account.puuid, championMap, undefined, account);
+    const analysis = await this.aiService.analyzePlayerProfile(player);
 
-    return { player };
+    return { player, analysis };
   }
 
   async buildFromPuuid(
@@ -114,7 +133,7 @@ export class PlayerStatsService {
   }
 
   private async buildQueuePerf(puuid: string, matchIds: string[], positionFilter?: string): Promise<QueuePerf> {
-    if (!matchIds.length) return { games: 0, winrate: 0, avgKda: 0, topChampions: [], roleDistribution: [] };
+    if (!matchIds.length) return { games: 0, winrate: 0, avgKda: 0, topChampions: [], roleDistribution: [], playstyle: EMPTY_PLAYSTYLE };
 
     const allMatches: any[] = [];
     for (let i = 0; i < matchIds.length; i += 5) {
@@ -125,16 +144,35 @@ export class PlayerStatsService {
     const champMap = new Map<number, ChampAccum>();
     const roleMap = new Map<string, number>();
     let wins = 0, kills = 0, deaths = 0, assists = 0;
+    let damageToChampions = 0;
+    let visionScore = 0;
+    let killParticipation = 0;
+    let teamDragons = 0;
+    let teamBarons = 0;
+    let dragonTakedowns = 0;
+    let objectiveSteals = 0;
+    let enemyJungleMonsterKills = 0;
+    let processedGames = 0;
 
     for (const match of allMatches) {
       const p = (match.info?.participants ?? []).find((x: any) => x.puuid === puuid);
       if (!p) continue;
+      processedGames++;
       if (p.win) wins++;
       const role = this.normalizePosition(p.teamPosition || p.individualPosition || p.lane || p.role);
       if (role !== 'FILL') roleMap.set(role, (roleMap.get(role) ?? 0) + 1);
       kills += p.kills ?? 0;
       deaths += p.deaths ?? 0;
       assists += p.assists ?? 0;
+      damageToChampions += p.totalDamageDealtToChampions ?? 0;
+      visionScore += p.visionScore ?? 0;
+      killParticipation += this.getKillParticipation(p, match);
+      const objectives = this.getParticipantTeamObjectives(match, p.teamId);
+      teamDragons += objectives.dragons;
+      teamBarons += objectives.barons;
+      dragonTakedowns += p.challenges?.dragonTakedowns ?? 0;
+      objectiveSteals += p.objectivesStolen ?? p.challenges?.epicMonsterSteals ?? 0;
+      enemyJungleMonsterKills += p.challenges?.enemyJungleMonsterKills ?? p.neutralMinionsKilledEnemyJungle ?? 0;
 
       // Only count this game's champion toward topChampions when it matches the
       // Clash position. If Riot does not expose a usable role, keep the champion
@@ -159,7 +197,7 @@ export class PlayerStatsService {
       champMap.set(cid, ex);
     }
 
-    const total = allMatches.length;
+    const total = processedGames;
     return {
       games: total,
       winrate: total > 0 ? Math.round((wins / total) * 100) : 0,
@@ -176,6 +214,72 @@ export class PlayerStatsService {
           kda: c.deaths === 0 ? c.kills + c.assists : Math.round(((c.kills + c.assists) / c.deaths) * 10) / 10,
         })),
       roleDistribution: this.buildRoleDistribution(roleMap, total),
+      playstyle: this.buildPlaystyle({
+        total,
+        kills,
+        deaths,
+        assists,
+        damageToChampions,
+        visionScore,
+        killParticipation,
+        teamDragons,
+        teamBarons,
+        dragonTakedowns,
+        objectiveSteals,
+        enemyJungleMonsterKills,
+      }),
+    };
+  }
+
+  private getKillParticipation(participant: any, match: any): number {
+    const fromChallenges = participant.challenges?.killParticipation;
+    if (typeof fromChallenges === 'number') return fromChallenges * 100;
+
+    const teamKills = (match.info?.participants ?? [])
+      .filter((p: any) => p.teamId === participant.teamId)
+      .reduce((sum: number, p: any) => sum + (p.kills ?? 0), 0);
+
+    if (!teamKills) return 0;
+    return (((participant.kills ?? 0) + (participant.assists ?? 0)) / teamKills) * 100;
+  }
+
+  private getParticipantTeamObjectives(match: any, teamId: number): { dragons: number; barons: number } {
+    const team = (match.info?.teams ?? []).find((t: any) => t.teamId === teamId);
+    return {
+      dragons: team?.objectives?.dragon?.kills ?? 0,
+      barons: team?.objectives?.baron?.kills ?? 0,
+    };
+  }
+
+  private buildPlaystyle(stats: {
+    total: number;
+    kills: number;
+    deaths: number;
+    assists: number;
+    damageToChampions: number;
+    visionScore: number;
+    killParticipation: number;
+    teamDragons: number;
+    teamBarons: number;
+    dragonTakedowns: number;
+    objectiveSteals: number;
+    enemyJungleMonsterKills: number;
+  }): PlaystyleStats {
+    if (!stats.total) return EMPTY_PLAYSTYLE;
+    const avg = (value: number, precision = 1) => Math.round((value / stats.total) * (10 ** precision)) / (10 ** precision);
+
+    return {
+      avgKills: avg(stats.kills),
+      avgDeaths: avg(stats.deaths),
+      avgAssists: avg(stats.assists),
+      avgDamageToChampions: Math.round(stats.damageToChampions / stats.total),
+      avgVisionScore: avg(stats.visionScore),
+      avgKillParticipation: Math.round(stats.killParticipation / stats.total),
+      avgTeamDragons: avg(stats.teamDragons),
+      avgTeamBarons: avg(stats.teamBarons),
+      avgDragonTakedowns: avg(stats.dragonTakedowns),
+      avgObjectiveSteals: avg(stats.objectiveSteals),
+      avgEnemyJungleMonsterKills: avg(stats.enemyJungleMonsterKills),
     };
   }
 

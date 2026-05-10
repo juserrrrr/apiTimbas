@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { AiService } from '../ai/ai.service';
 import { RiotService } from '../riot/riot.service';
 import { PlayerStatsService } from './player-stats.service';
 
@@ -16,17 +17,31 @@ const mockRiot = () => ({
   buildProfileIconUrl: jest.fn().mockReturnValue('https://example.com/icon.png'),
 });
 
+const mockAi = () => ({
+  analyzePlayerProfile: jest.fn().mockResolvedValue({
+    summary: 'Profile summary',
+    fightPattern: 'Fight pattern',
+    objectivePattern: 'Objective pattern',
+    riskPattern: 'Risk pattern',
+    mapPattern: 'Map pattern',
+    tips: ['Tip'],
+  }),
+});
+
 describe('PlayerStatsService', () => {
   let service: PlayerStatsService;
   let riot: ReturnType<typeof mockRiot>;
+  let ai: ReturnType<typeof mockAi>;
 
   beforeEach(async () => {
     riot = mockRiot();
+    ai = mockAi();
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         PlayerStatsService,
         { provide: RiotService, useValue: riot },
+        { provide: AiService, useValue: ai },
       ],
     }).compile();
 
@@ -52,6 +67,8 @@ describe('PlayerStatsService', () => {
     expect(result.player.topPositions).toEqual(['ADC', 'MID']);
     expect(result.player.position).toBe('ADC');
     expect(result.player.soloQueue.games).toBe(3);
+    expect(result.analysis.summary).toBe('Profile summary');
+    expect(ai.analyzePlayerProfile).toHaveBeenCalledWith(result.player);
     expect(riot.getAccountByPuuid).not.toHaveBeenCalled();
   });
 

@@ -31,12 +31,27 @@ export interface RoleStat {
   share: number;
 }
 
+export interface PlaystyleStats {
+  avgKills: number;
+  avgDeaths: number;
+  avgAssists: number;
+  avgDamageToChampions: number;
+  avgVisionScore: number;
+  avgKillParticipation: number;
+  avgTeamDragons: number;
+  avgTeamBarons: number;
+  avgDragonTakedowns: number;
+  avgObjectiveSteals: number;
+  avgEnemyJungleMonsterKills: number;
+}
+
 export interface QueuePerf {
   games: number;
   winrate: number;
   avgKda: number;
   topChampions: QueueChampStat[];
   roleDistribution: RoleStat[];
+  playstyle: PlaystyleStats;
 }
 
 export interface FullPlayerData {
@@ -60,7 +75,7 @@ export interface BanSuggestion {
   championName: string;
   targetPlayer: string;
   reason: string;
-  priority: 1 | 2 | 3 | 4 | 5;
+  priority: number;
 }
 
 export interface CounterplayAdvice {
@@ -85,6 +100,15 @@ export interface AiAnalysis {
   strategy: string;
 }
 
+export interface PlayerProfileAnalysis {
+  summary: string;
+  fightPattern: string;
+  objectivePattern: string;
+  riskPattern: string;
+  mapPattern: string;
+  tips: string[];
+}
+
 // ─── Service ──────────────────────────────────────────────────────────────────
 
 @Injectable()
@@ -93,6 +117,7 @@ export class AiService {
   private readonly geminiApiKey: string | null;
   private readonly geminiModel: string;
   private readonly analysisCache = new Map<string, { value: AiAnalysis; expiresAt: number }>();
+  private readonly profileAnalysisCache = new Map<string, { value: PlayerProfileAnalysis; expiresAt: number }>();
   private geminiBlockedUntil = 0;
 
   constructor() {
@@ -112,7 +137,7 @@ export class AiService {
     if (cached) return cached;
 
     const expectedPlayers = players.length;
-    const expectedBans = Math.min(5, expectedPlayers);
+    const expectedBans = Math.min(10, Math.max(5, expectedPlayers * 2));
 
     const prompt = `Você é um analista profissional de League of Legends especializado em Clash. Analise os dados dos 5 jogadores adversários e gere uma análise tática precisa, orientada para draft.
 
@@ -133,15 +158,21 @@ ${JSON.stringify(
     soloQueue_recente: {
       games: p.soloQueue.games,
       winrate: `${p.soloQueue.winrate}%`,
+      kdaMedio: p.soloQueue.avgKda,
+      estilo: this.formatPlaystyle(p.soloQueue.playstyle, p.position),
       topChamps: p.soloQueue.topChampions.slice(0, 5).map((c) => `${c.championName} (${c.games}G ${c.winrate}% WR ${c.kda} KDA)`),
     },
     flexQueue_recente: {
       games: p.flexQueue.games,
       winrate: `${p.flexQueue.winrate}%`,
+      kdaMedio: p.flexQueue.avgKda,
+      estilo: this.formatPlaystyle(p.flexQueue.playstyle, p.position),
       topChamps: p.flexQueue.topChampions.slice(0, 3).map((c) => `${c.championName} (${c.games}G ${c.winrate}% WR)`),
     },
     clash_historico: {
       games: p.clashHistory.games,
+      kdaMedio: p.clashHistory.avgKda,
+      estilo: this.formatPlaystyle(p.clashHistory.playstyle, p.position),
       topChamps: p.clashHistory.topChampions.slice(0, 3).map((c) => `${c.championName} (${c.games}G ${c.winrate}% WR)`),
     },
     campeons_combinados_top5: p.combinedTopChamps.slice(0, 5).map((c) => `${c.championName} (${c.games}G ${c.winrate}% WR)`),
@@ -182,6 +213,8 @@ Responda APENAS com JSON válido, sem markdown, sem texto fora do JSON:
 }
 
 Regras:
+- Use os campos "estilo" para explicar mortes, lutas, dano, visao, drag/baron, invade e roubo de objetivo.
+- Para JUNGLE, pese mais dragoes/baroes do time, dragon takedowns, objective steals e enemy jungle monster kills.
 - Gere exatamente ${expectedBans} bans, prioridade 1 a ${expectedBans} (sem repetir campeões)
 - Se clashPosition for TOP, JUNGLE, MID, ADC ou SUPPORT, use essa rota como a rota principal do jogador.
 - Só inferir rota por histórico recente quando clashPosition estiver ausente, FILL, UNSELECTED ou inválida.
@@ -242,6 +275,75 @@ Regras:
       this.logger.warn(`Erro ao chamar IA para análise: ${this.describeGeminiError(err)}`);
       const fallback = this.buildStatAnalysis(players, 'Gemini indisponível; análise gerada pelos dados recentes.');
       this.setCachedAnalysis(cacheKey, fallback, GEMINI_FALLBACK_CACHE_TTL_MS);
+      return fallback;
+    }
+  }
+
+  async analyzePlayerProfile(player: FullPlayerData): Promise<PlayerProfileAnalysis> {
+    const cacheKey = this.buildProfileAnalysisCacheKey(player);
+    const cached = this.profileAnalysisCache.get(cacheKey);
+    if (cached && Date.now() <= cached.expiresAt) return cached.value;
+    if (!this.geminiApiKey) return this.buildPlayerProfileFallback(player, 'Gemini indisponivel; leitura gerada por dados recentes.');
+
+    const payload = {
+      riotId: player.riotId,
+      position: player.position,
+      soloRank: `${player.soloRank.tier} ${player.soloRank.rank} ${player.soloRank.lp} LP`,
+      flexRank: `${player.flexRank.tier} ${player.flexRank.rank} ${player.flexRank.lp} LP`,
+      soloQueue: this.profileQueuePayload(player.soloQueue),
+      flexQueue: this.profileQueuePayload(player.flexQueue),
+      clashHistory: this.profileQueuePayload(player.clashHistory),
+      combinedTopChamps: player.combinedTopChamps.slice(0, 10),
+      note: 'Gank lane exata (top/mid/bot) exige match timeline; com estes dados, inferir apenas estilo geral e objetivos.',
+    };
+
+    const prompt = `Analise o estilo de jogo deste jogador de League of Legends para um perfil individual.
+Use os dados recentes para dizer como ele joga: lutas, mortes, dano, visao, objetivos, jungle invade/roubo se for jungler.
+Nao invente lane de gank exata; se nao houver timeline, diga que o foco de gank e inconclusivo.
+
+DADOS:
+${JSON.stringify(payload, null, 2)}
+
+Responda APENAS JSON valido:
+{
+  "summary": "resumo em 1 frase",
+  "fightPattern": "como luta/participa de fights",
+  "objectivePattern": "como joga objetivos, drag/baron/visao",
+  "riskPattern": "onde se expoe/morre mais ou se joga seguro",
+  "mapPattern": "leitura de mapa, invade/gank/foco de rota quando houver evidência",
+  "tips": ["dica curta 1", "dica curta 2", "dica curta 3"]
+}`;
+
+    try {
+      const response = await this.postGeminiWithRetry(
+        `https://generativelanguage.googleapis.com/v1beta/models/${this.geminiModel}:generateContent`,
+        {
+          contents: [{ role: 'user', parts: [{ text: prompt }] }],
+          generationConfig: {
+            temperature: 0.2,
+            maxOutputTokens: 2048,
+            responseMimeType: 'application/json',
+          },
+        },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'x-goog-api-key': this.geminiApiKey,
+          },
+          timeout: 30000,
+          transformResponse: [(data: string) => data],
+        },
+      );
+
+      const responseData = JSON.parse(response.data as string);
+      const text = responseData?.candidates?.[0]?.content?.parts?.map((part: any) => part.text ?? '').join('') ?? '';
+      const analysis = this.parsePlayerProfileAnalysis(text, player);
+      this.profileAnalysisCache.set(cacheKey, { value: analysis, expiresAt: Date.now() + GEMINI_CACHE_TTL_MS });
+      return analysis;
+    } catch (err) {
+      this.logger.warn(`Erro ao chamar IA para perfil: ${this.describeGeminiError(err)}`);
+      const fallback = this.buildPlayerProfileFallback(player, 'Gemini indisponivel; leitura gerada por dados recentes.');
+      this.profileAnalysisCache.set(cacheKey, { value: fallback, expiresAt: Date.now() + GEMINI_FALLBACK_CACHE_TTL_MS });
       return fallback;
     }
   }
@@ -333,6 +435,28 @@ Regras:
     return createHash('sha256').update(JSON.stringify(payload)).digest('hex');
   }
 
+  private buildProfileAnalysisCacheKey(player: FullPlayerData): string {
+    return createHash('sha256').update(JSON.stringify({
+      riotId: player.riotId,
+      position: player.position,
+      solo: this.profileQueuePayload(player.soloQueue),
+      flex: this.profileQueuePayload(player.flexQueue),
+      clash: this.profileQueuePayload(player.clashHistory),
+      combined: player.combinedTopChamps.slice(0, 10),
+    })).digest('hex');
+  }
+
+  private profileQueuePayload(queue: QueuePerf) {
+    return {
+      games: queue.games,
+      winrate: queue.winrate,
+      avgKda: queue.avgKda,
+      playstyle: queue.playstyle,
+      roles: queue.roleDistribution,
+      topChampions: queue.topChampions.slice(0, 8),
+    };
+  }
+
   private getCachedAnalysis(key: string): AiAnalysis | null {
     const cached = this.analysisCache.get(key);
     if (!cached) return null;
@@ -350,6 +474,27 @@ Regras:
 
   private wait(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private formatPlaystyle(stats: PlaystyleStats, position: string): string {
+    const values = [
+      `${stats.avgDeaths} mortes/jogo`,
+      `${stats.avgKillParticipation}% KP`,
+      `${stats.avgDamageToChampions} dano em campeoes/jogo`,
+      `${stats.avgVisionScore} visao/jogo`,
+    ];
+
+    if (position?.toUpperCase() === 'JUNGLE') {
+      values.push(
+        `${stats.avgTeamDragons} dragoes do time/jogo`,
+        `${stats.avgTeamBarons} baroes do time/jogo`,
+        `${stats.avgDragonTakedowns} dragon takedowns/jogo`,
+        `${stats.avgObjectiveSteals} roubos de objetivo/jogo`,
+        `${stats.avgEnemyJungleMonsterKills} monstros da jungle inimiga/jogo`,
+      );
+    }
+
+    return values.join('; ');
   }
 
   private stripJsonFence(text: string): string {
@@ -379,6 +524,48 @@ Regras:
     }
   }
 
+  private parsePlayerProfileAnalysis(text: string, player: FullPlayerData): PlayerProfileAnalysis {
+    const stripped = this.stripJsonFence(text);
+    try {
+      return JSON.parse(stripped) as PlayerProfileAnalysis;
+    } catch {
+      const start = stripped.indexOf('{');
+      const end = stripped.lastIndexOf('}');
+      if (start >= 0 && end > start) {
+        try {
+          return JSON.parse(stripped.slice(start, end + 1)) as PlayerProfileAnalysis;
+        } catch {
+          return this.buildPlayerProfileFallback(player, 'Gemini retornou JSON invalido; leitura gerada por dados recentes.');
+        }
+      }
+      return this.buildPlayerProfileFallback(player, 'Gemini retornou JSON invalido; leitura gerada por dados recentes.');
+    }
+  }
+
+  private buildPlayerProfileFallback(player: FullPlayerData, prefix: string): PlayerProfileAnalysis {
+    const bestQueue = [player.soloQueue, player.flexQueue, player.clashHistory].sort((a, b) => b.games - a.games)[0];
+    const style = bestQueue.playstyle;
+    const mainChamp = player.combinedTopChamps[0]?.championName ?? player.masteryTop10[0]?.championName ?? 'sem campeao claro';
+    const objective = player.position === 'JUNGLE'
+      ? `${style.avgTeamDragons} dragoes/time por jogo, ${style.avgObjectiveSteals} roubos e ${style.avgEnemyJungleMonsterKills} camps inimigos/jogo.`
+      : `${style.avgVisionScore} visao/jogo e ${style.avgKillParticipation}% KP; objetivos dependem mais do time.`;
+
+    return {
+      summary: `${prefix} Perfil tende a jogar em torno de ${mainChamp}, com ${bestQueue.avgKda} KDA medio e ${style.avgDeaths} mortes/jogo.`,
+      fightPattern: `${style.avgKillParticipation}% KP, ${style.avgDamageToChampions} dano em campeoes/jogo e ${style.avgKills}/${style.avgDeaths}/${style.avgAssists} KDA bruto medio.`,
+      objectivePattern: objective,
+      riskPattern: style.avgDeaths >= 6 ? 'Morre bastante; pode ser punido em fights longas ou entradas sem visao.' : 'Morre pouco/moderado; tende a preservar recursos e escolher melhor as lutas.',
+      mapPattern: player.position === 'JUNGLE'
+        ? 'Foco de gank por rota fica inconclusivo sem timeline, mas os numeros indicam pressao por objetivos/invade quando altos.'
+        : 'Foco de mapa por rota fica inconclusivo sem timeline; use KP, visao e campeoes para inferir presenca em fights.',
+      tips: [
+        'Negue campeoes de conforto mais recentes.',
+        'Force visao antes de objetivos neutros.',
+        style.avgDeaths >= 6 ? 'Acelere picks quando ele entrar sem informacao.' : 'Evite entregar lutas curtas favoraveis.',
+      ],
+    };
+  }
+
   private buildStatAnalysis(players: FullPlayerData[], strategyPrefix: string): AiAnalysis {
     const threats = players.flatMap((player) =>
       player.combinedTopChamps.slice(0, 5).map((champ) => ({
@@ -391,7 +578,7 @@ Regras:
     const usedChampionIds = new Set<number>();
     const bans: BanSuggestion[] = [];
     for (const threat of threats.sort((a, b) => b.score - a.score)) {
-      if (bans.length >= Math.min(5, players.length)) break;
+      if (bans.length >= Math.min(10, Math.max(5, players.length * 2))) break;
       if (usedChampionIds.has(threat.championId)) continue;
       usedChampionIds.add(threat.championId);
       bans.push({
@@ -399,7 +586,7 @@ Regras:
         championName: threat.championName,
         targetPlayer: threat.player.riotId,
         reason: `${threat.games} jogos recentes, ${threat.winrate}% WR e ${threat.kda} KDA`,
-        priority: (bans.length + 1) as 1 | 2 | 3 | 4 | 5,
+        priority: bans.length + 1,
       });
     }
 
