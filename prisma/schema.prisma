@@ -125,6 +125,7 @@ model User {
   role           Role             @default(PLAYER)
   avatar         String?
   lastLoginIp    String?
+  lastLoginAt    DateTime?
   dateOfBirth    DateTime?
   dateCreated    DateTime         @default(now())
   dateUpdated    DateTime         @updatedAt
@@ -199,25 +200,25 @@ model UserTeamLeague {
 }
 
 model CustomLeagueMatch {
-  id               Int               @id @default(autoincrement())
-  riotMatchId      String?           @unique
-  matchType        MatchType         @default(ALEATORIO)
-  playersPerTeam   Int               @default(5)
+  id               Int              @id @default(autoincrement())
+  riotMatchId      String?          @unique
+  matchType        MatchType        @default(ALEATORIO)
+  playersPerTeam   Int              @default(5)
   teamBlueId       Int?
   teamRedId        Int?
   winnerId         Int?
   ServerDiscordId  String
-  discordServer    DiscordServer     @relation(fields: [ServerDiscordId], references: [discordServerId])
+  discordServer    DiscordServer    @relation(fields: [ServerDiscordId], references: [discordServerId])
   Teams            TeamLeague[]
-  status           MatchStatus       @default(FINISHED)
+  status           MatchStatus      @default(FINISHED)
   creatorDiscordId String?
-  showDetails      Boolean           @default(false)
-  queuePlayers     UserTeamLeague[]  @relation("MatchQueue")
+  showDetails      Boolean          @default(false)
+  queuePlayers     UserTeamLeague[] @relation("MatchQueue")
   startedAt        DateTime?
   finishedAt       DateTime?
   expiresAt        DateTime?
-  dateCreated      DateTime          @default(now())
-  dateUpdated      DateTime          @updatedAt
+  dateCreated      DateTime         @default(now())
+  dateUpdated      DateTime         @updatedAt
 
   @@index([winnerId])
   @@index([ServerDiscordId])
@@ -230,13 +231,13 @@ model CustomLeagueMatch {
 }
 
 model VerifiedAccount {
-  id          String   @id @default(cuid())
-  discordId   String   @unique
-  puuid       String   @unique
-  riotId      String
-  summonerId  String
-  verifiedAt  DateTime @default(now())
-  iconId      Int
+  id         String   @id @default(cuid())
+  discordId  String   @unique
+  puuid      String   @unique
+  riotId     String
+  summonerId String
+  verifiedAt DateTime @default(now())
+  iconId     Int
 }
 
 model PendingVerification {

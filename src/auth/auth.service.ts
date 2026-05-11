@@ -135,12 +135,13 @@ export class AuthService {
       throw new UnauthorizedException('Only users and admins can login');
     }
 
-    if (lastLoginIp) {
-      await this.prisma.user.update({
-        where: { id: user.id },
-        data: { lastLoginIp },
-      });
-    }
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: {
+        lastLoginAt: new Date(),
+        ...(lastLoginIp && { lastLoginIp }),
+      },
+    });
 
     const { id, name, email, role } = user;
     return this.createToken(id.toString(), name, email, role);
@@ -237,12 +238,14 @@ export class AuthService {
           name: discordUser.username,
           role: Role.PLAYER,
           avatar: incomingAvatar,
+          lastLoginAt: new Date(),
           ...(lastLoginIp && { lastLoginIp }),
         },
       });
     } else {
       const updateData = {
         ...(user.avatar !== incomingAvatar && { avatar: incomingAvatar }),
+        lastLoginAt: new Date(),
         ...(lastLoginIp && { lastLoginIp }),
       };
 
@@ -271,7 +274,13 @@ export class AuthService {
       update: {},
       create: { discordId: devDiscordId, name: 'Dev User', role: Role.PLAYER },
     });
-    return this.createToken(user.id.toString(), user.name, user.email ?? '', user.role, user.discordId);
+    return this.createToken(
+      user.id.toString(),
+      user.name,
+      user.email ?? '',
+      user.role,
+      user.discordId,
+    );
   }
 
   async authenticateBot(botId: string) {
