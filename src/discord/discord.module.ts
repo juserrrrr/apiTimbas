@@ -14,6 +14,7 @@ import { AnunciarCommand } from './commands/anunciar.command';
 import { ApagarCommand } from './commands/apagar.command';
 import { RankingCommand } from './commands/ranking.command';
 import { SetAvatarCommand } from './commands/setavatar.command';
+import { VaiBrasaCommand } from './commands/vaibrasa.command';
 import { TrazertodosCommand } from './commands/trazertodos.command';
 import { VersusCommand } from './commands/versus.command';
 import { UsuarioLolCommand } from './commands/usuariolol.command';
@@ -70,6 +71,7 @@ import { AuthModule } from '../auth/auth.module';
     ApagarCommand,
     RankingCommand,
     SetAvatarCommand,
+    VaiBrasaCommand,
     TrazertodosCommand,
     VersusCommand,
     UsuarioLolCommand,
