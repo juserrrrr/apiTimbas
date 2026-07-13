@@ -14,12 +14,15 @@ import { AnunciarCommand } from './commands/anunciar.command';
 import { ApagarCommand } from './commands/apagar.command';
 import { RankingCommand } from './commands/ranking.command';
 import { SetAvatarCommand } from './commands/setavatar.command';
-import { VaiBrasaCommand } from './commands/vaibrasa.command';
 import { TrazertodosCommand } from './commands/trazertodos.command';
 import { VersusCommand } from './commands/versus.command';
 import { UsuarioLolCommand } from './commands/usuariolol.command';
 import { CriarPartidaCommand } from './commands/criar-partida.command';
 import { EventoCommand } from './commands/evento.command';
+import { TemporadaCommand } from './commands/temporada.command';
+import { HallDaFamaCommand } from './commands/halldafama.command';
+import { FichasCommand } from './commands/fichas.command';
+import { DuplaCommand } from './commands/dupla.command';
 
 // Events
 import { ReadyEvent } from './events/ready.event';
@@ -32,6 +35,7 @@ import { OfflineMatchSelectInteraction } from './interactions/offline-match-sele
 import { OnlineLobbyInteraction } from './interactions/online-lobby.interaction';
 import { EventInteraction } from './interactions/event.interaction';
 import { LolVerificationInteraction } from './interactions/lol-verification.interaction';
+import { BetInteraction } from './interactions/bet.interaction';
 
 // NestJS module imports
 import { LeagueMatchModule } from '../customLeagueMath/leagueMatch.module';
@@ -39,6 +43,8 @@ import { UserModule } from '../user/user.module';
 import { RiotModule } from '../riot/riot.module';
 import { LeaderboardModule } from '../leaderboard/leaderboard.module';
 import { AuthModule } from '../auth/auth.module';
+import { EngagementModule } from '../engagement/engagement.module';
+import { PrismaModule } from '../prisma/prisma.module';
 
 @Module({
   imports: [
@@ -58,6 +64,8 @@ import { AuthModule } from '../auth/auth.module';
     RiotModule,
     LeaderboardModule,
     AuthModule,
+    EngagementModule,
+    PrismaModule,
   ],
   controllers: [],
   providers: [
@@ -71,12 +79,15 @@ import { AuthModule } from '../auth/auth.module';
     ApagarCommand,
     RankingCommand,
     SetAvatarCommand,
-    VaiBrasaCommand,
     TrazertodosCommand,
     VersusCommand,
     UsuarioLolCommand,
     CriarPartidaCommand,
     EventoCommand,
+    TemporadaCommand,
+    HallDaFamaCommand,
+    FichasCommand,
+    DuplaCommand,
     // Events
     ReadyEvent,
     MemberEvent,
@@ -87,6 +98,7 @@ import { AuthModule } from '../auth/auth.module';
     OnlineLobbyInteraction,
     EventInteraction,
     LolVerificationInteraction,
+    BetInteraction,
   ],
 })
 export class DiscordBotModule {}
