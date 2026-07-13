@@ -20,8 +20,8 @@ export function buildOfflineMatchButtons(
     rows.push(row1);
 
     const row2 = new ActionRowBuilder<ButtonBuilder>();
-    if (matchFormatValue === 0 || matchFormatValue === 3) {
-      row2.addComponents(new ButtonBuilder().setCustomId(`cm/draw/${key}`).setLabel('Sortear').setStyle(ButtonStyle.Primary).setEmoji('🎲').setDisabled(playerCount < maxPlayers || finished));
+    if ([0, 2, 3].includes(matchFormatValue)) {
+      row2.addComponents(new ButtonBuilder().setCustomId(`cm/draw/${key}`).setLabel(matchFormatValue === 2 ? 'Balancear' : 'Sortear').setStyle(ButtonStyle.Primary).setEmoji(matchFormatValue === 2 ? '⚖️' : '🎲').setDisabled(playerCount < maxPlayers || finished));
     } else if (matchFormatValue === 1) {
       row2.addComponents(new ButtonBuilder().setCustomId(`cm/switch/${key}`).setLabel('Trocar Lado').setStyle(ButtonStyle.Primary).setEmoji('🔄').setDisabled(playerCount !== maxPlayers || finished));
     }
@@ -60,7 +60,8 @@ export function buildOnlineLobbyButtons(
   );
   if (started && !finished) {
     row2.addComponents(
-      new ButtonBuilder().setCustomId(`ol/move/${lobbyId}`).setLabel('Ir para a sala').setStyle(ButtonStyle.Primary).setEmoji('🎧')
+      new ButtonBuilder().setCustomId(`ol/move/${lobbyId}`).setLabel('Ir para a sala').setStyle(ButtonStyle.Primary).setEmoji('🎧'),
+      new ButtonBuilder().setCustomId(`bet/open/${lobbyId}`).setLabel('Apostar').setStyle(ButtonStyle.Secondary).setEmoji('🎰'),
     );
   }
   return [row1, row2];

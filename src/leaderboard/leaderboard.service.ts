@@ -104,16 +104,37 @@ export class LeaderboardService {
     this.cache.set(key, { data, expiresAt: Date.now() + CACHE_TTL });
   }
 
+  /** Remove entradas de cache de um servidor (ex.: virada de temporada). */
+  invalidateServer(discordServerId: string): void {
+    for (const key of [...this.cache.keys()]) {
+      if (key.includes(`:${discordServerId}:`)) this.cache.delete(key);
+    }
+  }
+
+  /** Início da temporada ativa do servidor; null = ranking geral (sem temporadas). */
+  private async getActiveSeasonStart(discordServerId: string): Promise<Date | null> {
+    const season = await this.prisma.season.findFirst({
+      where: { serverId: discordServerId, endedAt: null },
+      orderBy: { number: 'desc' },
+      select: { startedAt: true },
+    });
+    return season?.startedAt ?? null;
+  }
+
   async getLeaderboardForServer(
     discordServerId: string,
     playersPerTeam?: number,
   ): Promise<PlayerStats[]> {
-    const cacheKey = `leaderboard:${discordServerId}:${playersPerTeam ?? 'all'}`;
+    const seasonStart = await this.getActiveSeasonStart(discordServerId);
+    const cacheKey = `leaderboard:${discordServerId}:${playersPerTeam ?? 'all'}:${seasonStart?.getTime() ?? 'alltime'}`;
     const cached = this.fromCache<PlayerStats[]>(cacheKey);
     if (cached) return cached;
 
     const modeFilter = playersPerTeam
       ? Prisma.sql`AND ctm."playersPerTeam" = ${playersPerTeam}`
+      : Prisma.sql``;
+    const seasonFilter = seasonStart
+      ? Prisma.sql`AND ctm."dateCreated" >= ${seasonStart}`
       : Prisma.sql``;
 
     const results: any[] = await this.prisma.$queryRaw`
@@ -132,6 +153,7 @@ export class LeaderboardService {
             ctm."ServerDiscordId" = ${discordServerId}
             AND ctm."winnerId" IS NOT NULL
             ${modeFilter}
+            ${seasonFilter}
         GROUP BY
             u.id
       )

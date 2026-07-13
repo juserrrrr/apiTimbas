@@ -133,6 +133,17 @@ export interface PlayerProfileAnalysis {
   tips: string[];
 }
 
+export interface MatchRecapInput {
+  matchId: number;
+  matchTypeLabel: string;
+  playersPerTeam: number;
+  blueTeam: string[];
+  redTeam: string[];
+  winnerSide: 'BLUE' | 'RED';
+  mvpName?: string | null;
+  streakNotes?: string[];
+}
+
 // ─── Service ──────────────────────────────────────────────────────────────────
 
 @Injectable()
@@ -382,6 +393,58 @@ Responda APENAS JSON valido:
       this.profileAnalysisCache.set(cacheKey, { value: fallback, expiresAt: Date.now() + GEMINI_FALLBACK_CACHE_TTL_MS });
       return fallback;
     }
+  }
+
+  /**
+   * Gera um resumo curto e bem-humorado (pt-BR) de uma partida personalizada.
+   * Sem dados de jogo da Riot — usa apenas times, vencedor, MVP e streaks.
+   */
+  async generateMatchRecap(input: MatchRecapInput): Promise<string> {
+    const fallback = this.buildRecapFallback(input);
+    if (!this.geminiApiKey) return fallback;
+
+    const winnerNames = input.winnerSide === 'BLUE' ? input.blueTeam : input.redTeam;
+    const loserNames = input.winnerSide === 'BLUE' ? input.redTeam : input.blueTeam;
+
+    const prompt = `Você é o narrador zoeiro oficial de um servidor de Discord de amigos que jogam partidas personalizadas de League of Legends.
+Escreva um resumo curto e engraçado (2 a 3 frases, máx 350 caracteres, português do Brasil, pode usar gíria de LoL e emoji) sobre a partida abaixo.
+Zoe levemente os perdedores e exalte os vencedores, sem ofensas pesadas, sem palavrão.
+Não invente estatísticas de jogo (kills, objetivos) — você não tem esses dados.
+
+PARTIDA #${input.matchId} — ${input.matchTypeLabel} ${input.playersPerTeam}v${input.playersPerTeam}
+Time vencedor (${input.winnerSide === 'BLUE' ? 'Azul 🔵' : 'Vermelho 🔴'}): ${winnerNames.join(', ')}
+Time derrotado: ${loserNames.join(', ')}
+${input.mvpName ? `MVP votado pela galera: ${input.mvpName}` : ''}
+${input.streakNotes?.length ? `Fatos: ${input.streakNotes.join('; ')}` : ''}
+
+Responda APENAS com o texto do resumo, sem aspas, sem markdown.`;
+
+    try {
+      const response = await this.postGeminiWithRetry(
+        `https://generativelanguage.googleapis.com/v1beta/models/${this.geminiModel}:generateContent`,
+        {
+          contents: [{ role: 'user', parts: [{ text: prompt }] }],
+          generationConfig: { temperature: 0.9, maxOutputTokens: 256 },
+        },
+        {
+          headers: { 'Content-Type': 'application/json', 'x-goog-api-key': this.geminiApiKey },
+          timeout: 20000,
+          transformResponse: [(data: string) => data],
+        },
+      );
+      const responseData = JSON.parse(response.data as string);
+      const text: string = responseData?.candidates?.[0]?.content?.parts?.map((p: any) => p.text ?? '').join('').trim() ?? '';
+      return text ? text.slice(0, 500) : fallback;
+    } catch (err) {
+      this.logger.warn(`Erro ao gerar recap da partida: ${this.describeGeminiError(err)}`);
+      return fallback;
+    }
+  }
+
+  private buildRecapFallback(input: MatchRecapInput): string {
+    const winnerLabel = input.winnerSide === 'BLUE' ? 'Time Azul 🔵' : 'Time Vermelho 🔴';
+    const mvp = input.mvpName ? ` MVP da rodada: **${input.mvpName}**.` : '';
+    return `O ${winnerLabel} levou a partida #${input.matchId} (${input.matchTypeLabel} ${input.playersPerTeam}v${input.playersPerTeam}).${mvp} GG WP! 🏆`;
   }
 
   private async postGeminiWithRetry(url: string, body: any, config: any): Promise<any> {

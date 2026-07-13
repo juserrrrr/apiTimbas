@@ -6,9 +6,11 @@ import { UserModule } from '../user/user.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { UserService } from '../user/user.service';
 import { DiscordServerModule } from '../discordServer/discordServer.module';
+import { LeaderboardModule } from '../leaderboard/leaderboard.module';
+import { EngagementModule } from '../engagement/engagement.module';
 
 @Module({
-  imports: [PrismaModule, UserModule, AuthModule, DiscordServerModule],
+  imports: [PrismaModule, UserModule, AuthModule, DiscordServerModule, LeaderboardModule, EngagementModule],
   controllers: [LeagueMatchController],
   providers: [LeagueMatchService, UserService],
   exports: [LeagueMatchService],

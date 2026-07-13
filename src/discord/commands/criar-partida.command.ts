@@ -14,8 +14,8 @@ import { buildMatchEmbed } from '../helpers/embed.helper';
 import { buildOfflineMatchButtons } from '../helpers/match-buttons.helper';
 import { MatchType } from '@prisma/client';
 
-const FORMAT_NAMES: Record<number, string> = { 0: 'Aleatório', 1: 'Livre', 3: 'Aleatório Completo' };
-const FORMAT_API: Record<number, MatchType> = { 0: MatchType.ALEATORIO, 1: MatchType.LIVRE, 3: MatchType.ALEATORIO_COMPLETO };
+const FORMAT_NAMES: Record<number, string> = { 0: 'Aleatório', 1: 'Livre', 2: 'Balanceado', 3: 'Aleatório Completo' };
+const FORMAT_API: Record<number, MatchType> = { 0: MatchType.ALEATORIO, 1: MatchType.LIVRE, 2: MatchType.BALANCEADO, 3: MatchType.ALEATORIO_COMPLETO };
 const MODE_NAMES: Record<number, string> = { 0: 'Offline', 1: 'Online' };
 
 class CriarPartidaOptions {
@@ -49,6 +49,7 @@ class CriarPartidaOptions {
     choices: [
       { name: 'Aleatório', value: 0 },
       { name: 'Livre', value: 1 },
+      { name: 'Balanceado (times equilibrados pelo ranking)', value: 2 },
       { name: 'Aleatório Completo (apenas 5v5)', value: 3 },
     ],
   })

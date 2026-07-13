@@ -11,6 +11,8 @@ import { Prisma, Side, Position, MatchStatus, MatchType } from '@prisma/client';
 import { ChannelType, Client, TextChannel, VoiceChannel } from 'discord.js';
 import { PrismaService } from '../prisma/prisma.service';
 import { DiscordServerService } from '../discordServer/discordServer.service';
+import { LeaderboardService } from '../leaderboard/leaderboard.service';
+import { PostMatchService } from '../engagement/post-match.service';
 import { MatchValidator } from './validators/match-validator';
 import { CreateCustomLeagueMatchDto } from './dto/create-leagueMatch.dto';
 import { UpdateCustomLeagueMatchDto } from './dto/update-leagueMatch.dto';
@@ -68,6 +70,8 @@ export class LeagueMatchService {
     private readonly prisma: PrismaService,
     private readonly discordServerService: DiscordServerService,
     private readonly client: Client,
+    private readonly leaderboardService: LeaderboardService,
+    private readonly postMatchService: PostMatchService,
   ) {}
 
   // ─── SSE ─────────────────────────────────────────────────────────────────
@@ -139,6 +143,34 @@ export class LeagueMatchService {
         const voiceChannel = (member as any)?.voice?.channel as VoiceChannel | null;
         if (voiceChannel && voiceChannel.id !== targetChannel.id) {
           await (member as any)?.voice?.setChannel(targetChannel).catch(() => {});
+        }
+      } catch {}
+    }
+  }
+
+  /** Devolve todos os jogadores dos canais de time para o canal de espera ao fim da partida. */
+  private async moveAllPlayersToWaiting(guildId: string, match: any): Promise<void> {
+    const guild = this.client.guilds.cache.get(guildId);
+    if (!guild) return;
+
+    const waitingChannel = guild.channels.cache.find(
+      c => c.type === 2 && c.name === '| 🕘 | AGUARDANDO'
+    ) as VoiceChannel | undefined;
+    if (!waitingChannel) return;
+
+    const teamChannelNames = new Set(['LADO [ |🔵| ]', 'LADO [ |🔴| ]']);
+    const discordIds: string[] = (match.Teams ?? [])
+      .flatMap((t: any) => t.players ?? [])
+      .map((p: any) => p.user?.discordId)
+      .filter(Boolean);
+
+    for (const discordId of discordIds) {
+      try {
+        let member = guild.members.cache.get(discordId);
+        if (!member) member = await guild.members.fetch(discordId).catch(() => undefined);
+        const voiceChannel = (member as any)?.voice?.channel as VoiceChannel | null;
+        if (voiceChannel && teamChannelNames.has(voiceChannel.name)) {
+          await (member as any)?.voice?.setChannel(waitingChannel).catch(() => {});
         }
       } catch {}
     }
@@ -406,9 +438,16 @@ export class LeagueMatchService {
       throw new BadRequestException(`São necessários ${maxPlayers} jogadores. Atual: ${allPlayers.length}/${maxPlayers}`);
     }
 
-    const shuffled = this.shuffleArray(allPlayers.map((p) => p.id));
-    const blueIds = shuffled.slice(0, playersPerTeam);
-    const redIds  = shuffled.slice(playersPerTeam, maxPlayers);
+    let blueIds: number[];
+    let redIds: number[];
+
+    if (match.matchType === 'BALANCEADO') {
+      [blueIds, redIds] = await this.balancedSplit(match.ServerDiscordId, allPlayers, playersPerTeam);
+    } else {
+      const shuffled = this.shuffleArray(allPlayers.map((p) => p.id));
+      blueIds = shuffled.slice(0, playersPerTeam);
+      redIds  = shuffled.slice(playersPerTeam, maxPlayers);
+    }
 
     const teamBlue = await this.prisma.teamLeague.create({ data: { side: Side.BLUE } });
     const teamRed = await this.prisma.teamLeague.create({ data: { side: Side.RED } });
@@ -586,6 +625,15 @@ export class LeagueMatchService {
 
     this.emit(matchId, { type: 'match_finished', payload: updated });
     setTimeout(() => this.removeSubject(matchId), 5000);
+
+    if (updated.ServerDiscordId) {
+      this.moveAllPlayersToWaiting(updated.ServerDiscordId, updated).catch(() => {});
+    }
+    // apostas, fichas, conquistas, MVP e recap — não bloqueia a resposta
+    this.postMatchService.onMatchFinished(updated).catch((e) => {
+      this.logger.warn(`Pós-partida falhou (match ${matchId}): ${e}`);
+    });
+
     return updated;
   }
 
@@ -608,7 +656,9 @@ export class LeagueMatchService {
     this.emit(matchId, { type: 'match_expired', payload: updated });
     if (match.ServerDiscordId) {
       this.sendToMatchChannel(match.ServerDiscordId, `🚫 A partida **#${matchId}** foi encerrada pelo criador.`).catch(() => {});
+      this.moveAllPlayersToWaiting(match.ServerDiscordId, match).catch(() => {});
     }
+    this.postMatchService.refundPendingBets(matchId).catch(() => {});
     setTimeout(() => this.removeSubject(matchId), 5000);
     return updated;
   }
@@ -662,6 +712,7 @@ export class LeagueMatchService {
 
       for (const match of toDelete) {
         this.emit(match.id, { type: 'match_expired', payload: {} });
+        await this.postMatchService.refundPendingBets(match.id).catch(() => {});
       }
 
       await this.prisma.userTeamLeague.deleteMany({ where: { matchId: { in: matchIds } } });
@@ -686,6 +737,45 @@ export class LeagueMatchService {
       [arr[i], arr[j]] = [arr[j], arr[i]];
     }
     return arr;
+  }
+
+  /**
+   * Divide a fila em dois times equilibrados pelo score do ranking do servidor.
+   * Greedy: ordena por score desc e joga cada jogador no time mais leve com vaga.
+   * Retorna ids de UserTeamLeague ([blue, red]).
+   */
+  private async balancedSplit(
+    serverId: string,
+    queuePlayers: Array<{ id: number; userId: number }>,
+    playersPerTeam: number,
+  ): Promise<[number[], number[]]> {
+    const leaderboard = await this.leaderboardService.getLeaderboardForServer(serverId).catch(() => []);
+    const scoreByUserId = new Map<number, number>(leaderboard.map((p): [number, number] => [p.userId, Number(p.score) || 0]));
+
+    // embaralha antes para que empates de score variem entre sorteios
+    const ranked = this.shuffleArray([...queuePlayers])
+      .map((p) => ({ id: p.id, score: scoreByUserId.get(p.userId) ?? 0 }))
+      .sort((a, b) => b.score - a.score);
+
+    const blue: number[] = [];
+    const red: number[] = [];
+    let blueScore = 0;
+    let redScore = 0;
+
+    for (const player of ranked) {
+      const blueFull = blue.length >= playersPerTeam;
+      const redFull = red.length >= playersPerTeam;
+      const pickBlue = !blueFull && (redFull || blueScore <= redScore);
+      if (pickBlue) {
+        blue.push(player.id);
+        blueScore += player.score;
+      } else {
+        red.push(player.id);
+        redScore += player.score;
+      }
+    }
+
+    return [blue, red];
   }
 
   // ─── OFFLINE CREATE ───────────────────────────────────────────────────────

@@ -3,6 +3,8 @@ import { LeagueMatchController } from './leagueMatch.controller';
 import { LeagueMatchService } from './leagueMatch.service';
 import { CreateCustomLeagueMatchDto } from './dto/create-leagueMatch.dto';
 import { UpdateCustomLeagueMatchDto } from './dto/update-leagueMatch.dto';
+import { AuthGuard } from '../auth/guards/auth.guard';
+import { RoleGuard } from '../auth/guards/role.guard';
 
 describe('LeagueMatchController', () => {
   let controller: LeagueMatchController;
@@ -24,7 +26,12 @@ describe('LeagueMatchController', () => {
           useValue: mockLeagueMatchService,
         },
       ],
-    }).compile();
+    })
+      .overrideGuard(AuthGuard)
+      .useValue({ canActivate: () => true })
+      .overrideGuard(RoleGuard)
+      .useValue({ canActivate: () => true })
+      .compile();
 
     controller = module.get<LeagueMatchController>(LeagueMatchController);
   });

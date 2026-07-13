@@ -207,6 +207,7 @@ model CustomLeagueMatch {
   teamBlueId       Int?
   teamRedId        Int?
   winnerId         Int?
+  mvpUserId        Int?
   ServerDiscordId  String
   discordServer    DiscordServer    @relation(fields: [ServerDiscordId], references: [discordServerId])
   Teams            TeamLeague[]
@@ -261,4 +262,59 @@ model ClashAnalysis {
   createdAt DateTime @default(now())
 
   @@index([createdAt])
+}
+
+model Season {
+  id        Int       @id @default(autoincrement())
+  serverId  String
+  number    Int
+  startedAt DateTime  @default(now())
+  endedAt   DateTime?
+  champions Json?
+
+  @@unique([serverId, number])
+  @@index([serverId, endedAt])
+}
+
+model Achievement {
+  id         Int      @id @default(autoincrement())
+  serverId   String
+  userId     Int
+  type       String
+  unlockedAt DateTime @default(now())
+
+  @@unique([serverId, userId, type])
+  @@index([serverId, userId])
+}
+
+model PointsWallet {
+  id        Int      @id @default(autoincrement())
+  serverId  String
+  discordId String
+  balance   Int      @default(100)
+  updatedAt DateTime @updatedAt
+
+  @@unique([serverId, discordId])
+}
+
+enum BetStatus {
+  PENDING
+  WON
+  LOST
+  REFUNDED
+}
+
+model Bet {
+  id        Int       @id @default(autoincrement())
+  matchId   Int
+  serverId  String
+  discordId String
+  side      Side
+  amount    Int
+  status    BetStatus @default(PENDING)
+  createdAt DateTime  @default(now())
+
+  @@unique([matchId, discordId])
+  @@index([matchId, status])
+  @@index([serverId, discordId])
 }

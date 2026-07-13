@@ -14,12 +14,13 @@ import { MatchStateService } from '../services/match-state.service';
 import { ChannelManagerService } from '../services/channel-manager.service';
 import { LeagueMatchService } from '../../customLeagueMath/leagueMatch.service';
 import { UserService } from '../../user/user.service';
+import { LeaderboardService } from '../../leaderboard/leaderboard.service';
 import { buildOfflineMatchButtons } from '../helpers/match-buttons.helper';
 import { buildMatchEmbed } from '../helpers/embed.helper';
 import { drawTeams, drawTeamsWithPositions } from '../helpers/team.helper';
 import { randomBytes } from 'crypto';
 
-const FORMAT_NAMES: Record<number, string> = { 0: 'Aleatório', 1: 'Livre', 3: 'Aleatório Completo' };
+const FORMAT_NAMES: Record<number, string> = { 0: 'Aleatório', 1: 'Livre', 2: 'Balanceado', 3: 'Aleatório Completo' };
 
 function genRiotMatchId(): string {
   return 'TB_' + randomBytes(5).toString('hex').toUpperCase();
@@ -34,7 +35,36 @@ export class OfflineMatchInteraction {
     private readonly channelManager: ChannelManagerService,
     private readonly leagueMatchService: LeagueMatchService,
     private readonly userService: UserService,
+    private readonly leaderboardService: LeaderboardService,
   ) {}
+
+  /** Divide discordIds em dois times equilibrados pelo score do ranking do servidor. */
+  private async balancedSplitByDiscordIds(serverId: string, discordIds: string[], playersPerTeam: number): Promise<[string[], string[]]> {
+    const leaderboard = await this.leaderboardService.getLeaderboardForServer(serverId).catch(() => []);
+    const scoreByDiscordId = new Map<string, number>(leaderboard.map((p): [string, number] => [p.discordId, Number(p.score) || 0]));
+
+    const ranked = [...discordIds]
+      .sort(() => Math.random() - 0.5)
+      .map((id) => ({ id, score: scoreByDiscordId.get(id) ?? 0 }))
+      .sort((a, b) => b.score - a.score);
+
+    const blue: string[] = [];
+    const red: string[] = [];
+    let blueScore = 0;
+    let redScore = 0;
+    for (const player of ranked) {
+      const blueFull = blue.length >= playersPerTeam;
+      const redFull = red.length >= playersPerTeam;
+      if (!blueFull && (redFull || blueScore <= redScore)) {
+        blue.push(player.id);
+        blueScore += player.score;
+      } else {
+        red.push(player.id);
+        redScore += player.score;
+      }
+    }
+    return [blue, red];
+  }
 
   private async refreshMessage(interaction: any, key: string) {
     const state = this.matchStateService.get(key);
@@ -172,6 +202,11 @@ export class OfflineMatchInteraction {
       blueTeam = blue.map((e) => ({ userId: (e.user as any)?.id ?? e.user, position: e.position }));
       redTeam = red.map((e) => ({ userId: (e.user as any)?.id ?? e.user, position: e.position }));
       showDetails = true;
+    } else if (state.matchFormatValue === 2) {
+      const [blueIds, redIds] = await this.balancedSplitByDiscordIds(interaction.guild.id, state.confirmedPlayerIds, playersPerTeam);
+      blueTeam = blueIds.map((id) => ({ userId: id }));
+      redTeam = redIds.map((id) => ({ userId: id }));
+      showDetails = false;
     } else {
       const [blue, red] = drawTeams(players);
       blueTeam = blue.map((u: any) => ({ userId: u?.id ?? u }));
@@ -208,7 +243,7 @@ export class OfflineMatchInteraction {
       return;
     }
 
-    if ((state.matchFormatValue === 0 || state.matchFormatValue === 3) && !state.blueTeam.length) {
+    if ([0, 2, 3].includes(state.matchFormatValue) && !state.blueTeam.length) {
       const msg = await interaction.followUp({ content: '❌ Sorteie os times primeiro.', flags: MessageFlags.Ephemeral });
       setTimeout(() => msg.delete().catch(() => {}), 5000);
       return;

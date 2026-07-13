@@ -1,7 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { Client } from 'discord.js';
 import { LeagueMatchService } from './leagueMatch.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { DiscordServerService } from '../discordServer/discordServer.service';
+import { LeaderboardService } from '../leaderboard/leaderboard.service';
+import { PostMatchService } from '../engagement/post-match.service';
 import { mockDeep, DeepMockProxy } from 'jest-mock-extended';
 import { PrismaClient, MatchStatus, MatchType, Side, Position } from '@prisma/client';
 import { BadRequestException, ForbiddenException } from '@nestjs/common';
@@ -13,6 +16,10 @@ describe('LeagueMatchService', () => {
 
   beforeEach(async () => {
     prismaMock = mockDeep<PrismaClient>();
+    // transações interativas executam o callback com o próprio mock como tx
+    (prismaMock.$transaction as any).mockImplementation((arg: any) =>
+      typeof arg === 'function' ? arg(prismaMock) : Promise.all(arg),
+    );
     discordServiceMock = {
       findOrCreate: jest.fn().mockResolvedValue({ id: 1, discordServerId: 'server-1' }),
     } as any;
@@ -22,6 +29,15 @@ describe('LeagueMatchService', () => {
         LeagueMatchService,
         { provide: PrismaService, useValue: prismaMock },
         { provide: DiscordServerService, useValue: discordServiceMock },
+        { provide: Client, useValue: { guilds: { cache: new Map() } } },
+        { provide: LeaderboardService, useValue: { getLeaderboardForServer: jest.fn().mockResolvedValue([]) } },
+        {
+          provide: PostMatchService,
+          useValue: {
+            onMatchFinished: jest.fn().mockResolvedValue(undefined),
+            refundPendingBets: jest.fn().mockResolvedValue(undefined),
+          },
+        },
       ],
     }).compile();
 
@@ -61,19 +77,23 @@ describe('LeagueMatchService', () => {
     const discordId = 'discord-1';
     const mockUser = { id: 10, discordId, name: 'Player1' };
 
+    const waitingMatch = {
+      id: matchId,
+      status: MatchStatus.WAITING,
+      playersPerTeam: 5,
+      queuePlayers: [],
+      Teams: [],
+    };
+
     beforeEach(() => {
       prismaMock.user.findUnique.mockResolvedValue(mockUser as any);
-      // Mock default findOne to return a simple WAITING match
-      jest.spyOn(service, 'findOne').mockResolvedValue({
-        id: matchId,
-        status: MatchStatus.WAITING,
-        queuePlayers: [],
-      } as any);
+      // join usa transação interativa consultando customLeagueMatch.findUnique
+      prismaMock.customLeagueMatch.findUnique.mockResolvedValue(waitingMatch as any);
       prismaMock.userTeamLeague.create.mockResolvedValue({ id: 99, matchId, userId: mockUser.id } as any);
     });
 
     it('deve adicionar um jogador na fila com sucesso', async () => {
-      const result = await service.join(matchId, { discordId });
+      await service.join(matchId, { discordId });
 
       expect(prismaMock.user.findUnique).toHaveBeenCalledWith({ where: { discordId } });
       expect(prismaMock.userTeamLeague.create).toHaveBeenCalledWith({
@@ -82,26 +102,26 @@ describe('LeagueMatchService', () => {
     });
 
     it('deve falhar se a partida não estiver WAITING', async () => {
-      jest.spyOn(service, 'findOne').mockResolvedValue({ status: MatchStatus.STARTED } as any);
-      
+      prismaMock.customLeagueMatch.findUnique.mockResolvedValue({ ...waitingMatch, status: MatchStatus.STARTED } as any);
+
       await expect(service.join(matchId, { discordId })).rejects.toThrow(BadRequestException);
     });
 
     it('deve falhar se a fila já estiver cheia (10 jogadores)', async () => {
-      jest.spyOn(service, 'findOne').mockResolvedValue({
-        status: MatchStatus.WAITING,
+      prismaMock.customLeagueMatch.findUnique.mockResolvedValue({
+        ...waitingMatch,
         queuePlayers: new Array(10).fill({}),
       } as any);
-      
+
       await expect(service.join(matchId, { discordId })).rejects.toThrow('A partida já está cheia (10/10).');
     });
 
     it('deve falhar se o usuário já estiver na fila', async () => {
-      jest.spyOn(service, 'findOne').mockResolvedValue({
-        status: MatchStatus.WAITING,
+      prismaMock.customLeagueMatch.findUnique.mockResolvedValue({
+        ...waitingMatch,
         queuePlayers: [{ userId: mockUser.id }],
       } as any);
-      
+
       await expect(service.join(matchId, { discordId })).rejects.toThrow('Você já está na partida.');
     });
   });
@@ -219,6 +239,7 @@ describe('LeagueMatchService', () => {
         status: MatchStatus.WAITING,
         creatorDiscordId,
         queuePlayers,
+        playersPerTeam: 5,
         matchType: MatchType.ALEATORIO_COMPLETO,
       } as any);
 
@@ -269,6 +290,7 @@ describe('LeagueMatchService', () => {
         status: MatchStatus.WAITING,
         creatorDiscordId,
         queuePlayers: new Array(10).fill({}),
+        playersPerTeam: 5,
         Teams: [] // Times vazios
       } as any);
 
@@ -283,7 +305,8 @@ describe('LeagueMatchService', () => {
         matchType: MatchType.LIVRE,
         creatorDiscordId,
         queuePlayers,
-        Teams: [] 
+        playersPerTeam: 5,
+        Teams: []
       } as any);
 
       prismaMock.teamLeague.create.mockResolvedValueOnce({ id: 10, side: Side.BLUE } as any);
