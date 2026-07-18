@@ -62,6 +62,8 @@ export interface MapProfile {
   deathRegions: MapRegionStats;
   objectiveFights: number;
   invades: number;
+  startSide: string; // 'topo' | 'baixo' | 'inconclusivo' — lado do 1º clear
+  earlyGanksPerGame: number; // kills/assists em lanes antes dos 14min, por jogo
   mostVisited: string;
   mostFought: string;
   mostDeaths: string;
@@ -117,11 +119,29 @@ export interface PredictedPick {
   option2: { champion: string; reason: string };
 }
 
+export interface ThreatAssessment {
+  riotId: string;
+  position: string;
+  level: number; // 1 (fraco) a 5 (ameaça extrema)
+  reason: string;
+}
+
+export interface GamePlan {
+  winCondition: string;
+  earlyGame: string;
+  teamfight: string;
+  damageProfile: string;
+  focusTarget: string; // riotId do carry a focar
+  weakLink: string; // riotId do elo fraco a explorar
+  threats: ThreatAssessment[];
+}
+
 export interface AiAnalysis {
   bans: BanSuggestion[];
   counterplays: CounterplayAdvice[];
   predictedPicks: PredictedPick[];
   strategy: string;
+  gamePlan?: GamePlan;
 }
 
 export interface PlayerProfileAnalysis {
@@ -176,6 +196,14 @@ export class AiService {
 
     const prompt = `Você é um analista profissional de League of Legends especializado em Clash. Analise os dados dos 5 jogadores adversários e gere uma análise tática precisa, orientada para draft.
 
+CONTEXTO DO JOGO ATUAL (Season 2026 — use SEMPRE estas regras, não as de temporadas antigas):
+- Minions nascem aos 0:30 e camps da jungle aos 0:55 — o early começa imediatamente; invade ainda existe mas exige commit logo no início do jogo, sem fase de espera no nível 1.
+- Atakhan e Feats of Strength NÃO existem mais. Não os mencione.
+- Baron nasce aos 20 minutos. First Blood dá 100g e primeira torre 300g — punir o elo fraco cedo paga mais.
+- Turret plates são permanentes em todas as torres; pressão de split e demolição de torre valem mais.
+- Role Quests: top ganha TP grátis, mid botas T3 grátis, bot 7º slot de botas e 200% crit base, suporte slot extra de control ward.
+- A partir dos 14min as waves aceleram (25s) — tempos de rotação e reset ficaram mais curtos.
+
 DADOS DOS ADVERSÁRIOS (JSON):
 ${JSON.stringify(
   players.map((p) => ({
@@ -211,6 +239,19 @@ ${JSON.stringify(
       topChamps: p.clashHistory.topChampions.slice(0, 3).map((c) => `${c.championName} (${c.games}G ${c.winrate}% WR)`),
     },
     campeoes_combinados_top10: p.combinedTopChamps.slice(0, 10).map((c) => `${c.championName} (${c.games}G ${c.winrate}% WR ${c.kda} KDA)`),
+    mapa: p.mapProfile?.games
+      ? {
+          jogosAnalisados: p.mapProfile.games,
+          rotaInicial: `costuma começar a jungle/jogo pelo lado ${p.mapProfile.startSide} do mapa`,
+          ganksEarlyPorJogo: p.mapProfile.earlyGanksPerGame,
+          presencaInicial: p.mapProfile.mostVisited,
+          lutaMaisEm: p.mapProfile.mostFought,
+          morreMaisEm: p.mapProfile.mostDeaths,
+          focoGankPressao: p.mapProfile.likelyGankFocus,
+          invades: p.mapProfile.invades,
+          fightsDeObjetivo: p.mapProfile.objectiveFights,
+        }
+      : undefined,
   })),
   null,
   2,
@@ -244,10 +285,26 @@ Responda APENAS com JSON válido, sem markdown, sem texto fora do JSON:
       "option2": { "champion": "string", "reason": "string (máx 80 chars, português)" }
     }
   ],
-  "strategy": "Resumo da estratégia geral do time adversário em 2-3 frases (português)"
+  "strategy": "Resumo da estratégia geral do time adversário em 2-3 frases (português)",
+  "gamePlan": {
+    "winCondition": "como VENCER este time: 2-3 frases objetivas e acionáveis (português)",
+    "earlyGame": "plano para os primeiros 5 minutos com tempos da Season 2026 (minions 0:30, camps 0:55): commit de invade sim/não logo no início, onde wardear antes de 0:55, qual lane proteger (máx 220 chars)",
+    "teamfight": "como jogar as teamfights contra eles: quem focar, o que evitar (máx 200 chars)",
+    "damageProfile": "perfil de dano provável da comp (AD/AP/misto) e dica de itemização defensiva (máx 160 chars)",
+    "focusTarget": "riotId EXATO do jogador mais perigoso (o carry a focar/negar recursos)",
+    "weakLink": "riotId EXATO do elo mais fraco (a lane a explorar/gankar)",
+    "threats": [
+      { "riotId": "string", "position": "string", "level": 3, "reason": "por que esse nível (máx 100 chars, português)" }
+    ]
+  }
 }
 
 Regras:
+- gamePlan.threats: exatamente uma entrada por jogador, level de 1 (fraco) a 5 (ameaça extrema), baseado em rank, forma recente, pool de campeões e histórico de Clash.
+- Na reason da threat de maior level, diga explicitamente que ele é quem carrega o time; na de menor level, que é o alvo a punir.
+- gamePlan.focusTarget e weakLink devem ser riotIds exatos dos dados recebidos.
+- Quando o campo "mapa" existir, use-o no earlyGame e no winCondition — é evidência real de timeline: rotaInicial diz por onde o jogador começa, ganksEarlyPorJogo mede o quanto o jungler ganka (>=2.5 é gank pesado, <1 é focado em farm/counter-jungle), focoGankPressao diz qual lane sofre mais.
+- Para o JUNGLE adversário com mapa disponível, o earlyGame DEVE citar a rota inicial provável e qual lane deve wardear cedo.
 - Bans devem ser baseados primeiro em PREDICT de pick provavel, nao em maior winrate isolado.
 - Para prever pick, pese nesta ordem: campeoes repetidos nas partidas recentes da rota do Clash, campeoes jogados em Clash/Flex, volume recente em SoloQ, campeoes repetidos no campeoes_combinados_top10, e maestria apenas como desempate.
 - Winrate alto aumenta prioridade somente quando o campeao tambem aparece recente ou faz sentido para a rota do Clash. Nao bana campeao de 1 jogo 100% WR acima de um comfort pick com mais volume.
@@ -342,8 +399,9 @@ Regras:
     };
 
     const prompt = `Analise o estilo de jogo deste jogador de League of Legends para um perfil individual.
+CONTEXTO: Season 2026 — minions nascem aos 0:30 e camps aos 0:55; invade exige commit imediato no início; Atakhan e Feats of Strength não existem mais; Baron aos 20min. Use apenas mecânicas atuais.
 Use os dados recentes para dizer como ele joga: lutas, mortes, dano, visao, objetivos, jungle invade/roubo se for jungler.
-Use mapProfile quando existir para falar onde ele aparece no mapa, onde luta, onde morre e qual rota parece receber mais gank/pressao.
+Use mapProfile quando existir para falar onde ele aparece no mapa, onde luta, onde morre, por qual lado costuma começar (startSide), quantos ganks early faz por jogo (earlyGanksPerGame) e qual rota parece receber mais gank/pressao.
 Se mapProfile.games for 0, diga que foco de gank e inconclusivo.
 
 DADOS:
@@ -530,6 +588,8 @@ Responda APENAS com o texto do resumo, sem aspas, sem markdown.`;
       flex: p.flexQueue.topChampions.slice(0, 3),
       clash: p.clashHistory.topChampions.slice(0, 3),
       combined: p.combinedTopChamps.slice(0, 5),
+      // deep scout (com timeline) gera análise diferente do scout normal
+      mapGames: p.mapProfile?.games ?? 0,
     }));
     return createHash('sha256').update(JSON.stringify(payload)).digest('hex');
   }
@@ -714,9 +774,10 @@ Responda APENAS com o texto do resumo, sem aspas, sem markdown.`;
       return 'Sem timeline suficiente para mapear foco de rota; use campeoes, KP e visao como sinais secundarios.';
     }
     const base = `Presenca inicial maior em ${map.mostVisited}; lutas mais frequentes em ${map.mostFought}; mortes mais comuns em ${map.mostDeaths}.`;
+    const startSide = map.startSide && map.startSide !== 'inconclusivo' ? ` Costuma comecar pelo lado ${map.startSide}.` : '';
     const jungle = player.position === 'JUNGLE'
-      ? ` Foco provavel de gank/pressao: ${map.likelyGankFocus}; ${map.invades} sinais de invade e ${map.objectiveFights} fights de objetivo nas timelines.`
-      : ` Pressao de mapa mais clara: ${map.likelyGankFocus}; ${map.objectiveFights} fights de objetivo nas timelines.`;
+      ? ` Foco provavel de gank/pressao: ${map.likelyGankFocus}; ${map.earlyGanksPerGame} ganks early/jogo, ${map.invades} sinais de invade e ${map.objectiveFights} fights de objetivo nas timelines.${startSide}`
+      : ` Pressao de mapa mais clara: ${map.likelyGankFocus}; ${map.objectiveFights} fights de objetivo nas timelines.${startSide}`;
     return base + jungle;
   }
 
@@ -771,7 +832,56 @@ Responda APENAS com o texto do resumo, sem aspas, sem markdown.`;
     const playerCount = players.length;
     const strategy = `${strategyPrefix} ${playerCount} jogador(es) processado(s). Priorize bans nos campeões com mais jogos, maior winrate e presença em Clash/Flex; trate rotas divergentes como possibilidade de flex no draft.`;
 
-    return { bans, counterplays, predictedPicks, strategy };
+    return { bans, counterplays, predictedPicks, strategy, gamePlan: this.buildStatGamePlan(players) };
+  }
+
+  // Plano de jogo por estatística pura — usado quando o Gemini está indisponível.
+  private buildStatGamePlan(players: FullPlayerData[]): GamePlan | undefined {
+    if (!players.length) return undefined;
+
+    const scored = players
+      .map((p) => ({
+        p,
+        score:
+          this.tierScore(p.soloRank.tier, p.soloRank.rank) * 2 +
+          Math.max(0, p.soloQueue.winrate - 45) * 0.5 +
+          p.soloQueue.avgKda * 2 +
+          (p.clashHistory.games > 0 ? 3 : 0),
+      }))
+      .sort((a, b) => b.score - a.score);
+
+    const focus = scored[0].p;
+    const weak = scored[scored.length - 1].p;
+    const focusChamp = focus.combinedTopChamps[0]?.championName;
+    const weakName = weak.riotId.split('#')[0];
+    const focusName = focus.riotId.split('#')[0];
+    const jungler = players.find((p) => p.position === 'JUNGLE');
+    const gankFocus = jungler?.mapProfile?.games ? jungler.mapProfile.likelyGankFocus : null;
+
+    return {
+      winCondition: `Jogue o early em cima de ${weakName} (${weak.position}) e negue recursos a ${focusName} (${focus.position})${focusChamp ? `, principalmente no ${focusChamp}` : ''}. Aceleração de vantagem no lado fraco vence antes do carry escalar.`,
+      earlyGame: gankFocus
+        ? `Timeline indica que o jungler deles pressiona ${gankFocus}${jungler?.mapProfile?.startSide && jungler.mapProfile.startSide !== 'inconclusivo' ? ` e costuma começar pelo lado ${jungler.mapProfile.startSide}` : ''} — warde esse lado antes das 0:55 (camps da S2026) e puna o lado oposto.`
+        : `Camps nascem às 0:55 e minions às 0:30 na S2026: warde as entradas da jungle até 0:50, evite trocas cegas no rio e jogue pelo lado de ${weakName}.`,
+      teamfight: `Foque ${focusName} nas lutas; não gaste cooldowns na frontline enquanto ele estiver vivo.`,
+      damageProfile: 'Sem leitura de IA do perfil de dano — confirme na tela de picks antes de fechar itemização defensiva.',
+      focusTarget: focus.riotId,
+      weakLink: weak.riotId,
+      threats: scored.map(({ p }, i) => ({
+        riotId: p.riotId,
+        position: p.position,
+        level: Math.max(1, 5 - i),
+        reason: `${p.soloRank.tier} ${p.soloRank.rank}, ${p.soloQueue.winrate}% WR recente, ${p.soloQueue.avgKda} KDA${p.clashHistory.games ? ', experiência de Clash' : ''}`,
+      })),
+    };
+  }
+
+  private tierScore(tier: string, rank: string): number {
+    const tiers = ['IRON', 'BRONZE', 'SILVER', 'GOLD', 'PLATINUM', 'EMERALD', 'DIAMOND', 'MASTER', 'GRANDMASTER', 'CHALLENGER'];
+    const divisions: Record<string, number> = { IV: 0, III: 1, II: 2, I: 3 };
+    const tierIndex = tiers.indexOf(tier?.toUpperCase());
+    if (tierIndex < 0) return 0;
+    return tierIndex * 4 + (divisions[rank?.toUpperCase()] ?? 0);
   }
 
   private buildPredictiveBanCandidates(player: FullPlayerData) {
@@ -882,8 +992,33 @@ Responda APENAS com o texto do resumo, sem aspas, sem markdown.`;
           },
         },
         strategy: { type: 'STRING' },
+        gamePlan: {
+          type: 'OBJECT',
+          properties: {
+            winCondition: { type: 'STRING' },
+            earlyGame: { type: 'STRING' },
+            teamfight: { type: 'STRING' },
+            damageProfile: { type: 'STRING' },
+            focusTarget: { type: 'STRING' },
+            weakLink: { type: 'STRING' },
+            threats: {
+              type: 'ARRAY',
+              items: {
+                type: 'OBJECT',
+                properties: {
+                  riotId: { type: 'STRING' },
+                  position: { type: 'STRING' },
+                  level: { type: 'INTEGER' },
+                  reason: { type: 'STRING' },
+                },
+                required: ['riotId', 'position', 'level', 'reason'],
+              },
+            },
+          },
+          required: ['winCondition', 'earlyGame', 'teamfight', 'damageProfile', 'focusTarget', 'weakLink', 'threats'],
+        },
       },
-      required: ['bans', 'counterplays', 'predictedPicks', 'strategy'],
+      required: ['bans', 'counterplays', 'predictedPicks', 'strategy', 'gamePlan'],
     };
   }
 

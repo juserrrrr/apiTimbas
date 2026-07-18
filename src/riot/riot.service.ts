@@ -19,10 +19,15 @@ const TTL = {
   SUMMONER: 10 * 60 * 1000,
   DDRAGON_VERSION: 24 * 60 * 60 * 1000,
   CHAMPIONS: 24 * 60 * 60 * 1000,
+  // Partidas encerradas são imutáveis — cachear por 24h corta drasticamente o
+  // consumo do rate limit quando o mesmo jogador/time é scoutado de novo.
+  MATCH: 24 * 60 * 60 * 1000,
 } as const;
 
 class TtlCache<V> {
   private readonly store = new Map<string, { value: V; expiresAt: number }>();
+
+  constructor(private readonly maxEntries = 3000) {}
 
   get(key: string): V | undefined {
     const entry = this.store.get(key);
@@ -35,15 +40,22 @@ class TtlCache<V> {
   }
 
   set(key: string, value: V, ttlMs: number): void {
+    if (!this.store.has(key) && this.store.size >= this.maxEntries) {
+      // descarta a entrada mais antiga para não crescer sem limite
+      const oldest = this.store.keys().next().value;
+      if (oldest !== undefined) this.store.delete(oldest);
+    }
     this.store.set(key, { value, expiresAt: Date.now() + ttlMs });
   }
 }
 
-// Token bucket that enforces both Riot dev-key limits simultaneously:
+// Token bucket that enforces the Riot Personal API key limits simultaneously
+// (a chave Personal tem os mesmos limites da dev key, mas não expira a cada 24h):
 //   • 18 req / 1 s  (buffer under the 20/s hard limit)
 //   • 90 req / 2 min (buffer under the 100/2min hard limit)
 // When either bucket is empty the call waits until a token is available,
-// so requests are automatically spread out without ever hitting a 429.
+// so requests are automatically spread out without ever hitting a 429 —
+// nenhuma requisição é descartada, apenas adiada até o limite liberar.
 class RateLimiter {
   private tokens: number;
   private lastRefill: number;
@@ -287,7 +299,7 @@ export class RiotService {
       const data = await this.riotGet<any>(
         `${AMERICAS_BASE}/lol/match/v5/matches/${matchId}`,
       );
-      this.miscCache.set(key, data, 60 * 60 * 1000);
+      this.miscCache.set(key, data, TTL.MATCH);
       return data;
     } catch {
       return null;
@@ -303,7 +315,7 @@ export class RiotService {
       const data = await this.riotGet<any>(
         `${AMERICAS_BASE}/lol/match/v5/matches/${matchId}/timeline`,
       );
-      this.miscCache.set(key, data, 60 * 60 * 1000);
+      this.miscCache.set(key, data, TTL.MATCH);
       return data;
     } catch {
       return null;

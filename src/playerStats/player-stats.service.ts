@@ -58,11 +58,19 @@ const EMPTY_MAP_PROFILE: MapProfile = {
   deathRegions: EMPTY_REGIONS,
   objectiveFights: 0,
   invades: 0,
+  startSide: 'inconclusivo',
+  earlyGanksPerGame: 0,
   mostVisited: 'inconclusivo',
   mostFought: 'inconclusivo',
   mostDeaths: 'inconclusivo',
   likelyGankFocus: 'inconclusivo',
 };
+
+// Season 2026: minions nascem aos 0:30 e camps aos 0:55 — o primeiro clear
+// acontece entre ~1:00 e ~2:30, janela usada para inferir a rota inicial.
+const START_SIDE_WINDOW_MS: [number, number] = [60_000, 165_000];
+const LANE_REGIONS = new Set(['top', 'mid', 'bot']);
+const EARLY_PHASE_MAX_MINUTE = 14;
 
 @Injectable()
 export class PlayerStatsService {
@@ -323,6 +331,8 @@ export class PlayerStatsService {
     let objectiveFights = 0;
     let invades = 0;
     let games = 0;
+    let earlyGanks = 0;
+    let startSideSignal = 0; // +1 por jogo começando pelo topo, -1 pelo baixo
 
     for (let i = 0; i < ids.length; i += 2) {
       const pairs = await Promise.all(ids.slice(i, i + 2).map(async (id) => ({
@@ -337,21 +347,33 @@ export class PlayerStatsService {
         if (!participant || !participantId || !timeline?.info?.frames?.length) continue;
         games++;
 
+        let topStartVotes = 0;
+        let botStartVotes = 0;
+
         for (const frame of timeline.info.frames) {
-          const minute = Math.floor((frame.timestamp ?? 0) / 60000);
+          const frameTs = frame.timestamp ?? 0;
+          const minute = Math.floor(frameTs / 60000);
           const participantFrame = frame.participantFrames?.[String(participantId)];
           const position = participantFrame?.position;
-          if (position && minute <= 14) {
+          if (position && minute <= EARLY_PHASE_MAX_MINUTE) {
             const region = this.classifyMapRegion(position.x, position.y, participant.teamId);
             earlyPresence[region]++;
             if (region === 'enemyJungle') invades++;
           }
 
+          // Rota inicial: acima da diagonal (y > x) = metade superior do mapa
+          if (position && frameTs >= START_SIDE_WINDOW_MS[0] && frameTs <= START_SIDE_WINDOW_MS[1]) {
+            if (position.y > position.x + 800) topStartVotes++;
+            else if (position.x > position.y + 800) botStartVotes++;
+          }
+
           for (const event of frame.events ?? []) {
             const region = this.classifyMapRegion(event.position?.x, event.position?.y, participant.teamId);
+            const eventMinute = Math.floor((event.timestamp ?? frameTs) / 60000);
             if (event.type === 'CHAMPION_KILL') {
               const involved = event.killerId === participantId || (event.assistingParticipantIds ?? []).includes(participantId);
               if (involved) fightRegions[region]++;
+              if (involved && eventMinute <= EARLY_PHASE_MAX_MINUTE && LANE_REGIONS.has(region)) earlyGanks++;
               if (event.victimId === participantId) deathRegions[region]++;
             }
             if (event.type === 'ELITE_MONSTER_KILL') {
@@ -360,6 +382,9 @@ export class PlayerStatsService {
             }
           }
         }
+
+        if (topStartVotes > botStartVotes) startSideSignal++;
+        else if (botStartVotes > topStartVotes) startSideSignal--;
       }
     }
 
@@ -370,6 +395,8 @@ export class PlayerStatsService {
       deathRegions,
       objectiveFights,
       invades,
+      startSide: startSideSignal > 0 ? 'topo' : startSideSignal < 0 ? 'baixo' : 'inconclusivo',
+      earlyGanksPerGame: games > 0 ? Math.round((earlyGanks / games) * 10) / 10 : 0,
       mostVisited: this.topRegionName(earlyPresence),
       mostFought: this.topRegionName(fightRegions),
       mostDeaths: this.topRegionName(deathRegions),

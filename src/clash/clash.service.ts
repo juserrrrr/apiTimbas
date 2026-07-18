@@ -4,6 +4,16 @@ import { AiService, FullPlayerData, AiAnalysis } from '../ai/ai.service';
 import { PlayerStatsService } from '../playerStats/player-stats.service';
 import { PrismaService } from '../prisma/prisma.service';
 
+export interface ScoutProgress {
+  stage: string;
+  message: string;
+  percent: number;
+  current?: number;
+  total?: number;
+}
+
+export type ScoutProgressFn = (progress: ScoutProgress) => void;
+
 @Injectable()
 export class ClashService {
   private readonly logger = new Logger(ClashService.name);
@@ -15,8 +25,16 @@ export class ClashService {
     private readonly prisma: PrismaService,
   ) {}
 
-  async scout(gameName: string, tagLine: string) {
+  // deep=true ativa a análise de timeline (mapa de gank/mortes/invades) —
+  // custa ~8 requisições extras por jogador, então é opt-in.
+  async scout(gameName: string, tagLine: string, onProgress?: ScoutProgressFn, deep = false) {
+    const report = (stage: string, message: string, percent: number, current?: number, total?: number) =>
+      onProgress?.({ stage, message, percent, current, total });
+
+    report('account', `Buscando conta ${gameName}#${tagLine}...`, 2);
     const account = await this.riotService.getAccount(gameName, tagLine);
+
+    report('team', 'Procurando time de Clash...', 5);
     const clashPlayers = await this.riotService.getClashPlayersByPuuid(account.puuid);
     if (!clashPlayers.length) {
       throw new BadRequestException(`${gameName}#${tagLine} não está registrado em nenhum time de Clash ativo.`);
@@ -26,15 +44,29 @@ export class ClashService {
     const championMap = await this.riotService.getChampionIdNameMap();
 
     const players: FullPlayerData[] = [];
+    const members = team.players as { puuid: string; position: string }[];
+    const total = members.length;
 
-    for (const member of team.players as { puuid: string; position: string }[]) {
+    for (let i = 0; i < total; i++) {
+      const member = members[i];
+      // 10% → 88% distribuído entre os jogadores do time
+      report(
+        'players',
+        `Analisando jogador ${i + 1}/${total} do time "${team.name ?? '???'}" — histórico, ranks, maestria${deep ? ' e leitura de mapa' : ''}...`,
+        10 + Math.round((i / total) * 78),
+        i + 1,
+        total,
+      );
       try {
-        players.push(await this.playerStatsService.buildFromPuuid(member.puuid, championMap, member.position));
+        players.push(
+          await this.playerStatsService.buildFromPuuid(member.puuid, championMap, member.position, undefined, deep),
+        );
       } catch (err) {
         this.logger.warn(`Falha ao processar ${member.puuid}: ${(err as any)?.message}`);
       }
     }
 
+    report('ai', 'Gerando recomendações de ban e estratégia com IA...', 90);
     let analysis: AiAnalysis = { bans: [], counterplays: [], predictedPicks: [], strategy: '' };
     try {
       analysis = await this.aiService.analyzeOpponents(players);
@@ -55,6 +87,7 @@ export class ClashService {
       counterplays: analysis.counterplays,
       predictedPicks: analysis.predictedPicks,
       strategy: analysis.strategy,
+      gamePlan: analysis.gamePlan,
     };
   }
 

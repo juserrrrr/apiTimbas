@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException } from '@nestjs/common';
 import { ClashController } from './clash.controller';
 import { ClashService } from './clash.service';
+import { ScoutQueueService } from './scout-queue.service';
 import { AuthGuard } from '../auth/guards/auth.guard';
 
 const SCOUT_RESULT = {
@@ -13,22 +14,93 @@ const SCOUT_RESULT = {
   strategy: 'Aggressive early.',
 };
 
+const QUEUED_JOB = {
+  id: 'job-1',
+  riotId: 'PlayerName#BR1',
+  status: 'queued' as const,
+  queuePosition: 1,
+  progress: { stage: 'queued', message: 'Na fila', percent: 0 },
+  createdAt: Date.now(),
+};
+
 describe('ClashController', () => {
   let controller: ClashController;
   let service: jest.Mocked<Pick<ClashService, 'scout'>>;
+  let queue: jest.Mocked<Pick<ScoutQueueService, 'enqueue' | 'getJob'>>;
 
   beforeEach(async () => {
     service = { scout: jest.fn() };
+    queue = { enqueue: jest.fn(), getJob: jest.fn() };
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [ClashController],
-      providers: [{ provide: ClashService, useValue: service }],
+      providers: [
+        { provide: ClashService, useValue: service },
+        { provide: ScoutQueueService, useValue: queue },
+      ],
     })
       .overrideGuard(AuthGuard)
       .useValue({ canActivate: () => true })
       .compile();
 
     controller = module.get<ClashController>(ClashController);
+  });
+
+  // ─── POST /clash/scout (fila assíncrona) ───────────────────────────────────
+
+  describe('startScout', () => {
+    it('enqueues the scout and returns the job immediately', () => {
+      queue.enqueue.mockReturnValue(QUEUED_JOB as any);
+
+      const result = controller.startScout({ gameName: 'PlayerName', tagLine: 'BR1' });
+
+      expect(queue.enqueue).toHaveBeenCalledWith('PlayerName', 'BR1', false);
+      expect(result).toEqual(QUEUED_JOB);
+    });
+
+    it('trims gameName and tagLine before enqueueing', () => {
+      queue.enqueue.mockReturnValue(QUEUED_JOB as any);
+
+      controller.startScout({ gameName: '  PlayerName ', tagLine: ' BR1 ' });
+
+      expect(queue.enqueue).toHaveBeenCalledWith('PlayerName', 'BR1', false);
+    });
+
+    it('passes deep=true through to the queue', () => {
+      queue.enqueue.mockReturnValue(QUEUED_JOB as any);
+
+      controller.startScout({ gameName: 'PlayerName', tagLine: 'BR1', deep: true });
+
+      expect(queue.enqueue).toHaveBeenCalledWith('PlayerName', 'BR1', true);
+    });
+
+    it('throws BadRequestException when gameName is missing', () => {
+      expect(() => controller.startScout({ tagLine: 'BR1' })).toThrow(BadRequestException);
+      expect(queue.enqueue).not.toHaveBeenCalled();
+    });
+
+    it('throws BadRequestException when tagLine is missing', () => {
+      expect(() => controller.startScout({ gameName: 'PlayerName' })).toThrow(BadRequestException);
+      expect(queue.enqueue).not.toHaveBeenCalled();
+    });
+
+    it('throws BadRequestException when body is empty', () => {
+      expect(() => controller.startScout({} as any)).toThrow(BadRequestException);
+      expect(queue.enqueue).not.toHaveBeenCalled();
+    });
+  });
+
+  // ─── GET /clash/scout/jobs/:id ─────────────────────────────────────────────
+
+  describe('getScoutJob', () => {
+    it('returns the job from the queue service', () => {
+      queue.getJob.mockReturnValue({ ...QUEUED_JOB, status: 'done', result: SCOUT_RESULT } as any);
+
+      const result = controller.getScoutJob('job-1');
+
+      expect(queue.getJob).toHaveBeenCalledWith('job-1');
+      expect((result as any).result).toEqual(SCOUT_RESULT);
+    });
   });
 
   // ─── GET /clash/scout ──────────────────────────────────────────────────────
