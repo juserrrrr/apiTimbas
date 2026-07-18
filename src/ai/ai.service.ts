@@ -324,7 +324,8 @@ Regras:
 - counterplays: uma entrada por jogador recebido (${expectedPlayers} total)
 - predictedPicks: uma entrada por jogador recebido (${expectedPlayers} total)
 - Seja específico e acionável, não genérico
-- Use termos curtos em português nos motivos: "mono recente", "alta taxa de vitória", "rota provável MID", "flexível no draft"`;
+- Use termos curtos em português nos motivos: "mono recente", "alta taxa de vitória", "rota provável MID", "flexível no draft"
+- Escreva num tom natural, como um coach conversando com o time. NUNCA use travessão (—) nos textos; separe ideias com vírgula, ponto ou dois-pontos.`;
 
     try {
       const response = await this.postGeminiWithRetry(
@@ -403,6 +404,7 @@ CONTEXTO: Season 2026 — minions nascem aos 0:30 e camps aos 0:55; invade exige
 Use os dados recentes para dizer como ele joga: lutas, mortes, dano, visao, objetivos, jungle invade/roubo se for jungler.
 Use mapProfile quando existir para falar onde ele aparece no mapa, onde luta, onde morre, por qual lado costuma começar (startSide), quantos ganks early faz por jogo (earlyGanksPerGame) e qual rota parece receber mais gank/pressao.
 Se mapProfile.games for 0, diga que foco de gank e inconclusivo.
+Escreva num tom natural de coach. NUNCA use travessao (—) nos textos; separe ideias com virgula, ponto ou dois-pontos.
 
 DADOS:
 ${JSON.stringify(payload, null, 2)}
@@ -861,10 +863,10 @@ Responda APENAS com o texto do resumo, sem aspas, sem markdown.`;
     return {
       winCondition: `Jogue o early em cima de ${weakName} (${weak.position}) e negue recursos a ${focusName} (${focus.position})${focusChamp ? `, principalmente no ${focusChamp}` : ''}. Aceleração de vantagem no lado fraco vence antes do carry escalar.`,
       earlyGame: gankFocus
-        ? `Timeline indica que o jungler deles pressiona ${gankFocus}${jungler?.mapProfile?.startSide && jungler.mapProfile.startSide !== 'inconclusivo' ? ` e costuma começar pelo lado ${jungler.mapProfile.startSide}` : ''} — warde esse lado antes das 0:55 (camps da S2026) e puna o lado oposto.`
+        ? `Timeline indica que o jungler deles pressiona ${gankFocus}${jungler?.mapProfile?.startSide && jungler.mapProfile.startSide !== 'inconclusivo' ? ` e costuma começar pelo lado ${jungler.mapProfile.startSide}` : ''}. Warde esse lado antes das 0:55 (camps da S2026) e puna o lado oposto.`
         : `Camps nascem às 0:55 e minions às 0:30 na S2026: warde as entradas da jungle até 0:50, evite trocas cegas no rio e jogue pelo lado de ${weakName}.`,
       teamfight: `Foque ${focusName} nas lutas; não gaste cooldowns na frontline enquanto ele estiver vivo.`,
-      damageProfile: 'Sem leitura de IA do perfil de dano — confirme na tela de picks antes de fechar itemização defensiva.',
+      damageProfile: 'Sem leitura de IA do perfil de dano. Confirme na tela de picks antes de fechar a itemização defensiva.',
       focusTarget: focus.riotId,
       weakLink: weak.riotId,
       threats: scored.map(({ p }, i) => ({

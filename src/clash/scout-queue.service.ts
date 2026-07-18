@@ -73,7 +73,7 @@ export class ScoutQueueService {
       tagLine,
       deep,
       status: 'queued',
-      progress: { stage: 'queued', message: 'Na fila — aguardando a vez...', percent: 0 },
+      progress: { stage: 'queued', message: 'Na fila, aguardando a vez...', percent: 0 },
       createdAt: Date.now(),
     };
     this.jobs.set(job.id, job);

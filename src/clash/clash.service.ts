@@ -52,7 +52,7 @@ export class ClashService {
       // 10% → 88% distribuído entre os jogadores do time
       report(
         'players',
-        `Analisando jogador ${i + 1}/${total} do time "${team.name ?? '???'}" — histórico, ranks, maestria${deep ? ' e leitura de mapa' : ''}...`,
+        `Analisando jogador ${i + 1}/${total} do time "${team.name ?? '???'}": histórico, ranks, maestria${deep ? ' e leitura de mapa' : ''}...`,
         10 + Math.round((i / total) * 78),
         i + 1,
         total,
