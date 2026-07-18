@@ -9,10 +9,10 @@ const flush = () => new Promise<void>((resolve) => setImmediate(resolve));
 
 describe('ScoutQueueService', () => {
   let service: ScoutQueueService;
-  let clash: { scout: jest.Mock };
+  let clash: { scout: jest.Mock; saveAnalysis: jest.Mock };
 
   beforeEach(async () => {
-    clash = { scout: jest.fn() };
+    clash = { scout: jest.fn(), saveAnalysis: jest.fn().mockResolvedValue({ id: 'analysis-1' }) };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [ScoutQueueService, { provide: ClashService, useValue: clash }],
@@ -41,6 +41,30 @@ describe('ScoutQueueService', () => {
     expect(job.status).toBe('done');
     expect(job.result).toEqual(SCOUT_RESULT);
     expect(job.progress.percent).toBe(100);
+  });
+
+  it('auto-saves the finished analysis to the history with search meta', async () => {
+    clash.scout.mockResolvedValue(SCOUT_RESULT);
+
+    const { id } = service.enqueue('Player', 'BR1', true);
+    await flush();
+
+    expect(clash.saveAnalysis).toHaveBeenCalledWith(
+      expect.objectContaining({ meta: { searchedRiotId: 'Player#BR1', deep: true } }),
+    );
+    expect(service.getJob(id).analysisId).toBe('analysis-1');
+  });
+
+  it('still completes the job when the history auto-save fails', async () => {
+    clash.scout.mockResolvedValue(SCOUT_RESULT);
+    clash.saveAnalysis.mockRejectedValue(new Error('db offline'));
+
+    const { id } = service.enqueue('Player', 'BR1');
+    await flush();
+
+    const job = service.getJob(id);
+    expect(job.status).toBe('done');
+    expect(job.analysisId).toBeUndefined();
   });
 
   it('marks the job as error with the message when the scout fails', async () => {

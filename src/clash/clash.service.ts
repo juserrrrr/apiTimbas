@@ -106,4 +106,23 @@ export class ClashService {
     if (!record) throw new NotFoundException('Análise não encontrada');
     return { data: record.data, teamName: record.teamName, createdAt: record.createdAt };
   }
+
+  // Histórico de relatórios — o nick pesquisado e o modo ficam em data.meta
+  // (gravados pelo auto-save da fila), sem precisar de coluna nova.
+  async getRecentAnalyses(limit = 8) {
+    const records = await this.prisma.clashAnalysis.findMany({
+      orderBy: { createdAt: 'desc' },
+      take: Math.min(Math.max(limit, 1), 20),
+    });
+    return records.map((r) => {
+      const meta = (r.data as any)?.meta ?? {};
+      return {
+        id: r.id,
+        teamName: r.teamName,
+        createdAt: r.createdAt,
+        searchedRiotId: typeof meta.searchedRiotId === 'string' ? meta.searchedRiotId : null,
+        deep: meta.deep === true,
+      };
+    });
+  }
 }

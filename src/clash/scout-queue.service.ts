@@ -13,6 +13,7 @@ export interface ScoutJobView {
   progress: ScoutProgress;
   result?: any;
   error?: string;
+  analysisId?: string;
   createdAt: number;
   finishedAt?: number;
 }
@@ -27,6 +28,7 @@ interface ScoutJobInternal {
   progress: ScoutProgress;
   result?: any;
   error?: string;
+  analysisId?: string;
   createdAt: number;
   finishedAt?: number;
 }
@@ -111,6 +113,16 @@ export class ScoutQueueService {
           );
           job.status = 'done';
           job.progress = { stage: 'done', message: 'Análise concluída!', percent: 100 };
+          // Auto-save para o histórico — falha aqui não derruba o scout
+          try {
+            const saved = await this.clashService.saveAnalysis({
+              ...job.result,
+              meta: { searchedRiotId: `${job.gameName}#${job.tagLine}`, deep: job.deep },
+            });
+            job.analysisId = saved.id;
+          } catch (err) {
+            this.logger.warn(`Falha ao salvar análise no histórico: ${(err as any)?.message}`);
+          }
         } catch (err) {
           job.status = 'error';
           job.error = (err as any)?.response?.message ?? (err as any)?.message ?? 'Erro ao buscar dados do time';
@@ -134,6 +146,7 @@ export class ScoutQueueService {
       progress: job.progress,
       result: job.status === 'done' ? job.result : undefined,
       error: job.error,
+      analysisId: job.analysisId,
       createdAt: job.createdAt,
       finishedAt: job.finishedAt,
     };

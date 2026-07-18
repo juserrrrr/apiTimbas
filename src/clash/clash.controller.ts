@@ -45,6 +45,13 @@ export class ClashController {
     return this.clashService.saveAnalysis(data);
   }
 
+  @UseGuards(AuthGuard)
+  @Get('analyses/recent')
+  async getRecentAnalyses(@Query('limit') limit?: string) {
+    const parsed = Number(limit);
+    return this.clashService.getRecentAnalyses(Number.isFinite(parsed) && parsed > 0 ? parsed : 8);
+  }
+
   @Get('analysis/:id')
   async getAnalysis(@Param('id') id: string) {
     return this.clashService.getAnalysis(id);
