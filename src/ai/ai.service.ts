@@ -196,13 +196,7 @@ export class AiService {
 
     const prompt = `Você é um analista profissional de League of Legends especializado em Clash. Analise os dados dos 5 jogadores adversários e gere uma análise tática precisa, orientada para draft.
 
-CONTEXTO DO JOGO ATUAL (Season 2026 — use SEMPRE estas regras, não as de temporadas antigas):
-- Minions nascem aos 0:30 e camps da jungle aos 0:55 — o early começa imediatamente; invade ainda existe mas exige commit logo no início do jogo, sem fase de espera no nível 1.
-- Atakhan e Feats of Strength NÃO existem mais. Não os mencione.
-- Baron nasce aos 20 minutos. First Blood dá 100g e primeira torre 300g — punir o elo fraco cedo paga mais.
-- Turret plates são permanentes em todas as torres; pressão de split e demolição de torre valem mais.
-- Role Quests: top ganha TP grátis, mid botas T3 grátis, bot 7º slot de botas e 200% crit base, suporte slot extra de control ward.
-- A partir dos 14min as waves aceleram (25s) — tempos de rotação e reset ficaram mais curtos.
+CONTEXTO DO JOGO ATUAL: Season 2026. Considere as mecânicas atuais internamente, mas não explique regras gerais da temporada. Atakhan e Feats of Strength não existem mais e não devem ser mencionados.
 
 DADOS DOS ADVERSÁRIOS (JSON):
 ${JSON.stringify(
@@ -288,7 +282,7 @@ Responda APENAS com JSON válido, sem markdown, sem texto fora do JSON:
   "strategy": "Resumo da estratégia geral do time adversário em 2-3 frases (português)",
   "gamePlan": {
     "winCondition": "como VENCER este time: 2-3 frases objetivas e acionáveis (português)",
-    "earlyGame": "plano para os primeiros 5 minutos com tempos da Season 2026 (minions 0:30, camps 0:55): commit de invade sim/não logo no início, onde wardear antes de 0:55, qual lane proteger (máx 220 chars)",
+    "earlyGame": "plano de early game baseado somente nos padrões observados dos adversários: rota inicial do jungler, foco de gank, invade e lane vulnerável quando houver evidência (máx 220 chars)",
     "teamfight": "como jogar as teamfights contra eles: quem focar, o que evitar (máx 200 chars)",
     "damageProfile": "perfil de dano provável da comp (AD/AP/misto) e dica de itemização defensiva (máx 160 chars)",
     "focusTarget": "riotId EXATO do jogador mais perigoso (o carry a focar/negar recursos)",
@@ -305,6 +299,8 @@ Regras:
 - gamePlan.focusTarget e weakLink devem ser riotIds exatos dos dados recebidos.
 - Quando o campo "mapa" existir, use-o no earlyGame e no winCondition — é evidência real de timeline: rotaInicial diz por onde o jogador começa, ganksEarlyPorJogo mede o quanto o jungler ganka (>=2.5 é gank pesado, <1 é focado em farm/counter-jungle), focoGankPressao diz qual lane sofre mais.
 - Para o JUNGLE adversário com mapa disponível, o earlyGame DEVE citar a rota inicial provável e qual lane deve wardear cedo.
+- Não mencione horários de nascimento de minions, camps ou objetivos. O relatório deve explicar como o adversário joga, não repetir regras gerais do jogo.
+- Se não houver dados de mapa do JUNGLE, diga objetivamente que não há padrão confiável de rota inicial ou gank. Não invente invade, caminho de jungle ou horário de ward.
 - Bans devem ser baseados primeiro em PREDICT de pick provavel, nao em maior winrate isolado.
 - Para prever pick, pese nesta ordem: campeoes repetidos nas partidas recentes da rota do Clash, campeoes jogados em Clash/Flex, volume recente em SoloQ, campeoes repetidos no campeoes_combinados_top10, e maestria apenas como desempate.
 - Winrate alto aumenta prioridade somente quando o campeao tambem aparece recente ou faz sentido para a rota do Clash. Nao bana campeao de 1 jogo 100% WR acima de um comfort pick com mais volume.
@@ -400,7 +396,7 @@ Regras:
     };
 
     const prompt = `Analise o estilo de jogo deste jogador de League of Legends para um perfil individual.
-CONTEXTO: Season 2026 — minions nascem aos 0:30 e camps aos 0:55; invade exige commit imediato no início; Atakhan e Feats of Strength não existem mais; Baron aos 20min. Use apenas mecânicas atuais.
+CONTEXTO: Season 2026. Atakhan e Feats of Strength não existem mais. Use apenas mecânicas atuais, sem repetir horários ou regras gerais do jogo; descreva somente padrões sustentados pelos dados do jogador.
 Use os dados recentes para dizer como ele joga: lutas, mortes, dano, visao, objetivos, jungle invade/roubo se for jungler.
 Use mapProfile quando existir para falar onde ele aparece no mapa, onde luta, onde morre, por qual lado costuma começar (startSide), quantos ganks early faz por jogo (earlyGanksPerGame) e qual rota parece receber mais gank/pressao.
 Se mapProfile.games for 0, diga que foco de gank e inconclusivo.
@@ -863,8 +859,8 @@ Responda APENAS com o texto do resumo, sem aspas, sem markdown.`;
     return {
       winCondition: `Jogue o early em cima de ${weakName} (${weak.position}) e negue recursos a ${focusName} (${focus.position})${focusChamp ? `, principalmente no ${focusChamp}` : ''}. Aceleração de vantagem no lado fraco vence antes do carry escalar.`,
       earlyGame: gankFocus
-        ? `Timeline indica que o jungler deles pressiona ${gankFocus}${jungler?.mapProfile?.startSide && jungler.mapProfile.startSide !== 'inconclusivo' ? ` e costuma começar pelo lado ${jungler.mapProfile.startSide}` : ''}. Warde esse lado antes das 0:55 (camps da S2026) e puna o lado oposto.`
-        : `Camps nascem às 0:55 e minions às 0:30 na S2026: warde as entradas da jungle até 0:50, evite trocas cegas no rio e jogue pelo lado de ${weakName}.`,
+        ? `A timeline indica pressão do jungler em ${gankFocus}${jungler?.mapProfile?.startSide && jungler.mapProfile.startSide !== 'inconclusivo' ? ` e início frequente pelo lado ${jungler.mapProfile.startSide}` : ''}. Proteja essa rota e pressione o lado oposto quando ele aparecer no mapa.`
+        : `Sem timeline suficiente para identificar rota inicial ou padrão de gank do jungler. No early, pressione ${weakName} (${weak.position}) sem assumir um caminho de jungle que os dados não confirmam.`,
       teamfight: `Foque ${focusName} nas lutas; não gaste cooldowns na frontline enquanto ele estiver vivo.`,
       damageProfile: 'Sem leitura de IA do perfil de dano. Confirme na tela de picks antes de fechar a itemização defensiva.',
       focusTarget: focus.riotId,
