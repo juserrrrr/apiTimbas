@@ -3,7 +3,7 @@ import { ClashService } from './clash.service';
 import { ScoutQueueService } from './scout-queue.service';
 import { AuthGuard } from '../auth/guards/auth.guard';
 import { ClashScoutRateLimitGuard } from './guards/clash-scout-rate-limit.guard';
-import { FullPlayerData } from '../ai/ai.service';
+import { FullPlayerData, TeamTacticalProfile } from '../ai/ai.service';
 
 @Controller('clash')
 export class ClashController {
@@ -48,11 +48,11 @@ export class ClashController {
 
   @UseGuards(AuthGuard, ClashScoutRateLimitGuard)
   @Post('analysis/retry-ai')
-  async retryAiAnalysis(@Body() body: { players?: FullPlayerData[] }) {
+  async retryAiAnalysis(@Body() body: { players?: FullPlayerData[]; teamProfile?: TeamTacticalProfile }) {
     if (!Array.isArray(body?.players) || body.players.length < 1 || body.players.length > 5) {
       throw new BadRequestException('Envie de 1 a 5 jogadores para tentar a análise novamente.');
     }
-    return this.clashService.retryAiAnalysis(body.players);
+    return this.clashService.retryAiAnalysis(body.players, body.teamProfile);
   }
 
   @UseGuards(AuthGuard)

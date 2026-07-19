@@ -22,6 +22,9 @@ const TTL = {
   // Partidas encerradas são imutáveis — cachear por 24h corta drasticamente o
   // consumo do rate limit quando o mesmo jogador/time é scoutado de novo.
   MATCH: 24 * 60 * 60 * 1000,
+  MATCH_HISTORY: 5 * 60 * 1000,
+  RANKED: 10 * 60 * 1000,
+  MASTERY: 30 * 60 * 1000,
 } as const;
 
 class TtlCache<V> {
@@ -179,10 +182,15 @@ export class RiotService {
   }
 
   async getRankedStats(puuid: string) {
+    const key = `ranked:${puuid}`;
+    const cached = this.miscCache.get(key);
+    if (cached) return cached;
     try {
-      return await this.riotGet<any[]>(
+      const data = await this.riotGet<any[]>(
         `${BR1_BASE}/lol/league/v4/entries/by-puuid/${puuid}`,
       );
+      this.miscCache.set(key, data, TTL.RANKED);
+      return data;
     } catch {
       return [];
     }
@@ -263,36 +271,56 @@ export class RiotService {
   }
 
   async getClashPlayersByPuuid(puuid: string): Promise<any[]> {
+    const key = `clash-players:${puuid}`;
+    const cached = this.miscCache.get(key);
+    if (cached) return cached;
     try {
-      return await this.riotGet<any[]>(
+      const data = await this.riotGet<any[]>(
         `${BR1_BASE}/lol/clash/v1/players/by-puuid/${puuid}`,
       );
+      this.miscCache.set(key, data, TTL.MATCH_HISTORY);
+      return data;
     } catch {
       return [];
     }
   }
 
   async getClashTeam(teamId: string): Promise<any> {
+    const key = `clash-team:${teamId}`;
+    const cached = this.miscCache.get(key);
+    if (cached) return cached;
     try {
-      return await this.riotGet<any>(`${BR1_BASE}/lol/clash/v1/teams/${encodeURIComponent(teamId)}`);
+      const data = await this.riotGet<any>(`${BR1_BASE}/lol/clash/v1/teams/${encodeURIComponent(teamId)}`);
+      this.miscCache.set(key, data, TTL.MATCH_HISTORY);
+      return data;
     } catch {
       throw new NotFoundException(`Time de Clash ${teamId} não encontrado`);
     }
   }
 
   async getClashTournaments(): Promise<any[]> {
+    const key = 'clash-tournaments';
+    const cached = this.miscCache.get(key);
+    if (cached) return cached;
     try {
-      return await this.riotGet<any[]>(`${BR1_BASE}/lol/clash/v1/tournaments`);
+      const data = await this.riotGet<any[]>(`${BR1_BASE}/lol/clash/v1/tournaments`);
+      this.miscCache.set(key, data, TTL.MATCH_HISTORY);
+      return data;
     } catch {
       return [];
     }
   }
 
   async getMatchHistory(puuid: string, count = 20, queueId?: number): Promise<string[]> {
+    const key = `history:${puuid}:${queueId ?? 'all'}:${count}`;
+    const cached = this.miscCache.get(key);
+    if (cached) return cached;
     try {
       let url = `${AMERICAS_BASE}/lol/match/v5/matches/by-puuid/${puuid}/ids?start=0&count=${count}`;
       if (queueId) url += `&queue=${queueId}`;
-      return await this.riotGet<string[]>(url);
+      const data = await this.riotGet<string[]>(url);
+      this.miscCache.set(key, data, TTL.MATCH_HISTORY);
+      return data;
     } catch {
       return [];
     }
@@ -331,10 +359,15 @@ export class RiotService {
   }
 
   async getChampionMastery(puuid: string, count = 10): Promise<any[]> {
+    const key = `mastery:${puuid}:${count}`;
+    const cached = this.miscCache.get(key);
+    if (cached) return cached;
     try {
-      return await this.riotGet<any[]>(
+      const data = await this.riotGet<any[]>(
         `${BR1_BASE}/lol/champion-mastery/v4/champion-masteries/by-puuid/${puuid}/top?count=${count}`,
       );
+      this.miscCache.set(key, data, TTL.MASTERY);
+      return data;
     } catch {
       return [];
     }

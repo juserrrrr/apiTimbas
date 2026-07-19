@@ -204,9 +204,9 @@ describe('ClashService', () => {
       await service.scout(GAME_NAME, TAG_LINE);
 
       TEAM_DTO.players.forEach(({ puuid }) => {
-        expect(riot.getMatchHistory).toHaveBeenCalledWith(puuid, 12, 420);
-        expect(riot.getMatchHistory).toHaveBeenCalledWith(puuid, 6, 440);
-        expect(riot.getMatchHistory).toHaveBeenCalledWith(puuid, 5, 700);
+        expect(riot.getMatchHistory).toHaveBeenCalledWith(puuid, 20, 420);
+        expect(riot.getMatchHistory).toHaveBeenCalledWith(puuid, 10, 440);
+        expect(riot.getMatchHistory).toHaveBeenCalledWith(puuid, 10, 700);
       });
     });
 
@@ -336,7 +336,7 @@ describe('ClashService', () => {
         a: number,
         champId: number,
         champName: string,
-        teamPosition = 'BOTTOM',
+        teamPosition = 'TOP',
       ) => ({
         info: { participants: [{ puuid, win, kills: k, deaths: d, assists: a, championId: champId, championName: champName, teamPosition }] },
       });
@@ -401,7 +401,7 @@ describe('ClashService', () => {
         expect(p.soloSeasonWinrate).toBe(53); // 80/(80+70) → 53%
       });
 
-      it('combined top champs weights: solo 60%, flex 25%, clash 15%', async () => {
+      it('combined top champs prioritizes Clash/Flex context without ignoring SoloQ volume', async () => {
         setupOnePlayer();
         riot.getRankedStats.mockResolvedValue([]);
         riot.getMatchHistory.mockImplementation((_puuid: string, _count: number, queue?: number) => {

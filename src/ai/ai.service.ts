@@ -43,7 +43,17 @@ export interface PlaystyleStats {
   avgDragonTakedowns: number;
   avgObjectiveSteals: number;
   avgEnemyJungleMonsterKills: number;
+  avgGoldEarned: number;
+  avgCs: number;
+  avgDamageTaken: number;
+  avgWardsPlaced: number;
+  avgWardsKilled: number;
+  avgControlWards: number;
+  avgTurretTakedowns: number;
 }
+
+export interface LaneActivityStats { top: number; mid: number; bot: number; total: number }
+export interface ObjectiveActivityStats { dragons: number; barons: number; heralds: number; other: number }
 
 export interface MapRegionStats {
   top: number;
@@ -68,6 +78,21 @@ export interface MapProfile {
   mostFought: string;
   mostDeaths: string;
   likelyGankFocus: string;
+  ganksByLane: LaneActivityStats;
+  firstGanksByLane: LaneActivityStats;
+  firstGankFocus: string;
+  avgFirstGankMinute: number | null;
+  roamsByLane: LaneActivityStats;
+  roamsPerGame: number;
+  roamFocus: string;
+  invadeGames: number;
+  invadeRate: number;
+  startSideGames: { top: number; bottom: number; unknown: number };
+  startSideConfidence: number;
+  objectiveBreakdown: ObjectiveActivityStats;
+  wardsPlaced: number;
+  visionFocus: string;
+  sampleConfidence: 'baixa' | 'media' | 'alta';
 }
 
 export interface QueuePerf {
@@ -92,6 +117,23 @@ export interface FullPlayerData {
   clashHistory: QueuePerf; // last 10
   combinedTopChamps: QueueChampStat[];
   mapProfile?: MapProfile;
+}
+
+export interface TeamTacticalProfile {
+  games: number;
+  wins: number;
+  winrate: number;
+  avgDurationMinutes: number;
+  avgKills: number;
+  avgDeaths: number;
+  avgDragons: number;
+  avgBarons: number;
+  avgTowers: number;
+  firstBloodRate: number;
+  firstTowerRate: number;
+  mainCarry: string;
+  mainCarryDamageShare: number;
+  sampleConfidence: 'baixa' | 'media' | 'alta';
 }
 
 // ─── Output types ─────────────────────────────────────────────────────────────
@@ -172,23 +214,25 @@ export class AiService {
   private readonly logger = new Logger(AiService.name);
   private readonly geminiApiKey: string | null;
   private readonly geminiModel: string;
+  private readonly geminiFallbackModel: string;
   private readonly analysisCache = new Map<string, { value: AiAnalysis; expiresAt: number }>();
   private readonly profileAnalysisCache = new Map<string, { value: PlayerProfileAnalysis; expiresAt: number }>();
   private geminiBlockedUntil = 0;
 
   constructor() {
     this.geminiApiKey = process.env.GEMINI_API_KEY || null;
-    this.geminiModel = (process.env.GEMINI_MODEL || 'gemini-2.0-flash').replace(/^models\//, '');
+    this.geminiModel = (process.env.GEMINI_MODEL || 'gemini-2.5-flash').replace(/^models\//, '');
+    this.geminiFallbackModel = (process.env.GEMINI_FALLBACK_MODEL || 'gemini-2.5-flash-lite').replace(/^models\//, '');
     if (!this.geminiApiKey) this.logger.warn('GEMINI_API_KEY não configurado — análise de IA desabilitada');
     this.logger.log(`AiService ready — model=${this.geminiModel}`);
   }
 
-  async analyzeOpponents(players: FullPlayerData[], force = false): Promise<AiAnalysis> {
+  async analyzeOpponents(players: FullPlayerData[], force = false, teamProfile?: TeamTacticalProfile): Promise<AiAnalysis> {
     const empty: AiAnalysis = { generatedByAi: false, bans: [], counterplays: [], predictedPicks: [], strategy: '' };
     if (!this.geminiApiKey) {
       return { ...empty, strategy: 'Configure GEMINI_API_KEY para ativar análise de IA.' };
     }
-    const cacheKey = this.buildAnalysisCacheKey(players);
+    const cacheKey = this.buildAnalysisCacheKey(players, teamProfile);
     if (!force) {
       const cached = this.getCachedAnalysis(cacheKey);
       if (cached) return cached;
@@ -202,6 +246,7 @@ export class AiService {
 CONTEXTO DO JOGO ATUAL: Season 2026. Considere as mecânicas atuais internamente, mas não explique regras gerais da temporada. Atakhan e Feats of Strength não existem mais e não devem ser mencionados.
 
 DADOS DOS ADVERSÁRIOS (JSON):
+PERFIL COLETIVO EM PARTIDAS COMPARTILHADAS: ${JSON.stringify(teamProfile ?? null)}
 ${JSON.stringify(
   players.map((p) => ({
     riotId: p.riotId,
@@ -214,39 +259,56 @@ ${JSON.stringify(
     },
     soloRank: `${p.soloRank.tier} ${p.soloRank.rank} (${p.soloRank.wins}W/${p.soloRank.losses}L — ${p.soloSeasonWinrate}% WR season)`,
     flexRank: `${p.flexRank.tier} ${p.flexRank.rank} (${p.flexSeasonWinrate}% WR season)`,
-    maestria_top5: p.masteryTop10.slice(0, 5).map((m) => `${m.championName} M${m.masteryLevel}`),
+    maestria_top5: p.masteryTop10.slice(0, 5).map((m) => ({ id: m.championId, nome: m.championName, nivel: m.masteryLevel, pontos: m.masteryPoints })),
     soloQueue_recente: {
       games: p.soloQueue.games,
       winrate: `${p.soloQueue.winrate}%`,
       kdaMedio: p.soloQueue.avgKda,
       estilo: this.formatPlaystyle(p.soloQueue.playstyle, p.position),
-      topChamps: p.soloQueue.topChampions.slice(0, 5).map((c) => `${c.championName} (${c.games}G ${c.winrate}% WR ${c.kda} KDA)`),
+      topChamps: p.soloQueue.topChampions.slice(0, 8),
     },
     flexQueue_recente: {
       games: p.flexQueue.games,
       winrate: `${p.flexQueue.winrate}%`,
       kdaMedio: p.flexQueue.avgKda,
       estilo: this.formatPlaystyle(p.flexQueue.playstyle, p.position),
-      topChamps: p.flexQueue.topChampions.slice(0, 3).map((c) => `${c.championName} (${c.games}G ${c.winrate}% WR)`),
+      topChamps: p.flexQueue.topChampions.slice(0, 6),
     },
     clash_historico: {
       games: p.clashHistory.games,
       kdaMedio: p.clashHistory.avgKda,
       estilo: this.formatPlaystyle(p.clashHistory.playstyle, p.position),
-      topChamps: p.clashHistory.topChampions.slice(0, 3).map((c) => `${c.championName} (${c.games}G ${c.winrate}% WR)`),
+      topChamps: p.clashHistory.topChampions.slice(0, 6),
     },
-    campeoes_combinados_top10: p.combinedTopChamps.slice(0, 10).map((c) => `${c.championName} (${c.games}G ${c.winrate}% WR ${c.kda} KDA)`),
+    campeoes_combinados_top10: p.combinedTopChamps.slice(0, 10),
+    candidatosDraftCalculados: this.buildPredictiveBanCandidates(p).slice(0, 8).map((c) => ({
+      id: c.championId,
+      nome: c.championName,
+      jogosUnicos: c.games,
+      vitorias: c.wins,
+      winrate: c.winrate,
+      kda: c.kda,
+      sinais: [...new Set(c.signals)],
+      score: Math.round(c.score * 10) / 10,
+    })),
     mapa: p.mapProfile?.games
       ? {
           jogosAnalisados: p.mapProfile.games,
-          rotaInicial: `costuma começar a jungle/jogo pelo lado ${p.mapProfile.startSide} do mapa`,
+          confiancaAmostra: p.mapProfile.sampleConfidence,
+          rotaInicial: p.position === 'JUNGLE' ? p.mapProfile.startSide : 'nao se aplica',
+          confiancaRotaInicialPct: p.mapProfile.startSideConfidence,
           ganksEarlyPorJogo: p.mapProfile.earlyGanksPerGame,
+          ganksPorRota: p.mapProfile.ganksByLane,
+          primeiroGank: { rota: p.mapProfile.firstGankFocus, minutoMedio: p.mapProfile.avgFirstGankMinute, amostra: p.mapProfile.firstGanksByLane },
+          roamsPorJogo: p.mapProfile.roamsPerGame,
+          roamsPorRota: p.mapProfile.roamsByLane,
           presencaInicial: p.mapProfile.mostVisited,
           lutaMaisEm: p.mapProfile.mostFought,
           morreMaisEm: p.mapProfile.mostDeaths,
           focoGankPressao: p.mapProfile.likelyGankFocus,
-          invades: p.mapProfile.invades,
-          fightsDeObjetivo: p.mapProfile.objectiveFights,
+          invadeEmJogosPct: p.mapProfile.invadeRate,
+          participacoesEmObjetivos: p.mapProfile.objectiveBreakdown,
+          visao: { wards: p.mapProfile.wardsPlaced, foco: p.mapProfile.visionFocus },
         }
       : undefined,
   })),
@@ -297,10 +359,13 @@ Responda APENAS com JSON válido, sem markdown, sem texto fora do JSON:
 }
 
 Regras:
+- Use apenas riotIds e campeoes presentes nos dados. Para bans, championId e championName devem vir de candidatosDraftCalculados do jogador alvo; nunca crie IDs ou picks externos.
+- Campos medidos são FATOS da amostra. Recomendações, rota provável e comportamento futuro são INFERÊNCIAS; use "tende", "provável" ou "estimado" quando a confiança não for alta.
+- Não some soloQueue, flexQueue, clash_historico e campeoes_combinados: campeoes_combinados repete as fontes e candidatosDraftCalculados já remove essa duplicação.
 - gamePlan.threats: exatamente uma entrada por jogador, level de 1 (fraco) a 5 (ameaça extrema), baseado em rank, forma recente, pool de campeões e histórico de Clash.
 - Na reason da threat de maior level, diga explicitamente que ele é quem carrega o time; na de menor level, que é o alvo a punir.
 - gamePlan.focusTarget e weakLink devem ser riotIds exatos dos dados recebidos.
-- Quando o campo "mapa" existir, use-o no earlyGame e no winCondition — é evidência real de timeline: rotaInicial diz por onde o jogador começa, ganksEarlyPorJogo mede o quanto o jungler ganka (>=2.5 é gank pesado, <1 é focado em farm/counter-jungle), focoGankPressao diz qual lane sofre mais.
+- Quando "mapa" existir, trate os números como tendências da amostra, não certezas. Calibre a linguagem por confiancaAmostra e confiancaRotaInicialPct. ganksPorRota e primeiroGank valem apenas para JUNGLE; roamsPorRota vale para laners.
 - Para o JUNGLE adversário com mapa disponível, o earlyGame DEVE citar a rota inicial provável e qual lane deve wardear cedo.
 - Não mencione horários de nascimento de minions, camps ou objetivos. O relatório deve explicar como o adversário joga, não repetir regras gerais do jogo.
 - Se não houver dados de mapa do JUNGLE, diga objetivamente que não há padrão confiável de rota inicial ou gank. Não invente invade, caminho de jungle ou horário de ward.
@@ -330,6 +395,9 @@ Regras:
       const response = await this.postGeminiWithRetry(
         `https://generativelanguage.googleapis.com/v1beta/models/${this.geminiModel}:generateContent`,
         {
+          systemInstruction: {
+            parts: [{ text: 'Voce e um coach de Clash. Separe fatos medidos de inferencias, nunca invente eventos, campeoes, jogadores ou certezas. Use amostra e confianca para calibrar cada recomendacao. Responda somente no schema JSON solicitado.' }],
+          },
           contents: [
             {
               role: 'user',
@@ -341,6 +409,7 @@ Regras:
             maxOutputTokens: 8192,
             responseMimeType: 'application/json',
             responseSchema: this.analysisSchema(),
+            thinkingConfig: { thinkingBudget: 1536 },
           },
         },
         {
@@ -350,6 +419,15 @@ Regras:
           },
           timeout: 60000,
           transformResponse: [(data: string) => data],
+        },
+        (response) => {
+          try {
+            const responseData = JSON.parse(response.data as string);
+            const candidateText = responseData?.candidates?.[0]?.content?.parts?.map((part: any) => part.text ?? '').join('') ?? '';
+            return this.parseAnalysis(candidateText, players).generatedByAi;
+          } catch {
+            return false;
+          }
         },
       );
 
@@ -367,7 +445,7 @@ Regras:
       const finishReason = responseData?.candidates?.[0]?.finishReason ?? 'unknown';
       this.logger.log(`[AI] finishReason=${finishReason} | chars=${text.length} | preview=${text.slice(0, 300).replace(/\n/g, ' ')}`);
       const analysis = this.parseAnalysis(text, players);
-      this.setCachedAnalysis(cacheKey, analysis, GEMINI_CACHE_TTL_MS);
+      if (analysis.generatedByAi) this.setCachedAnalysis(cacheKey, analysis, GEMINI_CACHE_TTL_MS);
       return analysis;
     } catch (err) {
       this.logger.warn(`Erro ao chamar IA para análise: ${this.describeGeminiError(err)}`);
@@ -506,7 +584,7 @@ Responda APENAS com o texto do resumo, sem aspas, sem markdown.`;
     return `O ${winnerLabel} levou a partida #${input.matchId} (${input.matchTypeLabel} ${input.playersPerTeam}v${input.playersPerTeam}).${mvp} GG WP! 🏆`;
   }
 
-  private async postGeminiWithRetry(url: string, body: any, config: any): Promise<any> {
+  private async postGeminiWithRetry(url: string, body: any, config: any, validate?: (response: any) => boolean): Promise<any> {
     const waitFromPrevious429 = this.geminiBlockedUntil - Date.now();
     if (waitFromPrevious429 > 0 && waitFromPrevious429 <= GEMINI_MAX_RETRY_DELAY_MS) {
       this.logger.warn(`[AI] Gemini em cooldown; aguardando ${Math.ceil(waitFromPrevious429 / 1000)}s`);
@@ -517,7 +595,17 @@ Responda APENAS com o texto do resumo, sem aspas, sem markdown.`;
 
     for (let attempt = 0; attempt <= GEMINI_MAX_RETRIES; attempt++) {
       try {
-        return await axios.post(url, body, config);
+        const attemptUrl = attempt === GEMINI_MAX_RETRIES && this.geminiFallbackModel !== this.geminiModel
+          ? url.replace(`/models/${this.geminiModel}:`, `/models/${this.geminiFallbackModel}:`)
+          : url;
+        if (attemptUrl !== url) this.logger.warn(`[AI] usando modelo fallback ${this.geminiFallbackModel}`);
+        const response = await axios.post(attemptUrl, body, config);
+        if (validate && !validate(response)) {
+          const invalidResponse = new Error('Gemini retornou conteudo invalido') as Error & { code?: string };
+          invalidResponse.code = 'INVALID_RESPONSE';
+          throw invalidResponse;
+        }
+        return response;
       } catch (err) {
         const status = (err as any)?.response?.status;
         const code = (err as any)?.code;
@@ -525,7 +613,8 @@ Responda APENAS com o texto do resumo, sem aspas, sem markdown.`;
           || status === 429
           || (typeof status === 'number' && status >= 500)
           || code === 'ECONNABORTED'
-          || code === 'ETIMEDOUT';
+          || code === 'ETIMEDOUT'
+          || code === 'INVALID_RESPONSE';
         const retryDelayMs = status === 429
           ? this.getGeminiRetryDelayMs(err)
           : Math.min(8_000, (2 ** attempt) * 1_000 + Math.floor(Math.random() * 500));
@@ -589,17 +678,19 @@ Responda APENAS com o texto do resumo, sem aspas, sem markdown.`;
     }
   }
 
-  private buildAnalysisCacheKey(players: FullPlayerData[]): string {
-    const payload = players.map((p) => ({
+  private buildAnalysisCacheKey(players: FullPlayerData[], teamProfile?: TeamTacticalProfile): string {
+    const payload = { version: 2, model: this.geminiModel, teamProfile, players: players.map((p) => ({
       riotId: p.riotId,
       position: p.position,
-      solo: p.soloQueue.topChampions.slice(0, 5),
-      flex: p.flexQueue.topChampions.slice(0, 3),
-      clash: p.clashHistory.topChampions.slice(0, 3),
-      combined: p.combinedTopChamps.slice(0, 5),
-      // deep scout (com timeline) gera análise diferente do scout normal
-      mapGames: p.mapProfile?.games ?? 0,
-    }));
+      soloRank: p.soloRank,
+      flexRank: p.flexRank,
+      mastery: p.masteryTop10,
+      solo: this.profileQueuePayload(p.soloQueue),
+      flex: this.profileQueuePayload(p.flexQueue),
+      clash: this.profileQueuePayload(p.clashHistory),
+      combined: p.combinedTopChamps,
+      mapProfile: p.mapProfile,
+    })) };
     return createHash('sha256').update(JSON.stringify(payload)).digest('hex');
   }
 
@@ -651,6 +742,10 @@ Responda APENAS com o texto do resumo, sem aspas, sem markdown.`;
       `${stats.avgKillParticipation}% KP`,
       `${stats.avgDamageToChampions} dano em campeoes/jogo`,
       `${stats.avgVisionScore} visao/jogo`,
+      `${stats.avgGoldEarned} ouro/jogo`,
+      `${stats.avgCs} CS/jogo`,
+      `${stats.avgTurretTakedowns} participacoes em torres/jogo`,
+      `${stats.avgWardsPlaced}/${stats.avgWardsKilled}/${stats.avgControlWards} wards postas/removidas/controle`,
     ];
 
     if (position?.toUpperCase() === 'JUNGLE') {
@@ -678,19 +773,107 @@ Responda APENAS com o texto do resumo, sem aspas, sem markdown.`;
   private parseAnalysis(text: string, players: FullPlayerData[]): AiAnalysis {
     const stripped = this.stripJsonFence(text);
     try {
-      return { ...(JSON.parse(stripped) as AiAnalysis), generatedByAi: true };
+      return this.normalizeTeamAnalysis(JSON.parse(stripped), players);
     } catch {
       const start = stripped.indexOf('{');
       const end = stripped.lastIndexOf('}');
       if (start >= 0 && end > start) {
         try {
-          return { ...(JSON.parse(stripped.slice(start, end + 1)) as AiAnalysis), generatedByAi: true };
+          return this.normalizeTeamAnalysis(JSON.parse(stripped.slice(start, end + 1)), players);
         } catch {
           return this.buildStatAnalysis(players, 'Gemini retornou JSON inválido; análise gerada pelos dados recentes.');
         }
       }
       return this.buildStatAnalysis(players, 'Gemini retornou JSON inválido; análise gerada pelos dados recentes.');
     }
+  }
+
+  private normalizeTeamAnalysis(value: any, players: FullPlayerData[]): AiAnalysis {
+    const playerById = new Map(players.map((player) => [player.riotId, player]));
+    const championMaps = new Map(players.map((player) => {
+      const entries = [
+        ...player.soloQueue.topChampions,
+        ...player.flexQueue.topChampions,
+        ...player.clashHistory.topChampions,
+        ...player.combinedTopChamps,
+        ...player.masteryTop10,
+      ];
+      return [player.riotId, {
+        byId: new Map(entries.map((champ) => [champ.championId, champ.championName])),
+        byName: new Map(entries.map((champ) => [champ.championName.toLowerCase(), champ.championName])),
+      }];
+    }));
+    const expectedBans = Math.min(10, Math.max(5, players.length * 2));
+
+    if (!Array.isArray(value?.bans) || !Array.isArray(value?.counterplays) || !Array.isArray(value?.predictedPicks) || !value?.gamePlan) {
+      throw new Error('Resposta Gemini sem secoes obrigatorias');
+    }
+
+    const usedChampions = new Set<number>();
+    const bans = value.bans.flatMap((ban: any) => {
+      const championMap = championMaps.get(ban?.targetPlayer);
+      const championName = championMap?.byId.get(Number(ban?.championId));
+      if (!playerById.has(ban?.targetPlayer) || !championName || usedChampions.has(Number(ban.championId))) return [];
+      usedChampions.add(Number(ban.championId));
+      return [{
+        championId: Number(ban.championId), championName, targetPlayer: ban.targetPlayer,
+        reason: this.cleanText(ban.reason).slice(0, 180), priority: usedChampions.size,
+      }];
+    }).slice(0, expectedBans);
+    if (bans.length < Math.min(5, expectedBans)) throw new Error('Resposta Gemini sem bans validos suficientes');
+
+    const counterById = new Map(value.counterplays.map((item: any) => [item?.riotId, item]));
+    const pickById = new Map(value.predictedPicks.map((item: any) => [item?.riotId, item]));
+    const counterplays = players.map((player) => {
+      const item: any = counterById.get(player.riotId);
+      const champs = championMaps.get(player.riotId)!;
+      const likelyPick = champs.byName.get(String(item?.likelyPick ?? '').toLowerCase());
+      if (!item || !likelyPick || !this.cleanText(item.howToCounter)) throw new Error(`Counterplay invalido para ${player.riotId}`);
+      return {
+        riotId: player.riotId,
+        position: player.position,
+        likelyPick,
+        howToCounter: this.cleanText(item.howToCounter).slice(0, 240),
+        keyThreats: Array.isArray(item.keyThreats) ? item.keyThreats.map((x: unknown) => this.cleanText(x)).filter(Boolean).slice(0, 3) : [],
+      };
+    });
+    const predictedPicks = players.map((player) => {
+      const item: any = pickById.get(player.riotId);
+      const champs = championMaps.get(player.riotId)!;
+      const normalizeOption = (option: any) => {
+        const champion = champs.byName.get(String(option?.champion ?? '').toLowerCase());
+        if (!champion) throw new Error(`Pick inventado para ${player.riotId}`);
+        return { champion, reason: this.cleanText(option?.reason).slice(0, 140) };
+      };
+      if (!item) throw new Error(`Predicao ausente para ${player.riotId}`);
+      return { riotId: player.riotId, position: player.position, option1: normalizeOption(item.option1), option2: normalizeOption(item.option2) };
+    });
+    const focusTarget = value.gamePlan.focusTarget;
+    const weakLink = value.gamePlan.weakLink;
+    if (!playerById.has(focusTarget) || !playerById.has(weakLink)) throw new Error('Alvos do plano nao pertencem ao time');
+    const threatById = new Map((Array.isArray(value.gamePlan.threats) ? value.gamePlan.threats : []).map((item: any) => [item?.riotId, item]));
+    const threats = players.map((player) => {
+      const item: any = threatById.get(player.riotId);
+      if (!item) throw new Error(`Ameaca ausente para ${player.riotId}`);
+      return { riotId: player.riotId, position: player.position, level: Math.max(1, Math.min(5, Number(item.level) || 1)), reason: this.cleanText(item.reason).slice(0, 160) };
+    });
+
+    return {
+      generatedByAi: true,
+      bans,
+      counterplays,
+      predictedPicks,
+      strategy: this.cleanText(value.strategy).slice(0, 700),
+      gamePlan: {
+        winCondition: this.cleanText(value.gamePlan.winCondition).slice(0, 600),
+        earlyGame: this.cleanText(value.gamePlan.earlyGame).slice(0, 450),
+        teamfight: this.cleanText(value.gamePlan.teamfight).slice(0, 400),
+        damageProfile: this.cleanText(value.gamePlan.damageProfile).slice(0, 320),
+        focusTarget,
+        weakLink,
+        threats,
+      },
+    };
   }
 
   private parsePlayerProfileAnalysis(text: string, player: FullPlayerData): PlayerProfileAnalysis {
@@ -743,8 +926,8 @@ Responda APENAS com o texto do resumo, sem aspas, sem markdown.`;
       ? ` Timeline: aparece mais em ${map.mostVisited}, luta mais em ${map.mostFought}, morre mais em ${map.mostDeaths} e pressiona ${map.likelyGankFocus}.`
       : '';
     const objective = player.position === 'JUNGLE'
-      ? `${style.avgTeamDragons} dragoes/time por jogo, ${style.avgDragonTakedowns} dragon takedowns, ${style.avgObjectiveSteals} roubos e ${style.avgEnemyJungleMonsterKills} camps inimigos/jogo.${map?.games ? ` Timeline marcou ${map.invades} sinais de invade e ${map.objectiveFights} fights de objetivo.` : ''}`
-      : `${style.avgVisionScore} visao/jogo, ${style.avgKillParticipation}% KP e ${style.avgTeamDragons} dragoes do time/jogo.${map?.games ? ` Timeline marcou ${map.objectiveFights} fights de objetivo.` : ''}`;
+      ? `${style.avgTeamDragons} dragoes/time por jogo, ${style.avgDragonTakedowns} dragon takedowns, ${style.avgObjectiveSteals} roubos e ${style.avgEnemyJungleMonsterKills} camps inimigos/jogo.${map?.games ? ` Invadiu em ${map.invadeRate}% da amostra e participou de ${map.objectiveFights} abates de objetivos.` : ''}`
+      : `${style.avgVisionScore} visao/jogo, ${style.avgKillParticipation}% KP e ${style.avgTeamDragons} dragoes do time/jogo.${map?.games ? ` Participou de ${map.objectiveFights} abates de objetivos na timeline.` : ''}`;
     const fightStyle = style.avgKillParticipation >= 55
       ? 'participa bastante das lutas'
       : style.avgKillParticipation >= 40
@@ -785,8 +968,8 @@ Responda APENAS com o texto do resumo, sem aspas, sem markdown.`;
     const base = `Presenca inicial maior em ${map.mostVisited}; lutas mais frequentes em ${map.mostFought}; mortes mais comuns em ${map.mostDeaths}.`;
     const startSide = map.startSide && map.startSide !== 'inconclusivo' ? ` Costuma comecar pelo lado ${map.startSide}.` : '';
     const jungle = player.position === 'JUNGLE'
-      ? ` Foco provavel de gank/pressao: ${map.likelyGankFocus}; ${map.earlyGanksPerGame} ganks early/jogo, ${map.invades} sinais de invade e ${map.objectiveFights} fights de objetivo nas timelines.${startSide}`
-      : ` Pressao de mapa mais clara: ${map.likelyGankFocus}; ${map.objectiveFights} fights de objetivo nas timelines.${startSide}`;
+      ? ` Foco estimado de gank: ${map.likelyGankFocus}; ${map.earlyGanksPerGame} acoes de gank early/jogo, primeiro gank em ${map.firstGankFocus}${map.avgFirstGankMinute ? ` perto de ${map.avgFirstGankMinute} min` : ''}, invade em ${map.invadeRate}% dos jogos e ${map.objectiveFights} participacoes em objetivos. Confianca ${map.sampleConfidence}.${startSide}`
+      : ` Pressao de mapa mais clara: ${map.likelyGankFocus}; ${map.roamsPerGame} roams early/jogo com foco em ${map.roamFocus}, ${map.objectiveFights} participacoes em objetivos. Confianca ${map.sampleConfidence}.`;
     return base + jungle;
   }
 
@@ -896,11 +1079,13 @@ Responda APENAS com o texto do resumo, sem aspas, sem markdown.`;
   private buildPredictiveBanCandidates(player: FullPlayerData) {
     const candidates = new Map<number, QueueChampStat & { player: FullPlayerData; score: number; signals: string[] }>();
 
-    const add = (champ: QueueChampStat, weight: number, signal: string) => {
+    const add = (champ: QueueChampStat, weight: number, signal: string, aggregateSample = true) => {
       const existing = candidates.get(champ.championId);
       if (existing) {
-        existing.games += champ.games;
-        existing.wins += champ.wins;
+        if (aggregateSample) {
+          existing.games += champ.games;
+          existing.wins += champ.wins;
+        }
         existing.kda = Math.max(existing.kda, champ.kda);
         existing.score += champ.games * weight;
         existing.signals.push(signal);
@@ -918,7 +1103,9 @@ Responda APENAS com o texto do resumo, sem aspas, sem markdown.`;
     for (const champ of player.clashHistory.topChampions.slice(0, 5)) add(champ, 16, 'aparece em Clash');
     for (const champ of player.flexQueue.topChampions.slice(0, 5)) add(champ, 12, 'aparece em Flex');
     for (const champ of player.soloQueue.topChampions.slice(0, 8)) add(champ, 9, 'pick recente');
-    for (const champ of player.combinedTopChamps.slice(0, 10)) add(champ, 5, 'comfort combinado');
+    // combinedTopChamps repete as tres filas; serve apenas como sinal, sem
+    // somar novamente jogos e vitorias.
+    for (const champ of player.combinedTopChamps.slice(0, 10)) add(champ, 5, 'comfort combinado', false);
 
     for (const mastery of player.masteryTop10.slice(0, 5)) {
       const existing = candidates.get(mastery.championId);
@@ -929,12 +1116,14 @@ Responda APENAS com o texto do resumo, sem aspas, sem markdown.`;
     }
 
     return [...candidates.values()].map((candidate) => {
-      const winrateSignal = candidate.games >= 3 ? Math.max(0, candidate.winrate - 50) * 0.25 : 0;
+      const winrate = candidate.games ? Math.round((candidate.wins / candidate.games) * 100) : 0;
+      const winrateSignal = candidate.games >= 3 ? Math.max(0, winrate - 50) * 0.25 : 0;
       const kdaSignal = Math.min(10, candidate.kda * 1.5);
       const uniqueSignals = [...new Set(candidate.signals)];
-      const reason = `${uniqueSignals.slice(0, 2).join(' + ')}; ${candidate.games} jogos, ${candidate.winrate}% WR`;
+      const reason = `${uniqueSignals.slice(0, 2).join(' + ')}; ${candidate.games} jogos, ${winrate}% WR`;
       return {
         ...candidate,
+        winrate,
         score: candidate.score + winrateSignal + kdaSignal,
         reason,
       };

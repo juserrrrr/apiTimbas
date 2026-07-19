@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { AiService } from '../ai/ai.service';
 import { RiotService } from '../riot/riot.service';
-import { FullPlayerData, MapProfile, MapRegionStats, PlaystyleStats, QueueChampStat, QueuePerf } from '../ai/ai.service';
+import { FullPlayerData, MapProfile, MapRegionStats, PlaystyleStats, QueueChampStat, QueuePerf, TeamTacticalProfile } from '../ai/ai.service';
 
 interface ChampAccum {
   championId: number;
@@ -14,12 +14,12 @@ interface ChampAccum {
 }
 
 const MATCH_HISTORY_COUNTS = {
-  SOLO: 12,
-  FLEX: 6,
-  CLASH: 5,
+  SOLO: 20,
+  FLEX: 10,
+  CLASH: 10,
 } as const;
 
-const PROFILE_TIMELINE_MATCH_LIMIT = 8;
+const PROFILE_TIMELINE_LIMITS = { JUNGLE: 16, DEFAULT: 8 } as const;
 
 export type RiotPlayerStats = FullPlayerData & {
   topPositions: string[];
@@ -39,6 +39,13 @@ const EMPTY_PLAYSTYLE: PlaystyleStats = {
   avgDragonTakedowns: 0,
   avgObjectiveSteals: 0,
   avgEnemyJungleMonsterKills: 0,
+  avgGoldEarned: 0,
+  avgCs: 0,
+  avgDamageTaken: 0,
+  avgWardsPlaced: 0,
+  avgWardsKilled: 0,
+  avgControlWards: 0,
+  avgTurretTakedowns: 0,
 };
 
 const EMPTY_REGIONS: MapRegionStats = {
@@ -64,10 +71,24 @@ const EMPTY_MAP_PROFILE: MapProfile = {
   mostFought: 'inconclusivo',
   mostDeaths: 'inconclusivo',
   likelyGankFocus: 'inconclusivo',
+  ganksByLane: { top: 0, mid: 0, bot: 0, total: 0 },
+  firstGanksByLane: { top: 0, mid: 0, bot: 0, total: 0 },
+  firstGankFocus: 'inconclusivo',
+  avgFirstGankMinute: null,
+  roamsByLane: { top: 0, mid: 0, bot: 0, total: 0 },
+  roamsPerGame: 0,
+  roamFocus: 'inconclusivo',
+  invadeGames: 0,
+  invadeRate: 0,
+  startSideGames: { top: 0, bottom: 0, unknown: 0 },
+  startSideConfidence: 0,
+  objectiveBreakdown: { dragons: 0, barons: 0, heralds: 0, other: 0 },
+  wardsPlaced: 0,
+  visionFocus: 'inconclusivo',
+  sampleConfidence: 'baixa',
 };
 
-// Season 2026: minions nascem aos 0:30 e camps aos 0:55 — o primeiro clear
-// acontece entre ~1:00 e ~2:30, janela usada para inferir a rota inicial.
+// Janela de posição usada apenas como sinal probabilístico do lado inicial.
 const START_SIDE_WINDOW_MS: [number, number] = [60_000, 165_000];
 const LANE_REGIONS = new Set(['top', 'mid', 'bot']);
 const EARLY_PHASE_MAX_MINUTE = 14;
@@ -78,6 +99,74 @@ export class PlayerStatsService {
     private readonly riotService: RiotService,
     private readonly aiService: AiService,
   ) {}
+
+  async buildTeamTacticalProfile(members: { puuid: string; riotId: string }[]): Promise<TeamTacticalProfile | undefined> {
+    if (members.length < 3) return undefined;
+    const histories = await Promise.all(members.map((member) => this.riotService.getMatchHistory(member.puuid, MATCH_HISTORY_COUNTS.CLASH, 700)));
+    const frequency = new Map<string, number>();
+    for (const ids of histories) for (const id of new Set(ids)) frequency.set(id, (frequency.get(id) ?? 0) + 1);
+    const sharedIds = [...frequency.entries()]
+      .filter(([, count]) => count >= 3)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10)
+      .map(([id]) => id);
+    if (!sharedIds.length) return undefined;
+
+    const puuids = new Set(members.map((member) => member.puuid));
+    const riotIdByPuuid = new Map(members.map((member) => [member.puuid, member.riotId]));
+    const damageByPuuid = new Map<string, number>();
+    let games = 0, wins = 0, duration = 0, kills = 0, deaths = 0;
+    let dragons = 0, barons = 0, towers = 0, firstBloods = 0, firstTowers = 0, teamDamage = 0;
+
+    for (const matchId of sharedIds) {
+      const match = await this.riotService.getMatch(matchId);
+      const participants = (match?.info?.participants ?? []).filter((participant: any) => puuids.has(participant.puuid));
+      if (participants.length < 3) continue;
+      const teamCounts = new Map<number, number>();
+      for (const participant of participants) teamCounts.set(participant.teamId, (teamCounts.get(participant.teamId) ?? 0) + 1);
+      const teamId = [...teamCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
+      const teamMembers = participants.filter((participant: any) => participant.teamId === teamId);
+      if (teamMembers.length < 3) continue;
+      const team = (match.info?.teams ?? []).find((candidate: any) => candidate.teamId === teamId);
+      const enemyTeam = (match.info?.teams ?? []).find((candidate: any) => candidate.teamId !== teamId);
+      games++;
+      if (team?.win ?? teamMembers[0]?.win) wins++;
+      duration += match.info?.gameDuration ?? 0;
+      kills += team?.objectives?.champion?.kills
+        ?? teamMembers.reduce((sum: number, participant: any) => sum + (participant.kills ?? 0), 0);
+      deaths += enemyTeam?.objectives?.champion?.kills
+        ?? teamMembers.reduce((sum: number, participant: any) => sum + (participant.deaths ?? 0), 0);
+      dragons += team?.objectives?.dragon?.kills ?? 0;
+      barons += team?.objectives?.baron?.kills ?? 0;
+      towers += team?.objectives?.tower?.kills ?? 0;
+      if (team?.objectives?.champion?.first) firstBloods++;
+      if (team?.objectives?.tower?.first) firstTowers++;
+      for (const participant of teamMembers) {
+        const damage = participant.totalDamageDealtToChampions ?? 0;
+        teamDamage += damage;
+        damageByPuuid.set(participant.puuid, (damageByPuuid.get(participant.puuid) ?? 0) + damage);
+      }
+    }
+    if (!games) return undefined;
+    const [carryPuuid, carryDamage = 0] = [...damageByPuuid.entries()].sort((a, b) => b[1] - a[1])[0] ?? ['', 0];
+    const avg = (value: number) => Math.round((value / games) * 10) / 10;
+    return {
+      games,
+      wins,
+      winrate: Math.round((wins / games) * 100),
+      avgDurationMinutes: avg(duration / 60),
+      avgKills: avg(kills),
+      avgDeaths: avg(deaths),
+      avgDragons: avg(dragons),
+      avgBarons: avg(barons),
+      avgTowers: avg(towers),
+      firstBloodRate: Math.round((firstBloods / games) * 100),
+      firstTowerRate: Math.round((firstTowers / games) * 100),
+      mainCarry: riotIdByPuuid.get(carryPuuid) ?? 'inconclusivo',
+      mainCarryDamageShare: teamDamage ? Math.round((carryDamage / teamDamage) * 100) : 0,
+      sampleConfidence: games >= 8 ? 'alta' : games >= 4 ? 'media' : 'baixa',
+    };
+  }
 
   async getRiotPlayer(gameName: string, tagLine: string) {
     const account = await this.riotService.getAccount(gameName, tagLine);
@@ -121,8 +210,11 @@ export class PlayerStatsService {
       this.buildQueuePerf(puuid, flexIds, effectivePosFilter),
       this.buildQueuePerf(puuid, clashIds, effectivePosFilter),
     ]);
+    const timelineIds = posFilter === 'JUNGLE'
+      ? [...clashIds.slice(0, 8), ...flexIds.slice(0, 4), ...soloIds.slice(0, 8)]
+      : [...clashIds.slice(0, 3), ...flexIds.slice(0, 2), ...soloIds.slice(0, 5)];
     const mapProfile = includeTimeline
-      ? await this.buildMapProfile(puuid, [...soloIds.slice(0, 4), ...flexIds.slice(0, 2), ...clashIds.slice(0, 2)])
+      ? await this.buildMapProfile(puuid, timelineIds, posFilter ?? 'FILL')
       : undefined;
 
     const soloWins = solo.wins ?? 0;
@@ -190,15 +282,23 @@ export class PlayerStatsService {
     let dragonTakedowns = 0;
     let objectiveSteals = 0;
     let enemyJungleMonsterKills = 0;
+    let goldEarned = 0, cs = 0, damageTaken = 0, wardsPlaced = 0;
+    let wardsKilled = 0, controlWards = 0, turretTakedowns = 0;
     let processedGames = 0;
+    let roleObservedGames = 0;
 
     for (const match of allMatches) {
       const p = (match.info?.participants ?? []).find((x: any) => x.puuid === puuid);
       if (!p) continue;
+      const role = this.normalizePosition(p.teamPosition || p.individualPosition || p.lane || p.role);
+      if (role !== 'FILL') {
+        roleMap.set(role, (roleMap.get(role) ?? 0) + 1);
+        roleObservedGames++;
+      }
+      if (positionFilter && role !== positionFilter && role !== 'FILL') continue;
+
       processedGames++;
       if (p.win) wins++;
-      const role = this.normalizePosition(p.teamPosition || p.individualPosition || p.lane || p.role);
-      if (role !== 'FILL') roleMap.set(role, (roleMap.get(role) ?? 0) + 1);
       kills += p.kills ?? 0;
       deaths += p.deaths ?? 0;
       assists += p.assists ?? 0;
@@ -211,12 +311,17 @@ export class PlayerStatsService {
       dragonTakedowns += p.challenges?.dragonTakedowns ?? 0;
       objectiveSteals += p.objectivesStolen ?? p.challenges?.epicMonsterSteals ?? 0;
       enemyJungleMonsterKills += p.challenges?.enemyJungleMonsterKills ?? p.neutralMinionsKilledEnemyJungle ?? 0;
+      goldEarned += p.goldEarned ?? 0;
+      cs += (p.totalMinionsKilled ?? 0) + (p.neutralMinionsKilled ?? 0);
+      damageTaken += p.totalDamageTaken ?? 0;
+      wardsPlaced += p.wardsPlaced ?? 0;
+      wardsKilled += p.wardsKilled ?? 0;
+      controlWards += p.detectorWardsPlaced ?? p.visionWardsBoughtInGame ?? 0;
+      turretTakedowns += p.turretTakedowns ?? ((p.turretKills ?? 0) + (p.turretAssists ?? 0));
 
       // Only count this game's champion toward topChampions when it matches the
       // Clash position. If Riot does not expose a usable role, keep the champion
       // instead of showing Clash games with no champion icons.
-      if (positionFilter && role !== positionFilter && role !== 'FILL') continue;
-
       const cid: number = p.championId;
       const ex = champMap.get(cid) ?? {
         championId: cid,
@@ -251,7 +356,7 @@ export class PlayerStatsService {
           winrate: c.games > 0 ? Math.round((c.wins / c.games) * 100) : 0,
           kda: c.deaths === 0 ? c.kills + c.assists : Math.round(((c.kills + c.assists) / c.deaths) * 10) / 10,
         })),
-      roleDistribution: this.buildRoleDistribution(roleMap, total),
+      roleDistribution: this.buildRoleDistribution(roleMap, roleObservedGames),
       playstyle: this.buildPlaystyle({
         total,
         kills,
@@ -265,6 +370,13 @@ export class PlayerStatsService {
         dragonTakedowns,
         objectiveSteals,
         enemyJungleMonsterKills,
+        goldEarned,
+        cs,
+        damageTaken,
+        wardsPlaced,
+        wardsKilled,
+        controlWards,
+        turretTakedowns,
       }),
     };
   }
@@ -302,6 +414,13 @@ export class PlayerStatsService {
     dragonTakedowns: number;
     objectiveSteals: number;
     enemyJungleMonsterKills: number;
+    goldEarned: number;
+    cs: number;
+    damageTaken: number;
+    wardsPlaced: number;
+    wardsKilled: number;
+    controlWards: number;
+    turretTakedowns: number;
   }): PlaystyleStats {
     if (!stats.total) return EMPTY_PLAYSTYLE;
     const avg = (value: number, precision = 1) => Math.round((value / stats.total) * (10 ** precision)) / (10 ** precision);
@@ -318,21 +437,39 @@ export class PlayerStatsService {
       avgDragonTakedowns: avg(stats.dragonTakedowns),
       avgObjectiveSteals: avg(stats.objectiveSteals),
       avgEnemyJungleMonsterKills: avg(stats.enemyJungleMonsterKills),
+      avgGoldEarned: Math.round(stats.goldEarned / stats.total),
+      avgCs: Math.round(stats.cs / stats.total),
+      avgDamageTaken: Math.round(stats.damageTaken / stats.total),
+      avgWardsPlaced: avg(stats.wardsPlaced),
+      avgWardsKilled: avg(stats.wardsKilled),
+      avgControlWards: avg(stats.controlWards),
+      avgTurretTakedowns: avg(stats.turretTakedowns),
     };
   }
 
-  private async buildMapProfile(puuid: string, matchIds: string[]): Promise<MapProfile> {
-    const ids = [...new Set(matchIds)].slice(0, PROFILE_TIMELINE_MATCH_LIMIT);
+  private async buildMapProfile(puuid: string, matchIds: string[], playerPosition: string): Promise<MapProfile> {
+    const isJungler = playerPosition === 'JUNGLE';
+    const ids = [...new Set(matchIds)].slice(0, isJungler ? PROFILE_TIMELINE_LIMITS.JUNGLE : PROFILE_TIMELINE_LIMITS.DEFAULT);
     if (!ids.length) return EMPTY_MAP_PROFILE;
 
     const earlyPresence = this.emptyRegions();
     const fightRegions = this.emptyRegions();
     const deathRegions = this.emptyRegions();
     let objectiveFights = 0;
-    let invades = 0;
+    let invadeGames = 0;
     let games = 0;
     let earlyGanks = 0;
-    let startSideSignal = 0; // +1 por jogo começando pelo topo, -1 pelo baixo
+    let earlyRoams = 0;
+    let firstGankMinuteTotal = 0;
+    let firstGankGames = 0;
+    let wardsPlaced = 0;
+    const ganksByLane = { top: 0, mid: 0, bot: 0, total: 0 };
+    const firstGanksByLane = { top: 0, mid: 0, bot: 0, total: 0 };
+    const roamsByLane = { top: 0, mid: 0, bot: 0, total: 0 };
+    const startSideGames = { top: 0, bottom: 0, unknown: 0 };
+    const objectiveBreakdown = { dragons: 0, barons: 0, heralds: 0, other: 0 };
+    const visionRegions = this.emptyRegions();
+    const homeLane = playerPosition === 'TOP' ? 'top' : playerPosition === 'MID' ? 'mid' : ['ADC', 'SUPPORT'].includes(playerPosition) ? 'bot' : null;
 
     for (let i = 0; i < ids.length; i += 2) {
       const pairs = await Promise.all(ids.slice(i, i + 2).map(async (id) => ({
@@ -349,6 +486,8 @@ export class PlayerStatsService {
 
         let topStartVotes = 0;
         let botStartVotes = 0;
+        let invadedThisGame = false;
+        let firstGank: { lane: 'top' | 'mid' | 'bot'; minute: number } | null = null;
 
         for (const frame of timeline.info.frames) {
           const frameTs = frame.timestamp ?? 0;
@@ -358,7 +497,7 @@ export class PlayerStatsService {
           if (position && minute <= EARLY_PHASE_MAX_MINUTE) {
             const region = this.classifyMapRegion(position.x, position.y, participant.teamId);
             earlyPresence[region]++;
-            if (region === 'enemyJungle') invades++;
+            if (region === 'enemyJungle') invadedThisGame = true;
           }
 
           // Rota inicial: acima da diagonal (y > x) = metade superior do mapa
@@ -373,20 +512,58 @@ export class PlayerStatsService {
             if (event.type === 'CHAMPION_KILL') {
               const involved = event.killerId === participantId || (event.assistingParticipantIds ?? []).includes(participantId);
               if (involved) fightRegions[region]++;
-              if (involved && eventMinute <= EARLY_PHASE_MAX_MINUTE && LANE_REGIONS.has(region)) earlyGanks++;
+              if (involved && eventMinute <= EARLY_PHASE_MAX_MINUTE && LANE_REGIONS.has(region)) {
+                const lane = region as 'top' | 'mid' | 'bot';
+                if (isJungler) {
+                  earlyGanks++;
+                  ganksByLane[lane]++;
+                  ganksByLane.total++;
+                  if (!firstGank) firstGank = { lane, minute: (event.timestamp ?? frameTs) / 60000 };
+                } else if (homeLane && lane !== homeLane) {
+                  earlyRoams++;
+                  roamsByLane[lane]++;
+                  roamsByLane.total++;
+                }
+              }
               if (event.victimId === participantId) deathRegions[region]++;
             }
             if (event.type === 'ELITE_MONSTER_KILL') {
               const involved = event.killerId === participantId || (event.assistingParticipantIds ?? []).includes(participantId);
-              if (involved) objectiveFights++;
+              if (involved) {
+                objectiveFights++;
+                const monster = String(event.monsterType ?? '').toUpperCase();
+                if (monster === 'DRAGON') objectiveBreakdown.dragons++;
+                else if (monster === 'BARON_NASHOR') objectiveBreakdown.barons++;
+                else if (monster.includes('RIFTHERALD') || monster.includes('HORDE')) objectiveBreakdown.heralds++;
+                else objectiveBreakdown.other++;
+              }
+            }
+            if (event.type === 'WARD_PLACED' && event.creatorId === participantId) {
+              wardsPlaced++;
+              visionRegions[region]++;
             }
           }
         }
 
-        if (topStartVotes > botStartVotes) startSideSignal++;
-        else if (botStartVotes > topStartVotes) startSideSignal--;
+        if (invadedThisGame) invadeGames++;
+        if (firstGank) {
+          firstGanksByLane[firstGank.lane]++;
+          firstGanksByLane.total++;
+          firstGankMinuteTotal += firstGank.minute;
+          firstGankGames++;
+        }
+        if (isJungler && topStartVotes > botStartVotes) startSideGames.top++;
+        else if (isJungler && botStartVotes > topStartVotes) startSideGames.bottom++;
+        else startSideGames.unknown++;
       }
     }
+
+    const conclusiveStarts = startSideGames.top + startSideGames.bottom;
+    const dominantStarts = Math.max(startSideGames.top, startSideGames.bottom);
+    const startSide = !isJungler || dominantStarts === 0
+      ? 'inconclusivo'
+      : startSideGames.top > startSideGames.bottom ? 'topo' : startSideGames.bottom > startSideGames.top ? 'baixo' : 'inconclusivo';
+    const laneFocus = (stats: { top: number; mid: number; bot: number }) => this.likelyGankFocus({ ...EMPTY_REGIONS, ...stats });
 
     return {
       games,
@@ -394,13 +571,28 @@ export class PlayerStatsService {
       fightRegions,
       deathRegions,
       objectiveFights,
-      invades,
-      startSide: startSideSignal > 0 ? 'topo' : startSideSignal < 0 ? 'baixo' : 'inconclusivo',
+      invades: invadeGames,
+      startSide,
       earlyGanksPerGame: games > 0 ? Math.round((earlyGanks / games) * 10) / 10 : 0,
       mostVisited: this.topRegionName(earlyPresence),
       mostFought: this.topRegionName(fightRegions),
       mostDeaths: this.topRegionName(deathRegions),
-      likelyGankFocus: this.likelyGankFocus(fightRegions),
+      likelyGankFocus: isJungler ? laneFocus(ganksByLane) : this.likelyGankFocus(fightRegions),
+      ganksByLane,
+      firstGanksByLane,
+      firstGankFocus: laneFocus(firstGanksByLane),
+      avgFirstGankMinute: firstGankGames ? Math.round((firstGankMinuteTotal / firstGankGames) * 10) / 10 : null,
+      roamsByLane,
+      roamsPerGame: games ? Math.round((earlyRoams / games) * 10) / 10 : 0,
+      roamFocus: laneFocus(roamsByLane),
+      invadeGames,
+      invadeRate: games ? Math.round((invadeGames / games) * 100) : 0,
+      startSideGames,
+      startSideConfidence: conclusiveStarts ? Math.round((dominantStarts / conclusiveStarts) * 100) : 0,
+      objectiveBreakdown,
+      wardsPlaced,
+      visionFocus: this.topRegionName(visionRegions),
+      sampleConfidence: games >= 10 ? 'alta' : games >= 6 ? 'media' : 'baixa',
     };
   }
 
@@ -481,9 +673,10 @@ export class PlayerStatsService {
       }
     };
 
-    add(solo.topChampions, 0.6);
-    add(flex.topChampions, 0.25);
-    add(clash.topChampions, 0.15);
+    // Para Clash, partidas coordenadas e Flex dizem mais sobre o draft que SoloQ.
+    add(solo.topChampions, 0.45);
+    add(flex.topChampions, 0.7);
+    add(clash.topChampions, 1);
 
     return [...scoreMap.values()]
       .sort((a, b) => b.score - a.score)

@@ -105,7 +105,48 @@ describe('PlayerStatsService', () => {
 
     const result = await service.buildFromPuuid(PUUID, new Map([[412, 'Thresh'], [81, 'Ezreal']]), 'UTILITY');
 
-    expect(result.clashHistory.games).toBe(2);
+    expect(result.clashHistory.games).toBe(1);
     expect(result.clashHistory.topChampions.map((c) => c.championName)).toEqual(['Thresh']);
+  });
+
+  it('builds a collective profile only from Clash matches shared by the current core', async () => {
+    const members = [
+      { puuid: 'p1', riotId: 'Top#BR1' },
+      { puuid: 'p2', riotId: 'Jungle#BR1' },
+      { puuid: 'p3', riotId: 'Mid#BR1' },
+    ];
+    riot.getMatchHistory.mockResolvedValue(['shared', 'individual']);
+    riot.getMatch.mockImplementation((id: string) => id === 'shared' ? Promise.resolve({
+      info: {
+        gameDuration: 1800,
+        participants: [
+          { puuid: 'p1', teamId: 100, win: true, kills: 5, deaths: 2, totalDamageDealtToChampions: 20_000 },
+          { puuid: 'p2', teamId: 100, win: true, kills: 3, deaths: 3, totalDamageDealtToChampions: 10_000 },
+          { puuid: 'p3', teamId: 100, win: true, kills: 7, deaths: 1, totalDamageDealtToChampions: 30_000 },
+        ],
+        teams: [{
+          teamId: 100,
+          win: true,
+          objectives: {
+            champion: { first: true }, tower: { first: true, kills: 8 },
+            dragon: { kills: 3 }, baron: { kills: 1 },
+          },
+        }],
+      },
+    }) : Promise.resolve(null));
+
+    const profile = await service.buildTeamTacticalProfile(members);
+
+    expect(profile).toMatchObject({
+      games: 1,
+      winrate: 100,
+      avgDurationMinutes: 30,
+      avgKills: 15,
+      avgDeaths: 6,
+      avgDragons: 3,
+      mainCarry: 'Mid#BR1',
+      mainCarryDamageShare: 50,
+      sampleConfidence: 'baixa',
+    });
   });
 });

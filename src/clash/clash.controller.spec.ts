@@ -110,7 +110,7 @@ describe('ClashController', () => {
 
       const result = await controller.retryAiAnalysis({ players });
 
-      expect(service.retryAiAnalysis).toHaveBeenCalledWith(players);
+      expect(service.retryAiAnalysis).toHaveBeenCalledWith(players, undefined);
       expect(service.scout).not.toHaveBeenCalled();
       expect(result.aiGenerated).toBe(true);
     });

@@ -1,6 +1,6 @@
 import { Injectable, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
 import { RiotService } from '../riot/riot.service';
-import { AiService, FullPlayerData, AiAnalysis } from '../ai/ai.service';
+import { AiService, FullPlayerData, AiAnalysis, TeamTacticalProfile } from '../ai/ai.service';
 import { PlayerStatsService } from '../playerStats/player-stats.service';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -25,8 +25,7 @@ export class ClashService {
     private readonly prisma: PrismaService,
   ) {}
 
-  // deep=true ativa a análise de timeline (mapa de gank/mortes/invades) —
-  // custa ~8 requisições extras por jogador, então é opt-in.
+  // deep=true ativa a análise de timeline (ganks, roams, mortes, visão e objetivos).
   async scout(gameName: string, tagLine: string, onProgress?: ScoutProgressFn, deep = false) {
     const report = (stage: string, message: string, percent: number, current?: number, total?: number) =>
       onProgress?.({ stage, message, percent, current, total });
@@ -44,6 +43,7 @@ export class ClashService {
     const championMap = await this.riotService.getChampionIdNameMap();
 
     const players: FullPlayerData[] = [];
+    const profiledMembers: { puuid: string; riotId: string }[] = [];
     const members = team.players as { puuid: string; position: string }[];
     const total = members.length;
 
@@ -58,18 +58,19 @@ export class ClashService {
         total,
       );
       try {
-        players.push(
-          await this.playerStatsService.buildFromPuuid(member.puuid, championMap, member.position, undefined, deep),
-        );
+        const player = await this.playerStatsService.buildFromPuuid(member.puuid, championMap, member.position, undefined, deep);
+        players.push(player);
+        profiledMembers.push({ puuid: member.puuid, riotId: player.riotId });
       } catch (err) {
         this.logger.warn(`Falha ao processar ${member.puuid}: ${(err as any)?.message}`);
       }
     }
 
     report('ai', 'Gerando recomendações de ban e estratégia com IA...', 90);
+    const teamProfile = await this.playerStatsService.buildTeamTacticalProfile(profiledMembers);
     let analysis: AiAnalysis = { generatedByAi: false, bans: [], counterplays: [], predictedPicks: [], strategy: '' };
     try {
-      analysis = await this.aiService.analyzeOpponents(players);
+      analysis = await this.aiService.analyzeOpponents(players, false, teamProfile);
     } catch (err) {
       this.logger.warn('Falha na análise de IA', err);
     }
@@ -83,12 +84,13 @@ export class ClashService {
         tier: team.tier ?? 0,
       },
       players,
+      teamProfile,
       ...this.publicAiAnalysis(analysis),
     };
   }
 
-  async retryAiAnalysis(players: FullPlayerData[]) {
-    const analysis = await this.aiService.analyzeOpponents(players, true);
+  async retryAiAnalysis(players: FullPlayerData[], teamProfile?: TeamTacticalProfile) {
+    const analysis = await this.aiService.analyzeOpponents(players, true, teamProfile);
     return this.publicAiAnalysis(analysis);
   }
 
