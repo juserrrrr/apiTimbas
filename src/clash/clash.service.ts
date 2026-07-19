@@ -40,7 +40,7 @@ export class ClashService {
       throw new BadRequestException(`${gameName}#${tagLine} não está registrado em nenhum time de Clash ativo.`);
     }
 
-    const team = await this.riotService.getClashTeam(clashPlayers[0].teamId);
+    const team = await this.resolveCurrentClashTeam(clashPlayers);
     const championMap = await this.riotService.getChampionIdNameMap();
 
     const players: FullPlayerData[] = [];
@@ -67,7 +67,7 @@ export class ClashService {
     }
 
     report('ai', 'Gerando recomendações de ban e estratégia com IA...', 90);
-    let analysis: AiAnalysis = { bans: [], counterplays: [], predictedPicks: [], strategy: '' };
+    let analysis: AiAnalysis = { generatedByAi: false, bans: [], counterplays: [], predictedPicks: [], strategy: '' };
     try {
       analysis = await this.aiService.analyzeOpponents(players);
     } catch (err) {
@@ -83,12 +83,13 @@ export class ClashService {
         tier: team.tier ?? 0,
       },
       players,
-      bans: analysis.bans,
-      counterplays: analysis.counterplays,
-      predictedPicks: analysis.predictedPicks,
-      strategy: analysis.strategy,
-      gamePlan: analysis.gamePlan,
+      ...this.publicAiAnalysis(analysis),
     };
+  }
+
+  async retryAiAnalysis(players: FullPlayerData[]) {
+    const analysis = await this.aiService.analyzeOpponents(players, true);
+    return this.publicAiAnalysis(analysis);
   }
 
   async saveAnalysis(data: any): Promise<{ id: string }> {
@@ -124,5 +125,62 @@ export class ClashService {
         deep: meta.deep === true,
       };
     });
+  }
+
+  private async resolveCurrentClashTeam(clashPlayers: any[]): Promise<any> {
+    const teamIds = [...new Set(
+      clashPlayers
+        .map((player) => String(player?.teamId ?? '').trim())
+        .filter(Boolean),
+    )];
+
+    const teamResults = await Promise.allSettled(
+      teamIds.map((teamId) => this.riotService.getClashTeam(teamId)),
+    );
+    const teams = teamResults
+      .filter((result): result is PromiseFulfilledResult<any> => result.status === 'fulfilled')
+      .map((result) => result.value);
+
+    if (!teams.length) {
+      throw new NotFoundException('Nenhum time de Clash válido foi encontrado para esse jogador.');
+    }
+    if (teams.length === 1) return teams[0];
+
+    const tournaments = await this.riotService.getClashTournaments();
+    const tournamentOrder = new Map<string, number>();
+    for (const tournament of tournaments) {
+      const starts = (tournament?.schedule ?? [])
+        .map((schedule: any) => Number(schedule?.startTime))
+        .filter((startTime: number) => Number.isFinite(startTime));
+      tournamentOrder.set(
+        String(tournament?.id),
+        starts.length ? Math.min(...starts) : Number.MAX_SAFE_INTEGER,
+      );
+    }
+
+    const activeTeams = teams
+      .filter((candidate) => tournamentOrder.has(String(candidate?.tournamentId)))
+      .sort((a, b) => (
+        tournamentOrder.get(String(a?.tournamentId))!
+        - tournamentOrder.get(String(b?.tournamentId))!
+      ));
+
+    if (activeTeams.length) return activeTeams[0];
+
+    this.logger.warn(
+      `Jogador possui ${teams.length} times de Clash, mas nenhum corresponde aos torneios ativos; usando o primeiro retornado pela Riot.`,
+    );
+    return teams[0];
+  }
+
+  private publicAiAnalysis(analysis: AiAnalysis) {
+    return {
+      aiGenerated: analysis.generatedByAi,
+      bans: analysis.generatedByAi ? analysis.bans : [],
+      counterplays: analysis.generatedByAi ? analysis.counterplays : [],
+      predictedPicks: analysis.generatedByAi ? analysis.predictedPicks : [],
+      strategy: analysis.generatedByAi ? analysis.strategy : '',
+      gamePlan: analysis.generatedByAi ? analysis.gamePlan : undefined,
+    };
   }
 }

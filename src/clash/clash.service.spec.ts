@@ -50,6 +50,7 @@ const mockRiot = () => ({
   getAccount: jest.fn(),
   getClashPlayersByPuuid: jest.fn(),
   getClashTeam: jest.fn(),
+  getClashTournaments: jest.fn().mockResolvedValue([]),
   getAccountByPuuid: jest.fn(),
   getSummonerByPuuid: jest.fn(),
   getSummonerById: jest.fn(),
@@ -64,6 +65,7 @@ const mockRiot = () => ({
 
 const mockAi = () => ({
   analyzeOpponents: jest.fn().mockResolvedValue({
+    generatedByAi: true,
     bans: [{ championId: 1, championName: 'Annie', targetPlayer: 'Player1#BR1', reason: 'High WR', priority: 1 }],
     counterplays: [],
     predictedPicks: [],
@@ -147,6 +149,27 @@ describe('ClashService', () => {
       });
     });
 
+    it('selects the team registered for the next active Clash tournament', async () => {
+      const oldTeam = { ...TEAM_DTO, id: 'team-old', tournamentId: 99, name: 'Old Team' };
+      const activeTeam = { ...TEAM_DTO, id: 'team-active', tournamentId: 101, name: 'Active Team' };
+      setupHappy();
+      riot.getClashPlayersByPuuid.mockResolvedValue([
+        { puuid: PUUID, teamId: oldTeam.id },
+        { puuid: PUUID, teamId: activeTeam.id },
+      ]);
+      riot.getClashTeam.mockImplementation((teamId: string) => Promise.resolve(
+        teamId === activeTeam.id ? activeTeam : oldTeam,
+      ));
+      riot.getClashTournaments.mockResolvedValue([
+        { id: 101, schedule: [{ startTime: Date.now() + 60_000 }] },
+      ]);
+
+      const result = await service.scout(GAME_NAME, TAG_LINE);
+
+      expect(result.team.id).toBe(activeTeam.id);
+      expect(result.team.name).toBe('Active Team');
+    });
+
     it('returns 5 processed players', async () => {
       setupHappy();
 
@@ -208,6 +231,27 @@ describe('ClashService', () => {
       expect(ai.analyzeOpponents).toHaveBeenCalled();
       expect(result.bans).toHaveLength(1);
       expect(result.strategy).toBe('Poke and objective control.');
+    });
+
+    it('does not expose statistical fallback as AI analysis', async () => {
+      setupHappy();
+      ai.analyzeOpponents.mockResolvedValue({
+        generatedByAi: false,
+        bans: [{ championId: 1, championName: 'Annie' }],
+        counterplays: [{ riotId: 'Player1#BR1' }],
+        predictedPicks: [{ riotId: 'Player1#BR1' }],
+        strategy: 'Gemini indisponível; análise gerada pelos dados recentes.',
+        gamePlan: { winCondition: 'fallback' },
+      });
+
+      const result = await service.scout(GAME_NAME, TAG_LINE);
+
+      expect(result.aiGenerated).toBe(false);
+      expect(result.bans).toEqual([]);
+      expect(result.counterplays).toEqual([]);
+      expect(result.predictedPicks).toEqual([]);
+      expect(result.strategy).toBe('');
+      expect(result.gamePlan).toBeUndefined();
     });
 
     it('keeps a player with fallback summoner data when summoner lookup fails', async () => {

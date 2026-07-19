@@ -280,6 +280,14 @@ export class RiotService {
     }
   }
 
+  async getClashTournaments(): Promise<any[]> {
+    try {
+      return await this.riotGet<any[]>(`${BR1_BASE}/lol/clash/v1/tournaments`);
+    } catch {
+      return [];
+    }
+  }
+
   async getMatchHistory(puuid: string, count = 20, queueId?: number): Promise<string[]> {
     try {
       let url = `${AMERICAS_BASE}/lol/match/v5/matches/by-puuid/${puuid}/ids?start=0&count=${count}`;

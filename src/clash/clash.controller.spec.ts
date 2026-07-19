@@ -25,11 +25,11 @@ const QUEUED_JOB = {
 
 describe('ClashController', () => {
   let controller: ClashController;
-  let service: jest.Mocked<Pick<ClashService, 'scout'>>;
+  let service: jest.Mocked<Pick<ClashService, 'scout' | 'retryAiAnalysis'>>;
   let queue: jest.Mocked<Pick<ScoutQueueService, 'enqueue' | 'getJob'>>;
 
   beforeEach(async () => {
-    service = { scout: jest.fn() };
+    service = { scout: jest.fn(), retryAiAnalysis: jest.fn() };
     queue = { enqueue: jest.fn(), getJob: jest.fn() };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -100,6 +100,23 @@ describe('ClashController', () => {
 
       expect(queue.getJob).toHaveBeenCalledWith('job-1');
       expect((result as any).result).toEqual(SCOUT_RESULT);
+    });
+  });
+
+  describe('retryAiAnalysis', () => {
+    it('reuses collected players without running another Riot scout', async () => {
+      const players = [{ riotId: 'Player#BR1' }] as any;
+      service.retryAiAnalysis.mockResolvedValue({ aiGenerated: true } as any);
+
+      const result = await controller.retryAiAnalysis({ players });
+
+      expect(service.retryAiAnalysis).toHaveBeenCalledWith(players);
+      expect(service.scout).not.toHaveBeenCalled();
+      expect(result.aiGenerated).toBe(true);
+    });
+
+    it('rejects an empty player list', async () => {
+      await expect(controller.retryAiAnalysis({ players: [] })).rejects.toThrow(BadRequestException);
     });
   });
 

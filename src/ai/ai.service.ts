@@ -4,7 +4,7 @@ import { createHash } from 'crypto';
 
 const GEMINI_CACHE_TTL_MS = 30 * 60 * 1000;
 const GEMINI_FALLBACK_CACHE_TTL_MS = 2 * 60 * 1000;
-const GEMINI_MAX_RETRIES = 1;
+const GEMINI_MAX_RETRIES = 2;
 const GEMINI_MAX_RETRY_DELAY_MS = 65_000;
 
 // ─── Input types ─────────────────────────────────────────────────────────────
@@ -137,6 +137,7 @@ export interface GamePlan {
 }
 
 export interface AiAnalysis {
+  generatedByAi: boolean;
   bans: BanSuggestion[];
   counterplays: CounterplayAdvice[];
   predictedPicks: PredictedPick[];
@@ -182,14 +183,16 @@ export class AiService {
     this.logger.log(`AiService ready — model=${this.geminiModel}`);
   }
 
-  async analyzeOpponents(players: FullPlayerData[]): Promise<AiAnalysis> {
-    const empty: AiAnalysis = { bans: [], counterplays: [], predictedPicks: [], strategy: '' };
+  async analyzeOpponents(players: FullPlayerData[], force = false): Promise<AiAnalysis> {
+    const empty: AiAnalysis = { generatedByAi: false, bans: [], counterplays: [], predictedPicks: [], strategy: '' };
     if (!this.geminiApiKey) {
       return { ...empty, strategy: 'Configure GEMINI_API_KEY para ativar análise de IA.' };
     }
     const cacheKey = this.buildAnalysisCacheKey(players);
-    const cached = this.getCachedAnalysis(cacheKey);
-    if (cached) return cached;
+    if (!force) {
+      const cached = this.getCachedAnalysis(cacheKey);
+      if (cached) return cached;
+    }
 
     const expectedPlayers = players.length;
     const expectedBans = Math.min(10, Math.max(5, expectedPlayers * 2));
@@ -345,7 +348,7 @@ Regras:
             'Content-Type': 'application/json',
             'x-goog-api-key': this.geminiApiKey,
           },
-          timeout: 30000,
+          timeout: 60000,
           transformResponse: [(data: string) => data],
         },
       );
@@ -432,7 +435,7 @@ Responda APENAS JSON valido:
             'Content-Type': 'application/json',
             'x-goog-api-key': this.geminiApiKey,
           },
-          timeout: 30000,
+          timeout: 60000,
           transformResponse: [(data: string) => data],
         },
       );
@@ -484,7 +487,7 @@ Responda APENAS com o texto do resumo, sem aspas, sem markdown.`;
         },
         {
           headers: { 'Content-Type': 'application/json', 'x-goog-api-key': this.geminiApiKey },
-          timeout: 20000,
+          timeout: 60000,
           transformResponse: [(data: string) => data],
         },
       );
@@ -517,13 +520,21 @@ Responda APENAS com o texto do resumo, sem aspas, sem markdown.`;
         return await axios.post(url, body, config);
       } catch (err) {
         const status = (err as any)?.response?.status;
-        const retryDelayMs = this.getGeminiRetryDelayMs(err);
-        if (status !== 429 || attempt === GEMINI_MAX_RETRIES || retryDelayMs > GEMINI_MAX_RETRY_DELAY_MS) {
+        const code = (err as any)?.code;
+        const isTransient = status === 408
+          || status === 429
+          || (typeof status === 'number' && status >= 500)
+          || code === 'ECONNABORTED'
+          || code === 'ETIMEDOUT';
+        const retryDelayMs = status === 429
+          ? this.getGeminiRetryDelayMs(err)
+          : Math.min(8_000, (2 ** attempt) * 1_000 + Math.floor(Math.random() * 500));
+        if (!isTransient || attempt === GEMINI_MAX_RETRIES || retryDelayMs > GEMINI_MAX_RETRY_DELAY_MS) {
           throw err;
         }
 
-        this.geminiBlockedUntil = Date.now() + retryDelayMs;
-        this.logger.warn(`[AI] Gemini 429; aguardando ${Math.ceil(retryDelayMs / 1000)}s antes de tentar novamente`);
+        if (status === 429) this.geminiBlockedUntil = Date.now() + retryDelayMs;
+        this.logger.warn(`[AI] Gemini status=${status ?? code ?? 'rede'}; nova tentativa em ${Math.ceil(retryDelayMs / 1000)}s`);
         await this.wait(retryDelayMs);
       }
     }
@@ -667,13 +678,13 @@ Responda APENAS com o texto do resumo, sem aspas, sem markdown.`;
   private parseAnalysis(text: string, players: FullPlayerData[]): AiAnalysis {
     const stripped = this.stripJsonFence(text);
     try {
-      return JSON.parse(stripped) as AiAnalysis;
+      return { ...(JSON.parse(stripped) as AiAnalysis), generatedByAi: true };
     } catch {
       const start = stripped.indexOf('{');
       const end = stripped.lastIndexOf('}');
       if (start >= 0 && end > start) {
         try {
-          return JSON.parse(stripped.slice(start, end + 1)) as AiAnalysis;
+          return { ...(JSON.parse(stripped.slice(start, end + 1)) as AiAnalysis), generatedByAi: true };
         } catch {
           return this.buildStatAnalysis(players, 'Gemini retornou JSON inválido; análise gerada pelos dados recentes.');
         }
@@ -830,7 +841,7 @@ Responda APENAS com o texto do resumo, sem aspas, sem markdown.`;
     const playerCount = players.length;
     const strategy = `${strategyPrefix} ${playerCount} jogador(es) processado(s). Priorize bans nos campeões com mais jogos, maior winrate e presença em Clash/Flex; trate rotas divergentes como possibilidade de flex no draft.`;
 
-    return { bans, counterplays, predictedPicks, strategy, gamePlan: this.buildStatGamePlan(players) };
+    return { generatedByAi: false, bans, counterplays, predictedPicks, strategy, gamePlan: this.buildStatGamePlan(players) };
   }
 
   // Plano de jogo por estatística pura — usado quando o Gemini está indisponível.
