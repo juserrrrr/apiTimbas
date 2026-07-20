@@ -67,21 +67,29 @@ const EMPTY_MAP_PROFILE: MapProfile = {
   invades: 0,
   startSide: 'inconclusivo',
   earlyGanksPerGame: 0,
+  gankWindowsPerGame: 0,
   mostVisited: 'inconclusivo',
   mostFought: 'inconclusivo',
   mostDeaths: 'inconclusivo',
   likelyGankFocus: 'inconclusivo',
+  gankFocusShare: 0,
+  gankPattern: 'inconclusivo',
   ganksByLane: { top: 0, mid: 0, bot: 0, total: 0 },
   firstGanksByLane: { top: 0, mid: 0, bot: 0, total: 0 },
   firstGankFocus: 'inconclusivo',
+  firstGankFocusShare: 0,
+  firstGankPattern: 'inconclusivo',
   avgFirstGankMinute: null,
   roamsByLane: { top: 0, mid: 0, bot: 0, total: 0 },
   roamsPerGame: 0,
   roamFocus: 'inconclusivo',
+  roamFocusShare: 0,
+  roamPattern: 'inconclusivo',
   invadeGames: 0,
   invadeRate: 0,
   startSideGames: { top: 0, bottom: 0, unknown: 0 },
   startSideConfidence: 0,
+  startSideEvidenceGames: 0,
   objectiveBreakdown: { dragons: 0, barons: 0, heralds: 0, other: 0 },
   wardsPlaced: 0,
   visionFocus: 'inconclusivo',
@@ -89,7 +97,8 @@ const EMPTY_MAP_PROFILE: MapProfile = {
 };
 
 // Janela de posição usada apenas como sinal probabilístico do lado inicial.
-const START_SIDE_WINDOW_MS: [number, number] = [60_000, 165_000];
+const START_SIDE_WINDOW_MS: [number, number] = [90_000, 150_000];
+const MAP_ACTION_CLUSTER_MS = 90_000;
 const LANE_REGIONS = new Set(['top', 'mid', 'bot']);
 const EARLY_PHASE_MAX_MINUTE = 14;
 
@@ -105,8 +114,9 @@ export class PlayerStatsService {
     const histories = await Promise.all(members.map((member) => this.riotService.getMatchHistory(member.puuid, MATCH_HISTORY_COUNTS.CLASH, 700)));
     const frequency = new Map<string, number>();
     for (const ids of histories) for (const id of new Set(ids)) frequency.set(id, (frequency.get(id) ?? 0) + 1);
+    const lineupPlayers = members.length;
     const sharedIds = [...frequency.entries()]
-      .filter(([, count]) => count >= 3)
+      .filter(([, count]) => count === lineupPlayers)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 10)
       .map(([id]) => id);
@@ -121,12 +131,12 @@ export class PlayerStatsService {
     for (const matchId of sharedIds) {
       const match = await this.riotService.getMatch(matchId);
       const participants = (match?.info?.participants ?? []).filter((participant: any) => puuids.has(participant.puuid));
-      if (participants.length < 3) continue;
+      if (participants.length !== lineupPlayers) continue;
       const teamCounts = new Map<number, number>();
       for (const participant of participants) teamCounts.set(participant.teamId, (teamCounts.get(participant.teamId) ?? 0) + 1);
       const teamId = [...teamCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
       const teamMembers = participants.filter((participant: any) => participant.teamId === teamId);
-      if (teamMembers.length < 3) continue;
+      if (teamMembers.length !== lineupPlayers) continue;
       const team = (match.info?.teams ?? []).find((candidate: any) => candidate.teamId === teamId);
       const enemyTeam = (match.info?.teams ?? []).find((candidate: any) => candidate.teamId !== teamId);
       games++;
@@ -165,6 +175,7 @@ export class PlayerStatsService {
       mainCarry: riotIdByPuuid.get(carryPuuid) ?? 'inconclusivo',
       mainCarryDamageShare: teamDamage ? Math.round((carryDamage / teamDamage) * 100) : 0,
       sampleConfidence: games >= 8 ? 'alta' : games >= 4 ? 'media' : 'baixa',
+      lineupPlayers,
     };
   }
 
@@ -484,10 +495,10 @@ export class PlayerStatsService {
         if (!participant || !participantId || !timeline?.info?.frames?.length) continue;
         games++;
 
-        let topStartVotes = 0;
-        let botStartVotes = 0;
         let invadedThisGame = false;
-        let firstGank: { lane: 'top' | 'mid' | 'bot'; minute: number } | null = null;
+        let observedStartSide: 'topo' | 'baixo' | null = null;
+        const jungleActions: { lane: 'top' | 'mid' | 'bot'; timestamp: number }[] = [];
+        const roamActions: { lane: 'top' | 'mid' | 'bot'; timestamp: number }[] = [];
 
         for (const frame of timeline.info.frames) {
           const frameTs = frame.timestamp ?? 0;
@@ -500,10 +511,8 @@ export class PlayerStatsService {
             if (region === 'enemyJungle') invadedThisGame = true;
           }
 
-          // Rota inicial: acima da diagonal (y > x) = metade superior do mapa
-          if (position && frameTs >= START_SIDE_WINDOW_MS[0] && frameTs <= START_SIDE_WINDOW_MS[1]) {
-            if (position.y > position.x + 800) topStartVotes++;
-            else if (position.x > position.y + 800) botStartVotes++;
+          if (isJungler && !observedStartSide && position && frameTs >= START_SIDE_WINDOW_MS[0] && frameTs <= START_SIDE_WINDOW_MS[1]) {
+            observedStartSide = this.inferJungleStartSide(position.x, position.y, participant.teamId);
           }
 
           for (const event of frame.events ?? []) {
@@ -515,14 +524,9 @@ export class PlayerStatsService {
               if (involved && eventMinute <= EARLY_PHASE_MAX_MINUTE && LANE_REGIONS.has(region)) {
                 const lane = region as 'top' | 'mid' | 'bot';
                 if (isJungler) {
-                  earlyGanks++;
-                  ganksByLane[lane]++;
-                  ganksByLane.total++;
-                  if (!firstGank) firstGank = { lane, minute: (event.timestamp ?? frameTs) / 60000 };
+                  jungleActions.push({ lane, timestamp: event.timestamp ?? frameTs });
                 } else if (homeLane && lane !== homeLane) {
-                  earlyRoams++;
-                  roamsByLane[lane]++;
-                  roamsByLane.total++;
+                  roamActions.push({ lane, timestamp: event.timestamp ?? frameTs });
                 }
               }
               if (event.victimId === participantId) deathRegions[region]++;
@@ -546,24 +550,40 @@ export class PlayerStatsService {
         }
 
         if (invadedThisGame) invadeGames++;
+        const gankWindows = this.clusterMapActions(jungleActions);
+        const roamWindows = this.clusterMapActions(roamActions);
+        earlyGanks += gankWindows.length;
+        earlyRoams += roamWindows.length;
+        for (const action of gankWindows) {
+          ganksByLane[action.lane]++;
+          ganksByLane.total++;
+        }
+        for (const action of roamWindows) {
+          roamsByLane[action.lane]++;
+          roamsByLane.total++;
+        }
+        const firstGank = gankWindows[0];
         if (firstGank) {
           firstGanksByLane[firstGank.lane]++;
           firstGanksByLane.total++;
-          firstGankMinuteTotal += firstGank.minute;
+          firstGankMinuteTotal += firstGank.timestamp / 60000;
           firstGankGames++;
         }
-        if (isJungler && topStartVotes > botStartVotes) startSideGames.top++;
-        else if (isJungler && botStartVotes > topStartVotes) startSideGames.bottom++;
+        if (observedStartSide === 'topo') startSideGames.top++;
+        else if (observedStartSide === 'baixo') startSideGames.bottom++;
         else startSideGames.unknown++;
       }
     }
 
     const conclusiveStarts = startSideGames.top + startSideGames.bottom;
     const dominantStarts = Math.max(startSideGames.top, startSideGames.bottom);
-    const startSide = !isJungler || dominantStarts === 0
+    const rawStartConfidence = games ? Math.round((dominantStarts / games) * 100) : 0;
+    const startSide = !isJungler || conclusiveStarts < 4 || rawStartConfidence < 60
       ? 'inconclusivo'
       : startSideGames.top > startSideGames.bottom ? 'topo' : startSideGames.bottom > startSideGames.top ? 'baixo' : 'inconclusivo';
-    const laneFocus = (stats: { top: number; mid: number; bot: number }) => this.likelyGankFocus({ ...EMPTY_REGIONS, ...stats });
+    const gankTendency = this.buildLaneTendency(ganksByLane);
+    const firstGankTendency = this.buildLaneTendency(firstGanksByLane);
+    const roamTendency = this.buildLaneTendency(roamsByLane);
 
     return {
       games,
@@ -574,26 +594,69 @@ export class PlayerStatsService {
       invades: invadeGames,
       startSide,
       earlyGanksPerGame: games > 0 ? Math.round((earlyGanks / games) * 10) / 10 : 0,
+      gankWindowsPerGame: games > 0 ? Math.round((earlyGanks / games) * 10) / 10 : 0,
       mostVisited: this.topRegionName(earlyPresence),
       mostFought: this.topRegionName(fightRegions),
       mostDeaths: this.topRegionName(deathRegions),
-      likelyGankFocus: isJungler ? laneFocus(ganksByLane) : this.likelyGankFocus(fightRegions),
+      likelyGankFocus: isJungler ? gankTendency.focus : this.likelyGankFocus(fightRegions),
+      gankFocusShare: gankTendency.share,
+      gankPattern: gankTendency.pattern,
       ganksByLane,
       firstGanksByLane,
-      firstGankFocus: laneFocus(firstGanksByLane),
+      firstGankFocus: firstGankTendency.focus,
+      firstGankFocusShare: firstGankTendency.share,
+      firstGankPattern: firstGankTendency.pattern,
       avgFirstGankMinute: firstGankGames ? Math.round((firstGankMinuteTotal / firstGankGames) * 10) / 10 : null,
       roamsByLane,
       roamsPerGame: games ? Math.round((earlyRoams / games) * 10) / 10 : 0,
-      roamFocus: laneFocus(roamsByLane),
+      roamFocus: roamTendency.focus,
+      roamFocusShare: roamTendency.share,
+      roamPattern: roamTendency.pattern,
       invadeGames,
       invadeRate: games ? Math.round((invadeGames / games) * 100) : 0,
       startSideGames,
-      startSideConfidence: conclusiveStarts ? Math.round((dominantStarts / conclusiveStarts) * 100) : 0,
+      startSideConfidence: rawStartConfidence,
+      startSideEvidenceGames: conclusiveStarts,
       objectiveBreakdown,
       wardsPlaced,
       visionFocus: this.topRegionName(visionRegions),
       sampleConfidence: games >= 10 ? 'alta' : games >= 6 ? 'media' : 'baixa',
     };
+  }
+
+  private clusterMapActions(actions: { lane: 'top' | 'mid' | 'bot'; timestamp: number }[]) {
+    const windows: { lane: 'top' | 'mid' | 'bot'; timestamp: number }[] = [];
+    const windowStartByLane = new Map<string, number>();
+    for (const action of actions.sort((a, b) => a.timestamp - b.timestamp)) {
+      const windowStart = windowStartByLane.get(action.lane);
+      if (windowStart === undefined || action.timestamp - windowStart > MAP_ACTION_CLUSTER_MS) {
+        windows.push(action);
+        windowStartByLane.set(action.lane, action.timestamp);
+      }
+    }
+    return windows;
+  }
+
+  private inferJungleStartSide(x: number, y: number, teamId: number): 'topo' | 'baixo' | null {
+    if (this.classifyMapRegion(x, y, teamId) !== 'alliedJungle') return null;
+    if ((teamId === 100 && x + y < 4000) || (teamId === 200 && x + y > 26000)) return null;
+    if (y > x + 700) return 'topo';
+    if (x > y + 700) return 'baixo';
+    return null;
+  }
+
+  private buildLaneTendency(stats: { top: number; mid: number; bot: number; total: number }): {
+    focus: string;
+    share: number;
+    pattern: 'focado' | 'distribuido' | 'inconclusivo';
+  } {
+    if (stats.total < 3) return { focus: 'inconclusivo', share: 0, pattern: 'inconclusivo' };
+    const ranked = ([['top', stats.top], ['mid', stats.mid], ['bot', stats.bot]] as [string, number][])
+      .sort((a, b) => b[1] - a[1]);
+    const share = Math.round((ranked[0][1] / stats.total) * 100);
+    const gap = Math.round(((ranked[0][1] - ranked[1][1]) / stats.total) * 100);
+    if (share < 45 || gap < 10) return { focus: ranked[0][0], share, pattern: 'distribuido' };
+    return { focus: ranked[0][0], share, pattern: 'focado' };
   }
 
   private emptyRegions(): MapRegionStats {

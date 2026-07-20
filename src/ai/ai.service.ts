@@ -73,22 +73,30 @@ export interface MapProfile {
   objectiveFights: number;
   invades: number;
   startSide: string; // 'topo' | 'baixo' | 'inconclusivo' — lado do 1º clear
-  earlyGanksPerGame: number; // kills/assists em lanes antes dos 14min, por jogo
+  earlyGanksPerGame: number; // compatibilidade: janelas de pressão com abate antes dos 14min
+  gankWindowsPerGame: number;
   mostVisited: string;
   mostFought: string;
   mostDeaths: string;
   likelyGankFocus: string;
+  gankFocusShare: number;
+  gankPattern: 'focado' | 'distribuido' | 'inconclusivo';
   ganksByLane: LaneActivityStats;
   firstGanksByLane: LaneActivityStats;
   firstGankFocus: string;
+  firstGankFocusShare: number;
+  firstGankPattern: 'focado' | 'distribuido' | 'inconclusivo';
   avgFirstGankMinute: number | null;
   roamsByLane: LaneActivityStats;
   roamsPerGame: number;
   roamFocus: string;
+  roamFocusShare: number;
+  roamPattern: 'focado' | 'distribuido' | 'inconclusivo';
   invadeGames: number;
   invadeRate: number;
   startSideGames: { top: number; bottom: number; unknown: number };
   startSideConfidence: number;
+  startSideEvidenceGames: number;
   objectiveBreakdown: ObjectiveActivityStats;
   wardsPlaced: number;
   visionFocus: string;
@@ -134,6 +142,7 @@ export interface TeamTacticalProfile {
   mainCarry: string;
   mainCarryDamageShare: number;
   sampleConfidence: 'baixa' | 'media' | 'alta';
+  lineupPlayers: number;
 }
 
 // ─── Output types ─────────────────────────────────────────────────────────────
@@ -297,15 +306,16 @@ ${JSON.stringify(
           confiancaAmostra: p.mapProfile.sampleConfidence,
           rotaInicial: p.position === 'JUNGLE' ? p.mapProfile.startSide : 'nao se aplica',
           confiancaRotaInicialPct: p.mapProfile.startSideConfidence,
-          ganksEarlyPorJogo: p.mapProfile.earlyGanksPerGame,
+          jogosComSinalRotaInicial: p.mapProfile.startSideEvidenceGames ?? 0,
+          jogadasPressaoEarlyPorJogo: p.mapProfile.gankWindowsPerGame ?? p.mapProfile.earlyGanksPerGame,
           ganksPorRota: p.mapProfile.ganksByLane,
-          primeiroGank: { rota: p.mapProfile.firstGankFocus, minutoMedio: p.mapProfile.avgFirstGankMinute, amostra: p.mapProfile.firstGanksByLane },
-          roamsPorJogo: p.mapProfile.roamsPerGame,
-          roamsPorRota: p.mapProfile.roamsByLane,
+          tendenciaPressao: { rotaComMaiorParcela: p.mapProfile.likelyGankFocus, parcelaPct: p.mapProfile.gankFocusShare ?? 0, padrao: p.mapProfile.gankPattern ?? 'inconclusivo' },
+          primeiraPressaoComAbate: { rota: p.mapProfile.firstGankFocus, parcelaPct: p.mapProfile.firstGankFocusShare, padrao: p.mapProfile.firstGankPattern, minutoMedio: p.mapProfile.avgFirstGankMinute, amostra: p.mapProfile.firstGanksByLane },
+          jogadasForaDaRotaPorJogo: p.mapProfile.roamsPerGame,
+          jogadasForaDaRota: { porRota: p.mapProfile.roamsByLane, maiorParcela: p.mapProfile.roamFocus, parcelaPct: p.mapProfile.roamFocusShare, padrao: p.mapProfile.roamPattern },
           presencaInicial: p.mapProfile.mostVisited,
           lutaMaisEm: p.mapProfile.mostFought,
           morreMaisEm: p.mapProfile.mostDeaths,
-          focoGankPressao: p.mapProfile.likelyGankFocus,
           invadeEmJogosPct: p.mapProfile.invadeRate,
           participacoesEmObjetivos: p.mapProfile.objectiveBreakdown,
           visao: { wards: p.mapProfile.wardsPlaced, foco: p.mapProfile.visionFocus },
@@ -347,7 +357,7 @@ Responda APENAS com JSON válido, sem markdown, sem texto fora do JSON:
   "strategy": "Resumo da estratégia geral do time adversário em 2-3 frases (português)",
   "gamePlan": {
     "winCondition": "como VENCER este time: 2-3 frases objetivas e acionáveis (português)",
-    "earlyGame": "plano de early game baseado somente nos padrões observados dos adversários: rota inicial do jungler, foco de gank, invade e lane vulnerável quando houver evidência (máx 220 chars)",
+    "earlyGame": "plano baseado somente nos padrões observados: lado inicial provável, distribuição da pressão, invade e lane vulnerável quando houver evidência (máx 220 chars)",
     "teamfight": "como jogar as teamfights contra eles: quem focar, o que evitar (máx 200 chars)",
     "damageProfile": "perfil de dano provável da comp (AD/AP/misto) e dica de itemização defensiva (máx 160 chars)",
     "focusTarget": "riotId EXATO do jogador mais perigoso (o carry a focar/negar recursos)",
@@ -361,11 +371,15 @@ Responda APENAS com JSON válido, sem markdown, sem texto fora do JSON:
 Regras:
 - Use apenas riotIds e campeoes presentes nos dados. Para bans, championId e championName devem vir de candidatosDraftCalculados do jogador alvo; nunca crie IDs ou picks externos.
 - Campos medidos são FATOS da amostra. Recomendações, rota provável e comportamento futuro são INFERÊNCIAS; use "tende", "provável" ou "estimado" quando a confiança não for alta.
+- Cada afirmação comportamental deve citar ao menos um número recebido (jogos, percentual, KDA, mortes, minuto ou distribuição). Não use "agressivo", "morre muito", "boa visão" ou "rouba objetivos" sem a métrica correspondente.
+- jogadasPressaoEarlyPorJogo agrupa kills/assists da mesma rota em janelas de 90 segundos; é proxy de pressão com abate, não contagem exata de ganks. jogadasForaDaRota é proxy de participação fora da lane, não prova de roam deliberado.
+- Se tendenciaPressao.padrao for "distribuido", diga que a pressão é distribuída e apenas mencione a rota de maior parcela como tendência leve. Não chame essa rota de foco.
+- Só cite rotaInicial quando ela não for "inconclusivo"; informe também confiancaRotaInicialPct e jogosComSinalRotaInicial.
 - Não some soloQueue, flexQueue, clash_historico e campeoes_combinados: campeoes_combinados repete as fontes e candidatosDraftCalculados já remove essa duplicação.
 - gamePlan.threats: exatamente uma entrada por jogador, level de 1 (fraco) a 5 (ameaça extrema), baseado em rank, forma recente, pool de campeões e histórico de Clash.
 - Na reason da threat de maior level, diga explicitamente que ele é quem carrega o time; na de menor level, que é o alvo a punir.
 - gamePlan.focusTarget e weakLink devem ser riotIds exatos dos dados recebidos.
-- Quando "mapa" existir, trate os números como tendências da amostra, não certezas. Calibre a linguagem por confiancaAmostra e confiancaRotaInicialPct. ganksPorRota e primeiroGank valem apenas para JUNGLE; roamsPorRota vale para laners.
+- Quando "mapa" existir, trate os números como tendências da amostra, não certezas. Calibre a linguagem por confiancaAmostra e confiancaRotaInicialPct. ganksPorRota e primeiraPressaoComAbate valem apenas para JUNGLE; jogadasForaDaRota vale para laners.
 - Para o JUNGLE adversário com mapa disponível, o earlyGame DEVE citar a rota inicial provável e qual lane deve wardear cedo.
 - Não mencione horários de nascimento de minions, camps ou objetivos. O relatório deve explicar como o adversário joga, não repetir regras gerais do jogo.
 - Se não houver dados de mapa do JUNGLE, diga objetivamente que não há padrão confiável de rota inicial ou gank. Não invente invade, caminho de jungle ou horário de ward.
@@ -479,7 +493,8 @@ Regras:
     const prompt = `Analise o estilo de jogo deste jogador de League of Legends para um perfil individual.
 CONTEXTO: Season 2026. Atakhan e Feats of Strength não existem mais. Use apenas mecânicas atuais, sem repetir horários ou regras gerais do jogo; descreva somente padrões sustentados pelos dados do jogador.
 Use os dados recentes para dizer como ele joga: lutas, mortes, dano, visao, objetivos, jungle invade/roubo se for jungler.
-Use mapProfile quando existir para falar onde ele aparece no mapa, onde luta, onde morre, por qual lado costuma começar (startSide), quantos ganks early faz por jogo (earlyGanksPerGame) e qual rota parece receber mais gank/pressao.
+Use mapProfile quando existir para falar onde ele aparece, luta e morre. gankWindowsPerGame agrupa participacoes com abate em janelas de 90 segundos e e apenas proxy de pressao; roamsPerGame e participacao fora da rota, nao roam confirmado. Respeite gankPattern/roamPattern e cite os percentuais. So cite startSide quando nao for inconclusivo, junto de startSideConfidence e startSideEvidenceGames.
+Toda conclusao comportamental deve citar um numero dos dados. Nao chame o jogador de agressivo, vulneravel, bom de visao ou propenso a morrer sem citar a metrica correspondente.
 Se mapProfile.games for 0, diga que foco de gank e inconclusivo.
 Escreva num tom natural de coach. NUNCA use travessao (—) nos textos; separe ideias com virgula, ponto ou dois-pontos.
 
@@ -679,7 +694,7 @@ Responda APENAS com o texto do resumo, sem aspas, sem markdown.`;
   }
 
   private buildAnalysisCacheKey(players: FullPlayerData[], teamProfile?: TeamTacticalProfile): string {
-    const payload = { version: 2, model: this.geminiModel, teamProfile, players: players.map((p) => ({
+    const payload = { version: 3, model: this.geminiModel, teamProfile, players: players.map((p) => ({
       riotId: p.riotId,
       position: p.position,
       soloRank: p.soloRank,
@@ -923,7 +938,7 @@ Responda APENAS com o texto do resumo, sem aspas, sem markdown.`;
     const topPositions = (player as any).topPositions as string[] | undefined;
     const roleText = topPositions?.length ? topPositions.join('/') : player.position;
     const mapSummary = map?.games
-      ? ` Timeline: aparece mais em ${map.mostVisited}, luta mais em ${map.mostFought}, morre mais em ${map.mostDeaths} e pressiona ${map.likelyGankFocus}.`
+      ? ` Timeline: aparece mais em ${map.mostVisited}, luta mais em ${map.mostFought} e morre mais em ${map.mostDeaths}${player.position === 'JUNGLE' ? `; pressão ${this.formatLaneTendency(map.likelyGankFocus, map.gankFocusShare, map.gankPattern)}` : ''}.`
       : '';
     const objective = player.position === 'JUNGLE'
       ? `${style.avgTeamDragons} dragoes/time por jogo, ${style.avgDragonTakedowns} dragon takedowns, ${style.avgObjectiveSteals} roubos e ${style.avgEnemyJungleMonsterKills} camps inimigos/jogo.${map?.games ? ` Invadiu em ${map.invadeRate}% da amostra e participou de ${map.objectiveFights} abates de objetivos.` : ''}`
@@ -947,7 +962,7 @@ Responda APENAS com o texto do resumo, sem aspas, sem markdown.`;
       mapPattern: this.buildMapFallback(player),
       tips: [
         `Priorize negar ${mainChamp}${secondaryChamp ? ` ou ${secondaryChamp}` : ''} se o draft depender dele.`,
-        map?.games ? `Prepare visao e cover no lado ${map.likelyGankFocus}, onde a timeline indica mais pressao.` : 'Prepare visao antes de objetivos neutros.',
+        map?.games && map.gankPattern === 'focado' ? `Prepare visao e cover no lado ${map.likelyGankFocus}, que concentrou ${map.gankFocusShare}% das jogadas de pressao.` : 'Distribua a visao entre as entradas e ajuste o cover conforme o jungler aparecer.',
         style.avgDeaths >= 6 ? 'Acelere picks quando ele entrar sem informacao.' : 'Force lutas com engage claro; nao entregue fight lenta de escala.',
       ],
     };
@@ -966,11 +981,21 @@ Responda APENAS com o texto do resumo, sem aspas, sem markdown.`;
       return 'Sem timeline suficiente para mapear foco de rota; use campeoes, KP e visao como sinais secundarios.';
     }
     const base = `Presenca inicial maior em ${map.mostVisited}; lutas mais frequentes em ${map.mostFought}; mortes mais comuns em ${map.mostDeaths}.`;
-    const startSide = map.startSide && map.startSide !== 'inconclusivo' ? ` Costuma comecar pelo lado ${map.startSide}.` : '';
+    const startSide = map.startSide && map.startSide !== 'inconclusivo'
+      ? ` Sinal de lado inicial ${map.startSide} em ${map.startSideEvidenceGames}/${map.games} jogos, confianca ${map.startSideConfidence}%.`
+      : ' Lado inicial inconclusivo.';
+    const gankTendency = this.formatLaneTendency(map.likelyGankFocus, map.gankFocusShare, map.gankPattern);
+    const roamTendency = this.formatLaneTendency(map.roamFocus, map.roamFocusShare, map.roamPattern);
     const jungle = player.position === 'JUNGLE'
-      ? ` Foco estimado de gank: ${map.likelyGankFocus}; ${map.earlyGanksPerGame} acoes de gank early/jogo, primeiro gank em ${map.firstGankFocus}${map.avgFirstGankMinute ? ` perto de ${map.avgFirstGankMinute} min` : ''}, invade em ${map.invadeRate}% dos jogos e ${map.objectiveFights} participacoes em objetivos. Confianca ${map.sampleConfidence}.${startSide}`
-      : ` Pressao de mapa mais clara: ${map.likelyGankFocus}; ${map.roamsPerGame} roams early/jogo com foco em ${map.roamFocus}, ${map.objectiveFights} participacoes em objetivos. Confianca ${map.sampleConfidence}.`;
+      ? ` Pressao early ${gankTendency}; ${map.gankWindowsPerGame} jogadas com abate/jogo, primeira perto de ${map.avgFirstGankMinute ?? 'tempo inconclusivo'} min, invade em ${map.invadeRate}% dos jogos e ${map.objectiveFights} participacoes em objetivos. Confianca ${map.sampleConfidence}.${startSide}`
+      : ` Participacoes fora da rota: ${map.roamsPerGame}/jogo, ${roamTendency}; ${map.objectiveFights} participacoes em objetivos. Confianca ${map.sampleConfidence}.`;
     return base + jungle;
+  }
+
+  private formatLaneTendency(focus: string, share: number, pattern: string): string {
+    if (pattern === 'inconclusivo') return 'inconclusiva';
+    if (pattern === 'distribuido') return `distribuida, leve tendencia ${focus} (${share}%)`;
+    return `concentrada em ${focus} (${share}%)`;
   }
 
   private buildStatAnalysis(players: FullPlayerData[], strategyPrefix: string): AiAnalysis {
@@ -1049,11 +1074,12 @@ Responda APENAS com o texto do resumo, sem aspas, sem markdown.`;
     const focusName = focus.riotId.split('#')[0];
     const jungler = players.find((p) => p.position === 'JUNGLE');
     const gankFocus = jungler?.mapProfile?.games ? jungler.mapProfile.likelyGankFocus : null;
+    const gankPattern = jungler?.mapProfile?.gankPattern;
 
     return {
       winCondition: `Jogue o early em cima de ${weakName} (${weak.position}) e negue recursos a ${focusName} (${focus.position})${focusChamp ? `, principalmente no ${focusChamp}` : ''}. Aceleração de vantagem no lado fraco vence antes do carry escalar.`,
       earlyGame: gankFocus
-        ? `A timeline indica pressão do jungler em ${gankFocus}${jungler?.mapProfile?.startSide && jungler.mapProfile.startSide !== 'inconclusivo' ? ` e início frequente pelo lado ${jungler.mapProfile.startSide}` : ''}. Proteja essa rota e pressione o lado oposto quando ele aparecer no mapa.`
+        ? `A timeline indica pressão ${gankPattern === 'distribuido' ? `distribuída, com leve tendência ${gankFocus} (${jungler?.mapProfile?.gankFocusShare}%)` : `concentrada em ${gankFocus} (${jungler?.mapProfile?.gankFocusShare}%)`}${jungler?.mapProfile?.startSide && jungler.mapProfile.startSide !== 'inconclusivo' ? ` e sinal de lado inicial ${jungler.mapProfile.startSide} em ${jungler.mapProfile.startSideEvidenceGames}/${jungler.mapProfile.games} jogos` : ''}. Ajuste a visão à distribuição observada sem assumir um caminho fixo.`
         : `Sem timeline suficiente para identificar rota inicial ou padrão de gank do jungler. No early, pressione ${weakName} (${weak.position}) sem assumir um caminho de jungle que os dados não confirmam.`,
       teamfight: `Foque ${focusName} nas lutas; não gaste cooldowns na frontline enquanto ele estiver vivo.`,
       damageProfile: 'Sem leitura de IA do perfil de dano. Confirme na tela de picks antes de fechar a itemização defensiva.',

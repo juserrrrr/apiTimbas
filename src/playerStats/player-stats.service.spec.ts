@@ -147,6 +147,65 @@ describe('PlayerStatsService', () => {
       mainCarry: 'Mid#BR1',
       mainCarryDamageShare: 50,
       sampleConfidence: 'baixa',
+      lineupPlayers: 3,
+    });
+  });
+
+  it('does not label partial-roster matches as a collective lineup profile', async () => {
+    const members = [
+      { puuid: 'p1', riotId: 'Top#BR1' },
+      { puuid: 'p2', riotId: 'Jungle#BR1' },
+      { puuid: 'p3', riotId: 'Mid#BR1' },
+      { puuid: 'p4', riotId: 'Adc#BR1' },
+      { puuid: 'p5', riotId: 'Support#BR1' },
+    ];
+    riot.getMatchHistory.mockImplementation((puuid: string) =>
+      Promise.resolve(puuid === 'p5' ? [] : ['partial-match']),
+    );
+
+    await expect(service.buildTeamTacticalProfile(members)).resolves.toBeUndefined();
+    expect(riot.getMatch).not.toHaveBeenCalled();
+  });
+
+  it('groups nearby kill participations into pressure windows and avoids weak start-side claims', async () => {
+    riot.getSummonerByPuuid.mockResolvedValue({ id: 'sid', puuid: PUUID, profileIconId: 123 });
+    riot.getAccountByPuuid.mockResolvedValue({ gameName: 'Jungler', tagLine: 'BR1' });
+    riot.getMatchHistory.mockImplementation((_puuid: string, _count: number, queue?: number) =>
+      queue === 420 ? Promise.resolve(['m1']) : Promise.resolve([]),
+    );
+    riot.getMatch.mockResolvedValue({
+      info: {
+        participants: [{
+          puuid: PUUID, teamId: 100, teamPosition: 'JUNGLE', win: true,
+          kills: 4, deaths: 2, assists: 6, championId: 64, championName: 'LeeSin',
+        }],
+      },
+    });
+    riot.getMatchTimeline.mockResolvedValue({
+      info: {
+        participants: [{ puuid: PUUID, participantId: 1 }],
+        frames: [
+          { timestamp: 120_000, participantFrames: { '1': { position: { x: 3500, y: 7000 } } }, events: [] },
+          { timestamp: 300_000, participantFrames: {}, events: [{ type: 'CHAMPION_KILL', timestamp: 300_000, killerId: 1, position: { x: 3000, y: 12000 } }] },
+          { timestamp: 330_000, participantFrames: {}, events: [{ type: 'CHAMPION_KILL', timestamp: 330_000, assistingParticipantIds: [1], position: { x: 3000, y: 12000 } }] },
+          { timestamp: 600_000, participantFrames: {}, events: [{ type: 'CHAMPION_KILL', timestamp: 600_000, killerId: 1, position: { x: 7500, y: 7500 } }] },
+          { timestamp: 780_000, participantFrames: {}, events: [{ type: 'CHAMPION_KILL', timestamp: 780_000, killerId: 1, position: { x: 12000, y: 3000 } }] },
+        ],
+      },
+    });
+
+    const result = await service.buildFromPuuid(PUUID, new Map([[64, 'LeeSin']]), 'JUNGLE', undefined, true);
+
+    expect(result.mapProfile).toMatchObject({
+      games: 1,
+      gankWindowsPerGame: 3,
+      ganksByLane: { top: 1, mid: 1, bot: 1, total: 3 },
+      gankPattern: 'distribuido',
+      gankFocusShare: 33,
+      firstGankFocus: 'inconclusivo',
+      avgFirstGankMinute: 5,
+      startSide: 'inconclusivo',
+      startSideEvidenceGames: 1,
     });
   });
 });
