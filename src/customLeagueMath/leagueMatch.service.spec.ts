@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { Client } from 'discord.js';
+import { ChannelType, Client, Collection } from 'discord.js';
 import { LeagueMatchService } from './leagueMatch.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { DiscordServerService } from '../discordServer/discordServer.service';
@@ -13,6 +13,7 @@ describe('LeagueMatchService', () => {
   let service: LeagueMatchService;
   let prismaMock: DeepMockProxy<PrismaClient>;
   let discordServiceMock: jest.Mocked<DiscordServerService>;
+  let clientMock: any;
 
   beforeEach(async () => {
     prismaMock = mockDeep<PrismaClient>();
@@ -23,13 +24,14 @@ describe('LeagueMatchService', () => {
     discordServiceMock = {
       findOrCreate: jest.fn().mockResolvedValue({ id: 1, discordServerId: 'server-1' }),
     } as any;
+    clientMock = { guilds: { cache: new Collection() } };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         LeagueMatchService,
         { provide: PrismaService, useValue: prismaMock },
         { provide: DiscordServerService, useValue: discordServiceMock },
-        { provide: Client, useValue: { guilds: { cache: new Map() } } },
+        { provide: Client, useValue: clientMock },
         { provide: LeaderboardService, useValue: { getLeaderboardForServer: jest.fn().mockResolvedValue([]) } },
         {
           provide: PostMatchService,
@@ -522,6 +524,93 @@ describe('LeagueMatchService', () => {
 
       expect(prismaMock.userTeamLeague.deleteMany).not.toHaveBeenCalled();
       expect(prismaMock.customLeagueMatch.deleteMany).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('restoreActiveMatchEmbeds', () => {
+    it('deve persistir canal e mensagem ao anunciar uma nova partida', async () => {
+      const message = { id: 'message-10' };
+      const channel = {
+        id: 'channel-1',
+        name: 'custom_game',
+        type: ChannelType.GuildText,
+        send: jest.fn().mockResolvedValue(message),
+      };
+      clientMock.guilds.cache.set('server-1', {
+        channels: { cache: new Collection([['channel-1', channel]]) },
+      });
+      prismaMock.customLeagueMatch.update.mockResolvedValue({ id: 10 } as any);
+
+      await service.announceMatchToGuild(
+        10,
+        'server-1',
+        MatchType.ALEATORIO,
+        5,
+        GameMode.SUMMONERS_RIFT,
+      );
+
+      expect(prismaMock.customLeagueMatch.update).toHaveBeenCalledWith({
+        where: { id: 10 },
+        data: { discordChannelId: 'channel-1', discordMessageId: 'message-10' },
+      });
+    });
+
+    it('deve reencontrar um embed antigo, persistir o vínculo e voltar a atualizá-lo', async () => {
+      const match = {
+        id: 9,
+        ServerDiscordId: 'server-1',
+        discordChannelId: null,
+        discordMessageId: null,
+        status: MatchStatus.WAITING,
+        matchType: MatchType.ALEATORIO,
+        gameMode: GameMode.LOL_CLASSIC,
+        playersPerTeam: 5,
+        teamBlueId: null,
+        teamRedId: null,
+        winnerId: null,
+        showDetails: false,
+        dateCreated: new Date(),
+        queuePlayers: [
+          { user: { name: 'Juser' } },
+          { user: { name: 'obouz' } },
+          { user: { name: 'xaandaaum' } },
+          { user: { name: 'Jogador 4' } },
+          { user: { name: 'Jogador 5' } },
+        ],
+        Teams: [],
+      } as any;
+      const message = {
+        id: 'message-9',
+        embeds: [{ footer: { text: 'Aguardando jogadores... 3/10 · Partida #9' } }],
+        attachments: new Collection(),
+        edit: jest.fn().mockResolvedValue(undefined),
+      };
+      const messages = new Collection<string, any>([['message-9', message]]);
+      const channel = {
+        id: 'channel-1',
+        name: 'custom_game',
+        type: ChannelType.GuildText,
+        isTextBased: () => true,
+        messages: { fetch: jest.fn().mockResolvedValue(messages) },
+      };
+      const channels = new Collection<string, any>([['channel-1', channel]]);
+      clientMock.guilds.cache.set('server-1', { channels: { cache: channels } });
+      prismaMock.customLeagueMatch.findMany.mockResolvedValue([match]);
+      prismaMock.customLeagueMatch.update.mockResolvedValue(match);
+
+      await service.restoreActiveMatchEmbeds();
+
+      expect(prismaMock.customLeagueMatch.update).toHaveBeenCalledWith({
+        where: { id: 9 },
+        data: { discordChannelId: 'channel-1', discordMessageId: 'message-9' },
+      });
+      expect(message.edit).toHaveBeenCalledTimes(1);
+      expect(message.edit.mock.calls[0][0].embeds[0].data.footer.text).toContain('5/10');
+
+      (service as any).emit(9, { type: 'player_joined', payload: match });
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(message.edit).toHaveBeenCalledTimes(2);
     });
   });
 });

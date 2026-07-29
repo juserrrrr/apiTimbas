@@ -72,6 +72,7 @@ export class OnlineLobbyInteraction {
       showDetails,
       gifUrl,
       playersPerTeam,
+      matchId: lobby.id,
     });
     const buttons = buildOnlineLobbyButtons(lobby.id, started, finished, isLivre);
 

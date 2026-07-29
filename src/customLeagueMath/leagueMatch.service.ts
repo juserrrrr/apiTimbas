@@ -18,7 +18,7 @@ import { CreateCustomLeagueMatchDto } from './dto/create-leagueMatch.dto';
 import { UpdateCustomLeagueMatchDto } from './dto/update-leagueMatch.dto';
 import { CreateOnlineMatchDto } from './dto/create-online-match.dto';
 import { JoinMatchDto } from './dto/join-match.dto';
-import { Subject } from 'rxjs';
+import { Subject, Subscription } from 'rxjs';
 import { Cron } from '@nestjs/schedule';
 import { buildMatchEmbed, MATCH_TYPE_LABELS } from '../discord/helpers/embed.helper';
 import { buildOnlineLobbyButtons } from '../discord/helpers/match-buttons.helper';
@@ -67,6 +67,7 @@ export class LeagueMatchService {
   private readonly logger = new Logger(LeagueMatchService.name);
   private readonly eventSubjects = new Map<number, Subject<MatchEvent>>();
   private readonly sseTickets = new Map<string, { matchId: number; expiresAt: number }>();
+  private readonly embedSubscriptions = new Map<number, Subscription>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -258,6 +259,10 @@ export class LeagueMatchService {
     try {
       const message = await textChannel.send({ embeds: [embed], components: buttons, files });
       this.subscribeToMatchEmbed(matchId, message, matchFormat, playersPerTeam, gameMode);
+      await this.prisma.customLeagueMatch.update({
+        where: { id: matchId },
+        data: { discordChannelId: textChannel.id, discordMessageId: message.id },
+      });
     } catch (e) {
       this.logger.error(`Failed to announce match ${matchId} to guild ${guildId}: ${e}`);
     }
@@ -270,6 +275,7 @@ export class LeagueMatchService {
     playersPerTeam: number,
     gameMode: GameMode = GameMode.SUMMONERS_RIFT,
   ) {
+    this.embedSubscriptions.get(matchId)?.unsubscribe();
     const subject = this.getOrCreateSubject(matchId);
     let finished = false;
 
@@ -285,6 +291,7 @@ export class LeagueMatchService {
         if (type === 'match_expired') {
           finished = true;
           subscription.unsubscribe();
+          this.embedSubscriptions.delete(matchId);
           setTimeout(() => message.delete().catch(() => {}), 5000);
           return;
         }
@@ -292,10 +299,89 @@ export class LeagueMatchService {
         if (type === 'match_finished' || payload?.status === 'FINISHED') {
           finished = true;
           subscription.unsubscribe();
+          this.embedSubscriptions.delete(matchId);
         }
       },
-      complete: () => { subscription.unsubscribe(); },
+      complete: () => {
+        subscription.unsubscribe();
+        this.embedSubscriptions.delete(matchId);
+      },
     });
+    this.embedSubscriptions.set(matchId, subscription);
+  }
+
+  /**
+   * Reconecta partidas ativas aos embeds depois de um restart.
+   *
+   * Partidas criadas antes da persistência dos IDs são recuperadas pelo
+   * rodapé "Partida #ID" nas mensagens recentes do canal custom_game.
+   */
+  async restoreActiveMatchEmbeds(): Promise<void> {
+    const matches = await this.prisma.customLeagueMatch.findMany({
+      where: { status: { in: [MatchStatus.WAITING, MatchStatus.STARTED] } },
+      include: MATCH_INCLUDE,
+      orderBy: { dateCreated: 'desc' },
+    });
+
+    for (const match of matches) {
+      try {
+        const guild = this.client.guilds.cache.get(match.ServerDiscordId);
+        if (!guild) continue;
+
+        const storedChannel = match.discordChannelId
+          ? guild.channels.cache.get(match.discordChannelId)
+            ?? await guild.channels.fetch(match.discordChannelId).catch(() => null)
+          : null;
+        const channel = storedChannel ?? guild.channels.cache.find(
+          (candidate) => candidate.type === ChannelType.GuildText && candidate.name === 'custom_game',
+        );
+        if (!channel?.isTextBased() || !('messages' in channel)) continue;
+
+        let message: any = null;
+        if (match.discordMessageId) {
+          message = await (channel as TextChannel).messages.fetch(match.discordMessageId).catch(() => null);
+        }
+        if (!message) {
+          const recent = await (channel as TextChannel).messages.fetch({ limit: 100 });
+          message = recent.find((candidate) =>
+            candidate.embeds.some((embed) => embed.footer?.text?.includes(`Partida #${match.id}`))
+            || candidate.components.some((row: any) =>
+              row.components?.some((component: any) =>
+                component.customId?.endsWith(`/${match.id}`),
+              ),
+            ),
+          );
+        }
+        if (!message) {
+          this.logger.warn(`Embed da partida ativa ${match.id} não foi encontrado no Discord.`);
+          continue;
+        }
+
+        if (match.discordChannelId !== channel.id || match.discordMessageId !== message.id) {
+          await this.prisma.customLeagueMatch.update({
+            where: { id: match.id },
+            data: { discordChannelId: channel.id, discordMessageId: message.id },
+          });
+        }
+
+        await this.updateMatchEmbed(
+          message,
+          match,
+          match.matchType,
+          match.playersPerTeam,
+          match.gameMode,
+        );
+        this.subscribeToMatchEmbed(
+          match.id,
+          message,
+          match.matchType,
+          match.playersPerTeam,
+          match.gameMode,
+        );
+      } catch (error) {
+        this.logger.warn(`Falha ao restaurar embed da partida ${match.id}: ${error}`);
+      }
+    }
   }
 
   private async updateMatchEmbed(

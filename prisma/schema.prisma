@@ -229,6 +229,8 @@ model CustomLeagueMatch {
   Teams            TeamLeague[]
   status           MatchStatus      @default(FINISHED)
   creatorDiscordId String?
+  discordChannelId String?
+  discordMessageId String?
   showDetails      Boolean          @default(false)
   queuePlayers     UserTeamLeague[] @relation("MatchQueue")
   startedAt        DateTime?
@@ -244,6 +246,7 @@ model CustomLeagueMatch {
   @@index([playersPerTeam])
   @@index([status])
   @@index([creatorDiscordId])
+  @@index([discordMessageId])
   @@index([ServerDiscordId, status])
   @@index([ServerDiscordId, winnerId])
   @@index([ServerDiscordId, gameMode])

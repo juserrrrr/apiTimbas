@@ -3,6 +3,7 @@ import { Once, On, Context, ContextOf } from 'necord';
 import { Client, ActivityType } from 'discord.js';
 import { EventStateService } from '../services/event-state.service';
 import { EventoCommand } from '../commands/evento.command';
+import { LeagueMatchService } from '../../customLeagueMath/leagueMatch.service';
 
 const INTERVAL_MS = 20_000;
 
@@ -16,11 +17,14 @@ export class ReadyEvent {
     private readonly client: Client,
     private readonly eventStateService: EventStateService,
     private readonly eventoCommand: EventoCommand,
+    private readonly leagueMatchService: LeagueMatchService,
   ) {}
 
   @Once('clientReady')
   async onReady(@Context() [client]: ContextOf<'clientReady'>) {
     this.logger.log(`Bot online como ${client.user.tag} em ${client.guilds.cache.size} servidor(es)`);
+
+    await this.leagueMatchService.restoreActiveMatchEmbeds();
 
     // Sync slash commands
     await client.application.commands.fetch();
