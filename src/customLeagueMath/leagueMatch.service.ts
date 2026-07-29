@@ -23,7 +23,7 @@ import { Cron } from '@nestjs/schedule';
 import { buildMatchEmbed, MATCH_TYPE_LABELS } from '../discord/helpers/embed.helper';
 import { buildOnlineLobbyButtons } from '../discord/helpers/match-buttons.helper';
 import { supportsLanes, GAME_MODE_LABELS } from './game-mode.constants';
-import { getQueueGifAttachment } from '../discord/helpers/queue-gif.helper';
+import { getExistingQueueGifUrl, getQueueGifAttachment } from '../discord/helpers/queue-gif.helper';
 import * as path from 'path';
 import * as fs from 'fs';
 
@@ -341,7 +341,7 @@ export class LeagueMatchService {
     const webUrl = (!winner && !finished)
       ? `${process.env.WEB_URL ?? 'http://localhost:3000'}/dashboard/match/${lobby.id}`
       : undefined;
-    const hasGif = !!message.attachments?.find((a: any) => a.name === 'timbas.gif' || a.name === 'timbasQueueGif.gif');
+    const gifUrl = getExistingQueueGifUrl(message);
     const formatName = MATCH_TYPE_LABELS[matchFormat ?? 'ALEATORIO'] ?? 'Aleatório';
     const embed = buildMatchEmbed({
       blueTeam: blueDisplay,
@@ -353,7 +353,7 @@ export class LeagueMatchService {
       webUrl,
       winner,
       showDetails,
-      gifUrl: hasGif,
+      gifUrl,
       playersPerTeam,
       matchId: lobby.id,
     });

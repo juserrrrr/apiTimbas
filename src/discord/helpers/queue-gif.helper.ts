@@ -29,3 +29,17 @@ export function getQueueGifAttachment(): { attachment: string; name: string } | 
   }
   return { attachment: QUEUE_GIF_PATH, name: QUEUE_GIF_ATTACHMENT_NAME };
 }
+
+/**
+ * Em edições da mensagem, `attachment://timbas.gif` não representa um novo
+ * upload. Reutiliza a URL CDN do anexo existente para o GIF continuar dentro
+ * do embed em vez de aparecer como arquivo separado.
+ */
+export function getExistingQueueGifUrl(message: any): string | undefined {
+  const gif = message?.attachments?.find(
+    (attachment: any) =>
+      attachment.name === QUEUE_GIF_ATTACHMENT_NAME ||
+      attachment.name === 'timbasQueueGif.gif',
+  );
+  return gif?.url ?? gif?.proxyURL;
+}

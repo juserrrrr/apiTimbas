@@ -1,6 +1,11 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { getQueueGifAttachment, QUEUE_GIF_ATTACHMENT_NAME, QUEUE_GIF_PATH } from './queue-gif.helper';
+import {
+  getExistingQueueGifUrl,
+  getQueueGifAttachment,
+  QUEUE_GIF_ATTACHMENT_NAME,
+  QUEUE_GIF_PATH,
+} from './queue-gif.helper';
 
 describe('queue-gif.helper', () => {
   it('deve achar o gif da fila no repositório', () => {
@@ -32,5 +37,24 @@ describe('queue-gif.helper', () => {
     const runnerStage = dockerfile.slice(dockerfile.lastIndexOf('AS runner'));
 
     expect(runnerStage).toMatch(/COPY\s+--from=builder\s+\/app\/images\s+\.\/images/);
+  });
+
+  it('deve reutilizar a URL CDN do gif ao editar a mensagem', () => {
+    const message = {
+      attachments: {
+        find: (predicate: (attachment: any) => boolean) =>
+          [
+            {
+              name: QUEUE_GIF_ATTACHMENT_NAME,
+              url: 'https://cdn.discordapp.com/attachments/timbas.gif',
+            },
+          ].find(predicate),
+      },
+    };
+
+    const url = getExistingQueueGifUrl(message);
+
+    expect(url).toBe('https://cdn.discordapp.com/attachments/timbas.gif');
+    expect(url).not.toBe(`attachment://${QUEUE_GIF_ATTACHMENT_NAME}`);
   });
 });

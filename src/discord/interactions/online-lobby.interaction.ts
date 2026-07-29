@@ -11,6 +11,7 @@ import { LeagueMatchService } from '../../customLeagueMath/leagueMatch.service';
 import { UserService } from '../../user/user.service';
 import { buildOnlineLobbyButtons } from '../helpers/match-buttons.helper';
 import { buildMatchEmbed, MATCH_TYPE_LABELS } from '../helpers/embed.helper';
+import { getExistingQueueGifUrl } from '../helpers/queue-gif.helper';
 
 @Injectable()
 export class OnlineLobbyInteraction {
@@ -58,7 +59,7 @@ export class OnlineLobbyInteraction {
     const webUrl = (!winner && !finished)
       ? `${process.env.WEB_URL ?? 'http://localhost:3000'}/dashboard/match/${lobby.id}`
       : undefined;
-    const hasGif = !!interaction.message.attachments?.find((a: any) => a.name === 'timbas.gif' || a.name === 'timbasQueueGif.gif');
+    const gifUrl = getExistingQueueGifUrl(interaction.message);
     const embed = buildMatchEmbed({
       blueTeam: blueDisplay,
       redTeam: redDisplay,
@@ -69,7 +70,7 @@ export class OnlineLobbyInteraction {
       webUrl,
       winner,
       showDetails,
-      gifUrl: hasGif,
+      gifUrl,
       playersPerTeam,
     });
     const buttons = buildOnlineLobbyButtons(lobby.id, started, finished, isLivre);
