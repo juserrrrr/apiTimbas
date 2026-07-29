@@ -35,7 +35,6 @@ describe('LeagueMatchService', () => {
           provide: PostMatchService,
           useValue: {
             onMatchFinished: jest.fn().mockResolvedValue(undefined),
-            refundPendingBets: jest.fn().mockResolvedValue(undefined),
           },
         },
       ],

@@ -61,7 +61,6 @@ export function buildOnlineLobbyButtons(
   if (started && !finished) {
     row2.addComponents(
       new ButtonBuilder().setCustomId(`ol/move/${lobbyId}`).setLabel('Ir para a sala').setStyle(ButtonStyle.Primary).setEmoji('🎧'),
-      new ButtonBuilder().setCustomId(`bet/open/${lobbyId}`).setLabel('Apostar').setStyle(ButtonStyle.Secondary).setEmoji('🎰'),
     );
   }
   return [row1, row2];

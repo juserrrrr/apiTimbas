@@ -14,6 +14,8 @@ export interface PlayerStats {
   losses: number;
   totalGames: number;
   winRate: number;
+  /** Quantas vezes o jogador foi eleito MVP dentro do recorte consultado. */
+  mvpCount: number;
 }
 
 export interface PositionStat {
@@ -166,6 +168,7 @@ export class LeaderboardService {
             u.id AS "userId",
             CAST(COUNT(CASE WHEN ctm."winnerId" = tl.id THEN 1 END) AS INT) AS wins,
             CAST(COUNT(CASE WHEN ctm."winnerId" IS NOT NULL AND ctm."winnerId" != tl.id THEN 1 END) AS INT) AS losses,
+            CAST(COUNT(CASE WHEN ctm."mvpUserId" = u.id THEN 1 END) AS INT) AS "mvpCount",
             CAST(COUNT(ctm.id) AS INT) AS "totalGames"
         FROM
             "User" u
@@ -188,6 +191,7 @@ export class LeaderboardService {
           u.avatar,
           prs.wins,
           prs.losses,
+          prs."mvpCount",
           prs."totalGames",
           ROUND(
             (CAST(prs.wins AS REAL) / NULLIF(prs."totalGames", 0)) * 100
@@ -219,6 +223,7 @@ export class LeaderboardService {
         losses: player.losses,
         score: player.score,
         totalGames: player.totalGames,
+        mvpCount: player.mvpCount ?? 0,
         winRate: parseFloat(winRate.toFixed(2)),
       };
     });

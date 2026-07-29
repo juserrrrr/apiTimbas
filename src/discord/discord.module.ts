@@ -21,7 +21,6 @@ import { CriarPartidaCommand } from './commands/criar-partida.command';
 import { EventoCommand } from './commands/evento.command';
 import { TemporadaCommand } from './commands/temporada.command';
 import { HallDaFamaCommand } from './commands/halldafama.command';
-import { FichasCommand } from './commands/fichas.command';
 import { DuplaCommand } from './commands/dupla.command';
 
 // Events
@@ -35,7 +34,6 @@ import { OfflineMatchSelectInteraction } from './interactions/offline-match-sele
 import { OnlineLobbyInteraction } from './interactions/online-lobby.interaction';
 import { EventInteraction } from './interactions/event.interaction';
 import { LolVerificationInteraction } from './interactions/lol-verification.interaction';
-import { BetInteraction } from './interactions/bet.interaction';
 
 // NestJS module imports
 import { LeagueMatchModule } from '../customLeagueMath/leagueMatch.module';
@@ -86,7 +84,6 @@ import { PrismaModule } from '../prisma/prisma.module';
     EventoCommand,
     TemporadaCommand,
     HallDaFamaCommand,
-    FichasCommand,
     DuplaCommand,
     // Events
     ReadyEvent,
@@ -98,7 +95,6 @@ import { PrismaModule } from '../prisma/prisma.module';
     OnlineLobbyInteraction,
     EventInteraction,
     LolVerificationInteraction,
-    BetInteraction,
   ],
 })
 export class DiscordBotModule {}

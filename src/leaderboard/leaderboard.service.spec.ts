@@ -242,6 +242,26 @@ describe('LeaderboardService', () => {
 
       expect((prismaMock.$queryRaw as any)).toHaveBeenCalledTimes(2);
     });
+
+    it('deve devolver a quantidade de MVPs do jogador', async () => {
+      (prismaMock.$queryRaw as any).mockResolvedValue([
+        {
+          userId,
+          name: 'Jogador',
+          discordId: 'discord-42',
+          avatar: null,
+          wins: 3,
+          losses: 1,
+          totalGames: 4,
+          mvpCount: 2,
+          score: 80,
+        },
+      ]);
+
+      const [player] = await service.getLeaderboardForServer(serverId);
+
+      expect(player.mvpCount).toBe(2);
+    });
   });
 
   describe('getPlayerDetailStats › cache', () => {

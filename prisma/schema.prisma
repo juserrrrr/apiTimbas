@@ -304,35 +304,3 @@ model Achievement {
   @@unique([serverId, userId, type])
   @@index([serverId, userId])
 }
-
-model PointsWallet {
-  id        Int      @id @default(autoincrement())
-  serverId  String
-  discordId String
-  balance   Int      @default(100)
-  updatedAt DateTime @updatedAt
-
-  @@unique([serverId, discordId])
-}
-
-enum BetStatus {
-  PENDING
-  WON
-  LOST
-  REFUNDED
-}
-
-model Bet {
-  id        Int       @id @default(autoincrement())
-  matchId   Int
-  serverId  String
-  discordId String
-  side      Side
-  amount    Int
-  status    BetStatus @default(PENDING)
-  createdAt DateTime  @default(now())
-
-  @@unique([matchId, discordId])
-  @@index([matchId, status])
-  @@index([serverId, discordId])
-}

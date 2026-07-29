@@ -689,7 +689,7 @@ export class LeagueMatchService {
     if (updated.ServerDiscordId) {
       this.moveAllPlayersToWaiting(updated.ServerDiscordId, updated).catch(() => {});
     }
-    // apostas, fichas, conquistas, MVP e recap — não bloqueia a resposta
+    // conquistas, MVP e recap — não bloqueia a resposta
     this.postMatchService.onMatchFinished(updated).catch((e) => {
       this.logger.warn(`Pós-partida falhou (match ${matchId}): ${e}`);
     });
@@ -718,7 +718,6 @@ export class LeagueMatchService {
       this.sendToMatchChannel(match.ServerDiscordId, `🚫 A partida **#${matchId}** foi encerrada pelo criador.`).catch(() => {});
       this.moveAllPlayersToWaiting(match.ServerDiscordId, match).catch(() => {});
     }
-    this.postMatchService.refundPendingBets(matchId).catch(() => {});
     setTimeout(() => this.removeSubject(matchId), 5000);
     return updated;
   }
@@ -772,7 +771,6 @@ export class LeagueMatchService {
 
       for (const match of toDelete) {
         this.emit(match.id, { type: 'match_expired', payload: {} });
-        await this.postMatchService.refundPendingBets(match.id).catch(() => {});
       }
 
       await this.prisma.userTeamLeague.deleteMany({ where: { matchId: { in: matchIds } } });
