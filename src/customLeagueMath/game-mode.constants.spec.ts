@@ -18,7 +18,7 @@ describe('game-mode.constants', () => {
   });
 
   describe('gameModeHeader', () => {
-    it('deve montar o cabeçalho da Fenda atual', () => {
+    it("deve montar o cabeçalho do Summoner's Rift atual", () => {
       expect(gameModeHeader(GameMode.SUMMONERS_RIFT)).toBe("[League of Legends] - Summoner's Rift");
     });
 
@@ -30,7 +30,7 @@ describe('game-mode.constants', () => {
       expect(gameModeHeader(GameMode.ARAM)).toBe('[ARAM] - Howling Abyss');
     });
 
-    it('deve usar a Fenda atual como padrão quando nenhum modo é passado', () => {
+    it("deve usar o Summoner's Rift atual como padrão quando nenhum modo é passado", () => {
       expect(gameModeHeader()).toBe("[League of Legends] - Summoner's Rift");
     });
 
@@ -50,7 +50,7 @@ describe('game-mode.constants', () => {
   });
 
   describe('supportsLanes', () => {
-    it('deve permitir lanes na Fenda atual', () => {
+    it("deve permitir lanes no Summoner's Rift atual", () => {
       expect(supportsLanes(GameMode.SUMMONERS_RIFT)).toBe(true);
     });
 
@@ -70,7 +70,7 @@ describe('game-mode.constants', () => {
       }
     });
 
-    it('deve cair na Fenda atual para entradas inválidas ou ausentes', () => {
+    it("deve cair no Summoner's Rift atual para entradas inválidas ou ausentes", () => {
       expect(parseGameMode('URF')).toBe(GameMode.SUMMONERS_RIFT);
       expect(parseGameMode('CLASSIC')).toBe(GameMode.SUMMONERS_RIFT);
       expect(parseGameMode(undefined)).toBe(GameMode.SUMMONERS_RIFT);

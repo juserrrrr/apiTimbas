@@ -43,7 +43,7 @@ export class CreateCustomLeagueMatchDto {
   @IsEnum(MatchType)
   matchType?: MatchType;
 
-  /** Modo de jogo (define o mapa). Padrão: SUMMONERS_RIFT (Fenda atual). */
+  /** Modo de jogo (define o mapa). Padrão: SUMMONERS_RIFT (Summoner's Rift atual). */
   @IsOptional()
   @IsEnum(GameMode)
   gameMode?: GameMode;

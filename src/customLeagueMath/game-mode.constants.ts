@@ -6,7 +6,7 @@ import { GameMode } from '@prisma/client';
  * Guardamos apenas o modo no banco: o mapa é consequência dele. Ter as duas
  * colunas permitiria gravar combinações que não existem no jogo.
  *
- * SUMMONERS_RIFT e LOL_CLASSIC rodam na mesma Fenda, em versões diferentes
+ * SUMMONERS_RIFT e LOL_CLASSIC rodam no mesmo Summoner's Rift, em versões diferentes
  * (atual x Season 3), o que reforça o modo como eixo certo em vez do mapa.
  */
 
@@ -20,7 +20,7 @@ export const GAME_MODE_LABELS: Record<GameMode, string> = {
 /** Mapa onde o modo é jogado. Derivado, nunca persistido. */
 export const GAME_MODE_MAP_NAMES: Record<GameMode, string> = {
   SUMMONERS_RIFT: "Summoner's Rift",
-  LOL_CLASSIC: "Summoner's Rift (2013)",
+  LOL_CLASSIC: "Summoner's Rift Classic",
   ARAM: 'Howling Abyss',
 };
 

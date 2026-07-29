@@ -71,7 +71,7 @@ describe('LeagueMatchService', () => {
       expect(result).toEqual(expectedMatch);
     });
 
-    it('deve cair na Fenda atual quando o gameMode não é informado', async () => {
+    it("deve cair no Summoner's Rift atual quando o gameMode não é informado", async () => {
       prismaMock.customLeagueMatch.create.mockResolvedValue({ id: 1 } as any);
 
       await service.createOnline({ discordServerId: 'server-1' });
@@ -105,7 +105,7 @@ describe('LeagueMatchService', () => {
       expect(prismaMock.customLeagueMatch.create).not.toHaveBeenCalled();
     });
 
-    it('deve aceitar ALEATORIO_COMPLETO na Fenda atual', async () => {
+    it("deve aceitar ALEATORIO_COMPLETO no Summoner's Rift atual", async () => {
       prismaMock.customLeagueMatch.create.mockResolvedValue({ id: 1 } as any);
 
       await service.createOnline({

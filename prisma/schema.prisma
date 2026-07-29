@@ -177,8 +177,8 @@ enum MatchStatus {
 /// Summoner's Rift". O nome do mapa é derivado na exibição (ver
 /// GAME_MODE_MAP_NAMES no backend).
 ///
-/// SUMMONERS_RIFT = Fenda do Invocador atual
-/// LOL_CLASSIC    = League Classic, a Fenda da Season 3 (lançado em 2026-07-29)
+/// SUMMONERS_RIFT = Summoner's Rift atual
+/// LOL_CLASSIC    = League Classic, o Summoner's Rift Classic (lançado em 2026-07-29)
 /// ARAM           = Howling Abyss
 enum GameMode {
   SUMMONERS_RIFT
