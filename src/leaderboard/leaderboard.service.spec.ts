@@ -262,6 +262,19 @@ describe('LeaderboardService', () => {
 
       expect(player.mvpCount).toBe(2);
     });
+
+    it('deve usar a quantidade de MVPs como primeiro desempate após o score', async () => {
+      await service.getLeaderboardForServer(serverId);
+
+      const { text } = rawCall();
+      const scoreOrder = text.indexOf('score DESC');
+      const mvpOrder = text.indexOf('prs."mvpCount" DESC');
+      const winsOrder = text.indexOf('wins DESC');
+
+      expect(scoreOrder).toBeGreaterThan(-1);
+      expect(mvpOrder).toBeGreaterThan(scoreOrder);
+      expect(winsOrder).toBeGreaterThan(mvpOrder);
+    });
   });
 
   describe('getPlayerDetailStats › cache', () => {

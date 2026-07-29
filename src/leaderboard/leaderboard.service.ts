@@ -206,6 +206,7 @@ export class LeaderboardService {
           prs."totalGames" > 0
       ORDER BY
           score DESC,
+          prs."mvpCount" DESC,
           wins DESC,
           "totalGames" DESC,
           u.name ASC;
