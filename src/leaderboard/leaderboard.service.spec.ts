@@ -172,6 +172,78 @@ describe('LeaderboardService', () => {
     });
   });
 
+  describe('getLeaderboardForServer › filtro de mapa', () => {
+    beforeEach(() => {
+      (prismaMock.$queryRaw as any).mockResolvedValue([]);
+    });
+
+    /**
+     * $queryRaw é tagged template: recebe (strings, ...values). Os filtros
+     * opcionais entram como fragmentos Prisma.sql aninhados nos values, então
+     * é preciso achatar tudo para inspecionar o SQL e os parâmetros ligados.
+     */
+    const rawCall = () => {
+      const [strings, ...values] = (prismaMock.$queryRaw as any).mock.calls[0];
+      const parts: string[] = [...(strings ?? [])];
+      const bound: unknown[] = [];
+      const walk = (value: any) => {
+        if (value && typeof value === 'object' && Array.isArray(value.strings)) {
+          parts.push(...value.strings);
+          (value.values ?? []).forEach(walk);
+        } else {
+          bound.push(value);
+        }
+      };
+      values.forEach(walk);
+      return { text: parts.join(' '), bound };
+    };
+
+    it('não deve filtrar por mapa quando o gameMode é omitido (geral)', async () => {
+      await service.getLeaderboardForServer(serverId);
+
+      expect(rawCall().text).not.toContain('"gameMode"');
+    });
+
+    it('deve filtrar por mapa quando o gameMode é informado', async () => {
+      await service.getLeaderboardForServer(serverId, undefined, GameMode.ARAM);
+
+      const { text, bound } = rawCall();
+      expect(text).toContain('"gameMode"');
+      expect(bound).toContain(GameMode.ARAM);
+    });
+
+    it('deve combinar filtro de mapa e de tamanho de time', async () => {
+      await service.getLeaderboardForServer(serverId, 5, GameMode.LOL_CLASSIC);
+
+      const { text, bound } = rawCall();
+      expect(text).toContain('"gameMode"');
+      expect(text).toContain('"playersPerTeam"');
+      expect(bound).toEqual(expect.arrayContaining([GameMode.LOL_CLASSIC, 5]));
+    });
+
+    it('deve usar caches separados por mapa', async () => {
+      // Sem isso, escolher ARAM devolveria o ranking do Summoner's Rift.
+      await service.getLeaderboardForServer(serverId, 5, GameMode.SUMMONERS_RIFT);
+      await service.getLeaderboardForServer(serverId, 5, GameMode.ARAM);
+
+      expect((prismaMock.$queryRaw as any)).toHaveBeenCalledTimes(2);
+    });
+
+    it('deve reaproveitar o cache no mesmo recorte', async () => {
+      await service.getLeaderboardForServer(serverId, 5, GameMode.ARAM);
+      await service.getLeaderboardForServer(serverId, 5, GameMode.ARAM);
+
+      expect((prismaMock.$queryRaw as any)).toHaveBeenCalledTimes(1);
+    });
+
+    it('deve separar o cache do geral do cache de um mapa específico', async () => {
+      await service.getLeaderboardForServer(serverId);
+      await service.getLeaderboardForServer(serverId, undefined, GameMode.SUMMONERS_RIFT);
+
+      expect((prismaMock.$queryRaw as any)).toHaveBeenCalledTimes(2);
+    });
+  });
+
   describe('getPlayerDetailStats › cache', () => {
     it('não deve reconsultar o banco na segunda chamada', async () => {
       prismaMock.customLeagueMatch.findMany.mockResolvedValue([

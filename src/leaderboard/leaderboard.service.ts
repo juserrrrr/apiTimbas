@@ -135,17 +135,26 @@ export class LeaderboardService {
     return season?.startedAt ?? null;
   }
 
+  /**
+   * Ranking do servidor. `playersPerTeam` e `gameMode` são opcionais: omitir
+   * significa "geral", ou seja, todos os tamanhos ou todos os mapas.
+   */
   async getLeaderboardForServer(
     discordServerId: string,
     playersPerTeam?: number,
+    gameMode?: GameMode,
   ): Promise<PlayerStats[]> {
     const seasonStart = await this.getActiveSeasonStart(discordServerId);
-    const cacheKey = `leaderboard:${discordServerId}:${playersPerTeam ?? 'all'}:${seasonStart?.getTime() ?? 'alltime'}`;
+    const cacheKey = `leaderboard:${discordServerId}:${playersPerTeam ?? 'all'}:${gameMode ?? 'allmaps'}:${seasonStart?.getTime() ?? 'alltime'}`;
     const cached = this.fromCache<PlayerStats[]>(cacheKey);
     if (cached) return cached;
 
     const modeFilter = playersPerTeam
       ? Prisma.sql`AND ctm."playersPerTeam" = ${playersPerTeam}`
+      : Prisma.sql``;
+    // cast no parâmetro, não na coluna, para continuar usando o índice de gameMode
+    const gameModeFilter = gameMode
+      ? Prisma.sql`AND ctm."gameMode" = ${gameMode}::"GameMode"`
       : Prisma.sql``;
     const seasonFilter = seasonStart
       ? Prisma.sql`AND ctm."dateCreated" >= ${seasonStart}`
@@ -167,6 +176,7 @@ export class LeaderboardService {
             ctm."ServerDiscordId" = ${discordServerId}
             AND ctm."winnerId" IS NOT NULL
             ${modeFilter}
+            ${gameModeFilter}
             ${seasonFilter}
         GROUP BY
             u.id

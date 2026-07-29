@@ -1,4 +1,5 @@
-import { Controller, Get, Param, ParseIntPipe, Query, UseGuards } from '@nestjs/common';
+import { BadRequestException, Controller, Get, Param, ParseIntPipe, Query, UseGuards } from '@nestjs/common';
+import { GameMode } from '@prisma/client';
 import { LeaderboardService } from './leaderboard.service';
 import { AuthGuard } from '../auth/guards/auth.guard';
 
@@ -7,13 +8,30 @@ import { AuthGuard } from '../auth/guards/auth.guard';
 export class LeaderboardController {
   constructor(private readonly leaderboardService: LeaderboardService) {}
 
+  /**
+   * Ausente = geral. Valor inválido vira erro em vez de virar geral em
+   * silêncio, senão um filtro com typo devolveria o ranking errado.
+   */
+  private parseGameModeFilter(gameMode?: string): GameMode | undefined {
+    if (!gameMode) return undefined;
+    if (!Object.values(GameMode).includes(gameMode as GameMode)) {
+      throw new BadRequestException(`Modo de jogo inválido: ${gameMode}`);
+    }
+    return gameMode as GameMode;
+  }
+
   @Get(':discordServerId')
   async getLeaderboard(
     @Param('discordServerId') discordServerId: string,
     @Query('mode') mode?: string,
+    @Query('gameMode') gameMode?: string,
   ) {
     const playersPerTeam = mode ? parseInt(mode, 10) : undefined;
-    return this.leaderboardService.getLeaderboardForServer(discordServerId, playersPerTeam);
+    return this.leaderboardService.getLeaderboardForServer(
+      discordServerId,
+      playersPerTeam,
+      this.parseGameModeFilter(gameMode),
+    );
   }
 
   @Get(':discordServerId/matches')
