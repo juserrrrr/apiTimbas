@@ -1,4 +1,6 @@
 import { EmbedBuilder, AttachmentBuilder } from 'discord.js';
+import { GameMode } from '@prisma/client';
+import { gameModeHeader } from '../../customLeagueMath/game-mode.constants';
 
 interface TeamPlayer {
   name: string;
@@ -39,18 +41,37 @@ const POS_ABBREV: Record<string, string> = {
   Top: 'TOP', Jungle: 'JG', Suporte: 'SUP',
 };
 
-export function generateLeagueEmbedText(
-  blueTeam: any[],
-  redTeam: any[],
-  matchFormat: string,
-  onlineMode: string,
-  winner?: 'BLUE' | 'RED' | null,
+export interface MatchEmbedOptions {
+  blueTeam: any[];
+  redTeam: any[];
+  /** Formato de formação dos times (Aleatório, Livre, Balanceado...). */
+  matchFormat: string;
+  /** Online ou Offline. */
+  onlineMode: string;
+  footerText: string;
+  /** Modo de jogo; define o mapa mostrado no cabeçalho. */
+  gameMode?: GameMode;
+  webUrl?: string;
+  winner?: 'BLUE' | 'RED' | null;
+  showDetails?: boolean;
+  gifUrl?: string | boolean;
+  playersPerTeam?: number;
+  matchId?: number;
+}
+
+export function generateLeagueEmbedText({
+  blueTeam,
+  redTeam,
+  matchFormat,
+  onlineMode,
+  gameMode = GameMode.CLASSIC,
+  winner,
   showDetails = false,
   playersPerTeam = 5,
-): string {
+}: Omit<MatchEmbedOptions, 'footerText'>): string {
   const formatStr = `Fmt: ${FORMAT_ABBREV[matchFormat] ?? matchFormat.slice(0, 10)}`;
   const onlineModeStr = `Modo: ${MODE_ABBREV[onlineMode] ?? onlineMode.slice(0, 8)}`;
-  const mapName = "[League of Legends] - Summoner's Rift";
+  const mapName = gameModeHeader(gameMode);
 
   let bluePad = 18;
   let redPad = 18;
@@ -97,20 +118,9 @@ export function generateLeagueEmbedText(
   return lines.join('\n');
 }
 
-export function buildMatchEmbed(
-  blueTeam: any[],
-  redTeam: any[],
-  matchFormat: string,
-  onlineMode: string,
-  footerText: string,
-  webUrl?: string,
-  winner?: 'BLUE' | 'RED' | null,
-  showDetails = false,
-  gifUrl?: string | boolean,
-  playersPerTeam = 5,
-  matchId?: number,
-): EmbedBuilder {
-  const text = generateLeagueEmbedText(blueTeam, redTeam, matchFormat, onlineMode, winner, showDetails, playersPerTeam);
+export function buildMatchEmbed(options: MatchEmbedOptions): EmbedBuilder {
+  const { footerText, webUrl, gifUrl, matchId } = options;
+  const text = generateLeagueEmbedText(options);
   const footer = matchId != null ? `${footerText} · Partida #${matchId}` : footerText;
   const embed = new EmbedBuilder()
     .setDescription('```' + text + '```')

@@ -57,6 +57,7 @@ export class LeagueMatchController {
       dto.discordServerId,
       dto.matchFormat,
       match.playersPerTeam,
+      match.gameMode,
     ).catch(() => {});
 
     return match;

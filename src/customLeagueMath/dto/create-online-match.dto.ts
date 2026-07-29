@@ -1,5 +1,5 @@
 import { IsString, IsNotEmpty, IsEnum, IsOptional, IsInt, Min, Max } from 'class-validator';
-import { MatchType } from '@prisma/client';
+import { MatchType, GameMode } from '@prisma/client';
 
 export class CreateOnlineMatchDto {
   @IsString()
@@ -13,6 +13,11 @@ export class CreateOnlineMatchDto {
   @IsEnum(MatchType)
   @IsOptional()
   matchFormat?: MatchType;
+
+  /** Modo de jogo (define o mapa). Padrão: CLASSIC (Summoner's Rift). */
+  @IsEnum(GameMode)
+  @IsOptional()
+  gameMode?: GameMode;
 
   @IsInt()
   @Min(1)

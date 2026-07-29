@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { GuildMember, VoiceChannel, TextChannel } from 'discord.js';
+import { GameMode } from '@prisma/client';
 import { randomUUID } from 'crypto';
 
 export interface OfflineMatchState {
@@ -9,6 +10,8 @@ export interface OfflineMatchState {
   matchFormatName: string;
   onlineModeValue: number;
   onlineModeName: string;
+  /** Modo de jogo escolhido na criação; define o mapa mostrado no embed. */
+  gameMode: GameMode;
   playersPerTeam: number;
   guildId: string;
   waitingChannelId: string;

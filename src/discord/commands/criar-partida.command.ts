@@ -12,11 +12,13 @@ import { MatchStateService } from '../services/match-state.service';
 import { LeagueMatchService } from '../../customLeagueMath/leagueMatch.service';
 import { buildMatchEmbed } from '../helpers/embed.helper';
 import { buildOfflineMatchButtons } from '../helpers/match-buttons.helper';
-import { MatchType } from '@prisma/client';
+import { MatchType, GameMode } from '@prisma/client';
+import { GAME_MODE_LABELS, supportsLanes } from '../../customLeagueMath/game-mode.constants';
 
 const FORMAT_NAMES: Record<number, string> = { 0: 'Aleatório', 1: 'Livre', 2: 'Balanceado', 3: 'Aleatório Completo' };
 const FORMAT_API: Record<number, MatchType> = { 0: MatchType.ALEATORIO, 1: MatchType.LIVRE, 2: MatchType.BALANCEADO, 3: MatchType.ALEATORIO_COMPLETO };
 const MODE_NAMES: Record<number, string> = { 0: 'Offline', 1: 'Online' };
+const GAME_MODE_API: Record<number, GameMode> = { 0: GameMode.CLASSIC, 1: GameMode.ARAM };
 
 class CriarPartidaOptions {
   @IntegerOption({
@@ -55,6 +57,18 @@ class CriarPartidaOptions {
   })
   matchFormat: number;
 
+  // Opções não obrigatórias precisam vir depois das obrigatórias (regra do Discord).
+  @IntegerOption({
+    name: 'mapa',
+    description: "Onde a partida vai ser jogada (padrão: Summoner's Rift)",
+    required: false,
+    choices: [
+      { name: "Clássico - Summoner's Rift", value: 0 },
+      { name: 'ARAM - Howling Abyss', value: 1 },
+    ],
+  })
+  gameMode?: number;
+
   @BooleanOption({ name: 'debug', description: 'Modo de debug com jogadores falsos (apenas dono)', required: false })
   debug?: boolean;
 }
@@ -79,9 +93,10 @@ export class CriarPartidaCommand {
   @SlashCommand({ name: 'criarpartida', description: 'Cria uma partida personalizada de League of Legends.', guilds: process.env.DISCORD_GUILD_ID ? [process.env.DISCORD_GUILD_ID] : undefined })
   async onCriarPartida(
     @Context() [interaction]: SlashCommandContext,
-    @Options() { onlineMode, playersPerTeam, matchFormat, debug }: CriarPartidaOptions,
+    @Options() { onlineMode, playersPerTeam, matchFormat, gameMode, debug }: CriarPartidaOptions,
   ) {
     const member = interaction.member as GuildMember;
+    const selectedGameMode = GAME_MODE_API[gameMode ?? 0] ?? GameMode.CLASSIC;
 
     if (debug && interaction.user.id !== interaction.guild!.ownerId) {
       await interaction.reply({ content: '❌ Você não tem permissão para usar o modo de debug.', flags: MessageFlags.Ephemeral });
@@ -90,6 +105,14 @@ export class CriarPartidaCommand {
 
     if (matchFormat === 3 && playersPerTeam !== 5) {
       await interaction.reply({ content: '❌ O modo Aleatório Completo só está disponível para 5v5.', flags: MessageFlags.Ephemeral });
+      return;
+    }
+
+    if (matchFormat === 3 && !supportsLanes(selectedGameMode)) {
+      await interaction.reply({
+        content: `❌ O formato Aleatório Completo sorteia lanes e não funciona no modo ${GAME_MODE_LABELS[selectedGameMode]}.`,
+        flags: MessageFlags.Ephemeral,
+      });
       return;
     }
 
@@ -124,18 +147,19 @@ export class CriarPartidaCommand {
     const channels = this.channelManager.getChannels(interaction.guild!)!;
 
     if (onlineMode === 1) {
-      await this.createOnlineLobby(interaction, matchFormat, playersPerTeam, channels);
+      await this.createOnlineLobby(interaction, matchFormat, playersPerTeam, selectedGameMode, channels);
     } else {
-      await this.createOfflineMatch(interaction, matchFormat, playersPerTeam, channels, debug ?? false);
+      await this.createOfflineMatch(interaction, matchFormat, playersPerTeam, selectedGameMode, channels, debug ?? false);
     }
   }
 
-  private async createOnlineLobby(interaction: any, matchFormat: number, playersPerTeam: number, channels: any) {
+  private async createOnlineLobby(interaction: any, matchFormat: number, playersPerTeam: number, gameMode: GameMode, channels: any) {
     try {
       const lobby = await this.leagueMatchService.createOnline({
         discordServerId: interaction.guild.id,
         creatorDiscordId: interaction.user.id,
         matchFormat: FORMAT_API[matchFormat],
+        gameMode,
         playersPerTeam,
       });
 
@@ -147,10 +171,11 @@ export class CriarPartidaCommand {
         interaction.guild.id,
         FORMAT_API[matchFormat],
         playersPerTeam,
+        gameMode,
       );
 
       const msg = await interaction.followUp({
-        content: `✅ Partida ${playersPerTeam}v${playersPerTeam} criada! Veja em ${channels.text}\n🌐 Ao vivo: ${webUrl}`,
+        content: `✅ Partida ${playersPerTeam}v${playersPerTeam} de ${GAME_MODE_LABELS[gameMode]} criada! Veja em ${channels.text}\n🌐 Ao vivo: ${webUrl}`,
         flags: MessageFlags.Ephemeral,
         fetchReply: true,
       });
@@ -162,7 +187,7 @@ export class CriarPartidaCommand {
     }
   }
 
-  private async createOfflineMatch(interaction: any, matchFormat: number, playersPerTeam: number, channels: any, debug: boolean) {
+  private async createOfflineMatch(interaction: any, matchFormat: number, playersPerTeam: number, gameMode: GameMode, channels: any, debug: boolean) {
     let initialPlayers: string[] = [];
 
     if (debug) {
@@ -181,6 +206,7 @@ export class CriarPartidaCommand {
       matchFormatName: FORMAT_NAMES[matchFormat],
       onlineModeValue: 0,
       onlineModeName: 'Offline',
+      gameMode,
       playersPerTeam,
       guildId: interaction.guild.id,
       waitingChannelId: channels.waiting.id,
@@ -200,13 +226,24 @@ export class CriarPartidaCommand {
 
     const gif = this.getGifAttachment();
     const files = gif ? [gif] : [];
-    const embed = buildMatchEmbed([], [], FORMAT_NAMES[matchFormat], 'Offline', `Aguardando jogadores... 0/${playersPerTeam * 2}`, undefined, null, false, !!gif, playersPerTeam);
+    const embed = buildMatchEmbed({
+      blueTeam: [],
+      redTeam: [],
+      matchFormat: FORMAT_NAMES[matchFormat],
+      onlineMode: 'Offline',
+      footerText: `Aguardando jogadores... 0/${playersPerTeam * 2}`,
+      gameMode,
+      winner: null,
+      showDetails: false,
+      gifUrl: !!gif,
+      playersPerTeam,
+    });
     const buttons = buildOfflineMatchButtons(key, false, matchFormat, initialPlayers.length, false, playersPerTeam);
 
     await channels.text.send({ embeds: [embed], components: buttons, files });
 
     const msg = await interaction.followUp({
-      content: `Partida ${playersPerTeam}v${playersPerTeam} offline criada! Veja em ${channels.text}`,
+      content: `Partida ${playersPerTeam}v${playersPerTeam} de ${GAME_MODE_LABELS[gameMode]} offline criada! Veja em ${channels.text}`,
       flags: MessageFlags.Ephemeral,
       fetchReply: true,
     });

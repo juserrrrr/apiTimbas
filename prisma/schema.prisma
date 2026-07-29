@@ -171,6 +171,16 @@ enum MatchStatus {
   EXPIRED
 }
 
+/// Modo de jogo da partida personalizada.
+/// Cada modo já implica o seu mapa (CLASSIC = Summoner's Rift, ARAM = Howling
+/// Abyss), por isso não existe coluna de mapa separada: guardar os dois
+/// permitiria estados impossíveis como "ARAM no Summoner's Rift". O nome do
+/// mapa é derivado na exibição (ver GAME_MODE_MAP_NAMES no backend).
+enum GameMode {
+  CLASSIC
+  ARAM
+}
+
 model TeamLeague {
   id                  Int                @id @default(autoincrement())
   side                Side
@@ -203,6 +213,7 @@ model CustomLeagueMatch {
   id               Int              @id @default(autoincrement())
   riotMatchId      String?          @unique
   matchType        MatchType        @default(ALEATORIO)
+  gameMode         GameMode         @default(CLASSIC)
   playersPerTeam   Int              @default(5)
   teamBlueId       Int?
   teamRedId        Int?
@@ -224,11 +235,13 @@ model CustomLeagueMatch {
   @@index([winnerId])
   @@index([ServerDiscordId])
   @@index([matchType])
+  @@index([gameMode])
   @@index([playersPerTeam])
   @@index([status])
   @@index([creatorDiscordId])
   @@index([ServerDiscordId, status])
   @@index([ServerDiscordId, winnerId])
+  @@index([ServerDiscordId, gameMode])
 }
 
 model VerifiedAccount {

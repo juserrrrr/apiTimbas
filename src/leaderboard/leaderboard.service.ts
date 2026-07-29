@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma, GameMode } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { GAME_MODE_LABELS, GAME_MODE_MAP_NAMES } from '../customLeagueMath/game-mode.constants';
 
 export interface PlayerStats {
   rank: number;
@@ -32,6 +33,17 @@ export interface MatchTypeStat {
   winRate: number;
 }
 
+/** Desempenho do jogador por modo de jogo (Clássico x ARAM). */
+export interface GameModeStat {
+  gameMode: GameMode;
+  label: string;
+  mapName: string;
+  wins: number;
+  losses: number;
+  total: number;
+  winRate: number;
+}
+
 export interface PlayerDetailStats {
   currentStreakCount: number;
   currentStreakType: 'W' | 'L' | null;
@@ -42,6 +54,7 @@ export interface PlayerDetailStats {
   weeklyPerformance: { week: string; wins: number; losses: number }[];
   positionStats: PositionStat[];
   matchTypeStats: MatchTypeStat[];
+  gameModeStats: GameModeStat[];
 }
 
 export interface DuoStat {
@@ -63,6 +76,7 @@ export interface DuoStats {
 export interface MatchHistoryEntry {
   id: number;
   matchType: string;
+  gameMode: GameMode;
   playersPerTeam: number;
   dateCreated: Date;
   winnerId: number | null;
@@ -237,6 +251,7 @@ export class LeaderboardService {
           date: match.dateCreated,
           position: playerTeam.players[0]?.position ?? null,
           matchType: match.matchType,
+          gameMode: match.gameMode,
         };
       })
       .filter((r): r is NonNullable<typeof r> => r !== null);
@@ -331,6 +346,26 @@ export class LeaderboardService {
       }))
       .sort((a, b) => b.winRate - a.winRate);
 
+    // Game mode stats (Clássico x ARAM)
+    const gameModeMap = new Map<GameMode, { wins: number; losses: number }>();
+    for (const result of matchResults) {
+      if (!gameModeMap.has(result.gameMode)) gameModeMap.set(result.gameMode, { wins: 0, losses: 0 });
+      const entry = gameModeMap.get(result.gameMode)!;
+      if (result.won) entry.wins++;
+      else entry.losses++;
+    }
+    const gameModeStats: GameModeStat[] = [...gameModeMap.entries()]
+      .map(([gameMode, s]) => ({
+        gameMode,
+        label: GAME_MODE_LABELS[gameMode] ?? gameMode,
+        mapName: GAME_MODE_MAP_NAMES[gameMode] ?? '',
+        wins: s.wins,
+        losses: s.losses,
+        total: s.wins + s.losses,
+        winRate: (s.wins + s.losses) > 0 ? parseFloat((s.wins / (s.wins + s.losses)).toFixed(2)) : 0,
+      }))
+      .sort((a, b) => b.total - a.total);
+
     const data: PlayerDetailStats = {
       currentStreakCount,
       currentStreakType,
@@ -351,6 +386,7 @@ export class LeaderboardService {
       weeklyPerformance,
       positionStats,
       matchTypeStats,
+      gameModeStats,
     };
 
     this.toCache(cacheKey, data);
@@ -481,6 +517,7 @@ export class LeaderboardService {
         return {
           id: match.id,
           matchType: match.matchType,
+          gameMode: match.gameMode,
           playersPerTeam: match.playersPerTeam,
           dateCreated: match.dateCreated,
           winnerId: match.winnerId,

@@ -6,7 +6,7 @@ import { DiscordServerService } from '../discordServer/discordServer.service';
 import { LeaderboardService } from '../leaderboard/leaderboard.service';
 import { PostMatchService } from '../engagement/post-match.service';
 import { mockDeep, DeepMockProxy } from 'jest-mock-extended';
-import { PrismaClient, MatchStatus, MatchType, Side, Position } from '@prisma/client';
+import { PrismaClient, MatchStatus, MatchType, Side, Position, GameMode } from '@prisma/client';
 import { BadRequestException, ForbiddenException } from '@nestjs/common';
 
 describe('LeagueMatchService', () => {
@@ -69,6 +69,87 @@ describe('LeagueMatchService', () => {
         include: expect.anything()
       });
       expect(result).toEqual(expectedMatch);
+    });
+
+    it('deve cair no modo CLASSIC quando o gameMode não é informado', async () => {
+      prismaMock.customLeagueMatch.create.mockResolvedValue({ id: 1 } as any);
+
+      await service.createOnline({ discordServerId: 'server-1' });
+
+      expect(prismaMock.customLeagueMatch.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ gameMode: GameMode.CLASSIC }),
+        include: expect.anything(),
+      });
+    });
+
+    it('deve persistir o gameMode escolhido', async () => {
+      prismaMock.customLeagueMatch.create.mockResolvedValue({ id: 1 } as any);
+
+      await service.createOnline({ discordServerId: 'server-1', gameMode: GameMode.ARAM });
+
+      expect(prismaMock.customLeagueMatch.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ gameMode: GameMode.ARAM }),
+        include: expect.anything(),
+      });
+    });
+
+    it('deve recusar ALEATORIO_COMPLETO no ARAM, pois não há lanes para sortear', async () => {
+      await expect(
+        service.createOnline({
+          discordServerId: 'server-1',
+          gameMode: GameMode.ARAM,
+          matchFormat: MatchType.ALEATORIO_COMPLETO,
+        }),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(prismaMock.customLeagueMatch.create).not.toHaveBeenCalled();
+    });
+
+    it('deve aceitar ALEATORIO_COMPLETO no Clássico', async () => {
+      prismaMock.customLeagueMatch.create.mockResolvedValue({ id: 1 } as any);
+
+      await service.createOnline({
+        discordServerId: 'server-1',
+        gameMode: GameMode.CLASSIC,
+        matchFormat: MatchType.ALEATORIO_COMPLETO,
+      });
+
+      expect(prismaMock.customLeagueMatch.create).toHaveBeenCalled();
+    });
+  });
+
+  describe('create (offline)', () => {
+    const baseDto = {
+      riotMatchId: 'TB_ABC123',
+      ServerDiscordId: 'server-1',
+      teamBlue: { players: [{ discordId: 'a' }] },
+      teamRed: { players: [{ discordId: 'b' }] },
+    };
+
+    it('deve recusar ALEATORIO_COMPLETO no ARAM', async () => {
+      await expect(
+        service.create({
+          ...baseDto,
+          gameMode: GameMode.ARAM,
+          matchType: MatchType.ALEATORIO_COMPLETO,
+        } as any),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(prismaMock.customLeagueMatch.create).not.toHaveBeenCalled();
+    });
+
+    it('deve persistir o gameMode da partida offline', async () => {
+      prismaMock.user.findUnique.mockResolvedValue({ id: 7 } as any);
+      prismaMock.teamLeague.create.mockResolvedValueOnce({ id: 10, players: [] } as any);
+      prismaMock.teamLeague.create.mockResolvedValueOnce({ id: 20, players: [] } as any);
+      prismaMock.customLeagueMatch.create.mockResolvedValue({ id: 1 } as any);
+
+      await service.create({ ...baseDto, gameMode: GameMode.ARAM } as any);
+
+      expect(prismaMock.customLeagueMatch.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ gameMode: GameMode.ARAM }),
+        include: expect.anything(),
+      });
     });
   });
 
@@ -241,6 +322,7 @@ describe('LeagueMatchService', () => {
         queuePlayers,
         playersPerTeam: 5,
         matchType: MatchType.ALEATORIO_COMPLETO,
+        gameMode: GameMode.CLASSIC,
       } as any);
 
       prismaMock.userTeamLeague.update.mockResolvedValue({} as any);
@@ -251,6 +333,30 @@ describe('LeagueMatchService', () => {
       expect(prismaMock.userTeamLeague.update).toHaveBeenCalledTimes(10);
       expect(prismaMock.customLeagueMatch.update).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ showDetails: true }) })
+      );
+    });
+
+    it('não deve distribuir posições no ARAM, mesmo se a partida for ALEATORIO_COMPLETO', async () => {
+      // Cobre linhas antigas do banco: a validação de criação impede essa combinação
+      // hoje, mas o sorteio não pode atribuir lanes num mapa de rota única.
+      jest.spyOn(service, 'findOne').mockResolvedValue({
+        id: matchId,
+        status: MatchStatus.WAITING,
+        creatorDiscordId,
+        queuePlayers,
+        playersPerTeam: 5,
+        matchType: MatchType.ALEATORIO_COMPLETO,
+        gameMode: GameMode.ARAM,
+      } as any);
+
+      prismaMock.userTeamLeague.update.mockResolvedValue({} as any);
+
+      await service.draw(matchId, creatorDiscordId);
+
+      expect(prismaMock.userTeamLeague.update).not.toHaveBeenCalled();
+      expect(prismaMock.userTeamLeague.updateMany).toHaveBeenCalledTimes(2);
+      expect(prismaMock.customLeagueMatch.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ showDetails: false }) })
       );
     });
   });

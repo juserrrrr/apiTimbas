@@ -57,16 +57,17 @@ export class OfflineMatchSelectInteraction {
       return { name: member?.displayName ?? e.userId ?? '?', position: e.position };
     };
 
-    const embed = buildMatchEmbed(
-      state.blueTeam.map(toEmbedPlayer),
-      state.redTeam.map(toEmbedPlayer),
-      state.matchFormatName,
-      state.onlineModeName,
-      `Partida finalizada! Vencedor: Time ${winnerLabel}`,
-      undefined,
-      winnerSide,
-      state.showDetails,
-    );
+    const embed = buildMatchEmbed({
+      blueTeam: state.blueTeam.map(toEmbedPlayer),
+      redTeam: state.redTeam.map(toEmbedPlayer),
+      matchFormat: state.matchFormatName,
+      onlineMode: state.onlineModeName,
+      footerText: `Partida finalizada! Vencedor: Time ${winnerLabel}`,
+      gameMode: state.gameMode,
+      winner: winnerSide,
+      showDetails: state.showDetails,
+      playersPerTeam: state.playersPerTeam,
+    });
 
     await interaction.message!.edit({ embeds: [embed], components: [] }).catch(() => {});
     await interaction.deleteReply().catch(() => {});

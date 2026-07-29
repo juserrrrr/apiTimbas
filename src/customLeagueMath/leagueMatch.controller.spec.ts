@@ -5,6 +5,7 @@ import { CreateCustomLeagueMatchDto } from './dto/create-leagueMatch.dto';
 import { UpdateCustomLeagueMatchDto } from './dto/update-leagueMatch.dto';
 import { AuthGuard } from '../auth/guards/auth.guard';
 import { RoleGuard } from '../auth/guards/role.guard';
+import { GameMode, Role } from '@prisma/client';
 
 describe('LeagueMatchController', () => {
   let controller: LeagueMatchController;
@@ -15,6 +16,8 @@ describe('LeagueMatchController', () => {
     findOne: jest.fn(),
     update: jest.fn(),
     remove: jest.fn(),
+    createOnline: jest.fn(),
+    announceMatchToGuild: jest.fn().mockResolvedValue(undefined),
   };
 
   beforeEach(async () => {
@@ -66,6 +69,64 @@ describe('LeagueMatchController', () => {
 
       expect(result).toEqual(expectedResult);
       expect(mockLeagueMatchService.create).toHaveBeenCalledWith(createDto);
+    });
+  });
+
+  describe('createOnline', () => {
+    const req = { tokenPayload: { discordId: 'user-1', role: Role.PLAYER } };
+
+    it('deve anunciar o embed no Discord com o gameMode salvo na partida', async () => {
+      // Regressão: o anúncio precisa usar o modo persistido, senão uma partida
+      // de ARAM criada pelo site aparece como Clássico no Discord.
+      mockLeagueMatchService.createOnline.mockResolvedValue({
+        id: 7,
+        playersPerTeam: 5,
+        gameMode: GameMode.ARAM,
+      });
+
+      await controller.createOnline(
+        { discordServerId: 'server-1', gameMode: GameMode.ARAM } as any,
+        req,
+      );
+
+      expect(mockLeagueMatchService.announceMatchToGuild).toHaveBeenCalledWith(
+        7,
+        'server-1',
+        undefined,
+        5,
+        GameMode.ARAM,
+      );
+    });
+
+    it('deve anunciar como Clássico quando a partida foi criada sem modo', async () => {
+      mockLeagueMatchService.createOnline.mockResolvedValue({
+        id: 8,
+        playersPerTeam: 5,
+        gameMode: GameMode.CLASSIC,
+      });
+
+      await controller.createOnline({ discordServerId: 'server-1' } as any, req);
+
+      expect(mockLeagueMatchService.announceMatchToGuild).toHaveBeenCalledWith(
+        8,
+        'server-1',
+        undefined,
+        5,
+        GameMode.CLASSIC,
+      );
+    });
+
+    it('não deve derrubar a criação se o anúncio no Discord falhar', async () => {
+      mockLeagueMatchService.createOnline.mockResolvedValue({
+        id: 9,
+        playersPerTeam: 5,
+        gameMode: GameMode.ARAM,
+      });
+      mockLeagueMatchService.announceMatchToGuild.mockRejectedValueOnce(new Error('Discord fora do ar'));
+
+      const result = await controller.createOnline({ discordServerId: 'server-1' } as any, req);
+
+      expect(result).toEqual(expect.objectContaining({ id: 9 }));
     });
   });
 

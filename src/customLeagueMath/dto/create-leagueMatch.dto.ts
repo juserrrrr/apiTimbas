@@ -7,9 +7,9 @@ import {
   IsString,
   IsEnum,
 } from 'class-validator';
-import { MatchType } from '@prisma/client';
+import { MatchType, GameMode } from '@prisma/client';
 
-export { MatchType };
+export { MatchType, GameMode };
 
 export class UserTeamLeagueDto {
   @IsOptional()
@@ -42,6 +42,11 @@ export class CreateCustomLeagueMatchDto {
   @IsOptional()
   @IsEnum(MatchType)
   matchType?: MatchType;
+
+  /** Modo de jogo (define o mapa). Padrão: CLASSIC (Summoner's Rift). */
+  @IsOptional()
+  @IsEnum(GameMode)
+  gameMode?: GameMode;
 
   @IsNotEmpty()
   teamBlue: TeamLeagueDto;

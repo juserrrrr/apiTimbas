@@ -59,7 +59,19 @@ export class OnlineLobbyInteraction {
       ? `${process.env.WEB_URL ?? 'http://localhost:3000'}/dashboard/match/${lobby.id}`
       : undefined;
     const hasGif = !!interaction.message.attachments?.find((a: any) => a.name === 'timbas.gif' || a.name === 'timbasQueueGif.gif');
-    const embed = buildMatchEmbed(blueDisplay, redDisplay, formatName, 'Online', footerMap[status] ?? '', webUrl, winner, showDetails, hasGif, playersPerTeam);
+    const embed = buildMatchEmbed({
+      blueTeam: blueDisplay,
+      redTeam: redDisplay,
+      matchFormat: formatName,
+      onlineMode: 'Online',
+      footerText: footerMap[status] ?? '',
+      gameMode: lobby?.gameMode,
+      webUrl,
+      winner,
+      showDetails,
+      gifUrl: hasGif,
+      playersPerTeam,
+    });
     const buttons = buildOnlineLobbyButtons(lobby.id, started, finished, isLivre);
 
     try { await interaction.message.edit({ embeds: [embed], components: buttons }); } catch {}

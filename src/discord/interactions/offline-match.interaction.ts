@@ -91,18 +91,18 @@ export class OfflineMatchInteraction {
         ? 'Pronto para começar!'
         : `Aguardando jogadores... ${state.confirmedPlayerIds.length}/${maxPlayers}`;
 
-    const embed = buildMatchEmbed(
-      blueDisplay.map((e, i) => toEmbedPlayer(e, i)),
-      redDisplay.map((e, i) => toEmbedPlayer(e, i + half)),
-      state.matchFormatName,
-      state.onlineModeName,
+    const embed = buildMatchEmbed({
+      blueTeam: blueDisplay.map((e, i) => toEmbedPlayer(e, i)),
+      redTeam: redDisplay.map((e, i) => toEmbedPlayer(e, i + half)),
+      matchFormat: state.matchFormatName,
+      onlineMode: state.onlineModeName,
       footerText,
-      undefined,
-      null,
-      state.showDetails,
-      hasGif,
+      gameMode: state.gameMode,
+      winner: null,
+      showDetails: state.showDetails,
+      gifUrl: hasGif,
       playersPerTeam,
-    );
+    });
     await interaction.message.edit({ embeds: [embed], components: buttons }).catch(() => {});
   }
 

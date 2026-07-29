@@ -7,7 +7,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { randomUUID } from 'crypto';
-import { Prisma, Side, Position, MatchStatus, MatchType } from '@prisma/client';
+import { Prisma, Side, Position, MatchStatus, MatchType, GameMode } from '@prisma/client';
 import { ChannelType, Client, TextChannel, VoiceChannel } from 'discord.js';
 import { PrismaService } from '../prisma/prisma.service';
 import { DiscordServerService } from '../discordServer/discordServer.service';
@@ -22,6 +22,7 @@ import { Subject } from 'rxjs';
 import { Cron } from '@nestjs/schedule';
 import { buildMatchEmbed, MATCH_TYPE_LABELS } from '../discord/helpers/embed.helper';
 import { buildOnlineLobbyButtons } from '../discord/helpers/match-buttons.helper';
+import { supportsLanes, GAME_MODE_LABELS } from './game-mode.constants';
 import * as path from 'path';
 import * as fs from 'fs';
 
@@ -214,7 +215,13 @@ export class LeagueMatchService {
 
   // ─── DISCORD EMBED ANNOUNCEMENT ──────────────────────────────────────────
 
-  async announceMatchToGuild(matchId: number, guildId: string, matchFormat: MatchType | undefined, playersPerTeam: number): Promise<void> {
+  async announceMatchToGuild(
+    matchId: number,
+    guildId: string,
+    matchFormat: MatchType | undefined,
+    playersPerTeam: number,
+    gameMode: GameMode = GameMode.CLASSIC,
+  ): Promise<void> {
     const guild = this.client.guilds.cache.get(guildId);
     if (!guild) return;
 
@@ -231,18 +238,37 @@ export class LeagueMatchService {
     const hasGif = fs.existsSync(gifPath);
     const files = hasGif ? [{ attachment: gifPath, name: 'timbas.gif' }] : [];
 
-    const embed = buildMatchEmbed([], [], formatName, 'Online', `Aguardando jogadores... 0/${maxPlayers}`, webUrl, null, false, hasGif, playersPerTeam, matchId);
+    const embed = buildMatchEmbed({
+      blueTeam: [],
+      redTeam: [],
+      matchFormat: formatName,
+      onlineMode: 'Online',
+      footerText: `Aguardando jogadores... 0/${maxPlayers}`,
+      gameMode,
+      webUrl,
+      winner: null,
+      showDetails: false,
+      gifUrl: hasGif,
+      playersPerTeam,
+      matchId,
+    });
     const buttons = buildOnlineLobbyButtons(matchId, false, false, matchFormat === 'LIVRE');
 
     try {
       const message = await textChannel.send({ embeds: [embed], components: buttons, files });
-      this.subscribeToMatchEmbed(matchId, message, matchFormat, playersPerTeam);
+      this.subscribeToMatchEmbed(matchId, message, matchFormat, playersPerTeam, gameMode);
     } catch (e) {
       this.logger.error(`Failed to announce match ${matchId} to guild ${guildId}: ${e}`);
     }
   }
 
-  private subscribeToMatchEmbed(matchId: number, message: any, matchFormat: MatchType | undefined, playersPerTeam: number) {
+  private subscribeToMatchEmbed(
+    matchId: number,
+    message: any,
+    matchFormat: MatchType | undefined,
+    playersPerTeam: number,
+    gameMode: GameMode = GameMode.CLASSIC,
+  ) {
     const subject = this.getOrCreateSubject(matchId);
     let finished = false;
 
@@ -252,7 +278,7 @@ export class LeagueMatchService {
         const { type, payload } = event;
 
         if (['player_joined', 'player_left', 'teams_drawn', 'match_started', 'match_finished', 'state'].includes(type)) {
-          await this.updateMatchEmbed(message, payload, matchFormat, playersPerTeam);
+          await this.updateMatchEmbed(message, payload, matchFormat, playersPerTeam, gameMode);
         }
 
         if (type === 'match_expired') {
@@ -271,7 +297,13 @@ export class LeagueMatchService {
     });
   }
 
-  private async updateMatchEmbed(message: any, lobby: any, matchFormat: MatchType | undefined, playersPerTeam: number) {
+  private async updateMatchEmbed(
+    message: any,
+    lobby: any,
+    matchFormat: MatchType | undefined,
+    playersPerTeam: number,
+    gameMode: GameMode = GameMode.CLASSIC,
+  ) {
     const status = lobby?.status ?? 'WAITING';
     const players = lobby?.queuePlayers ?? [];
     const teams = lobby?.Teams ?? [];
@@ -310,7 +342,20 @@ export class LeagueMatchService {
       : undefined;
     const hasGif = !!message.attachments?.find((a: any) => a.name === 'timbas.gif' || a.name === 'timbasQueueGif.gif');
     const formatName = MATCH_TYPE_LABELS[matchFormat ?? 'ALEATORIO'] ?? 'Aleatório';
-    const embed = buildMatchEmbed(blueDisplay, redDisplay, formatName, 'Online', footerMap[status] ?? '', webUrl, winner, showDetails, hasGif, playersPerTeam, lobby.id);
+    const embed = buildMatchEmbed({
+      blueTeam: blueDisplay,
+      redTeam: redDisplay,
+      matchFormat: formatName,
+      onlineMode: 'Online',
+      footerText: footerMap[status] ?? '',
+      gameMode: lobby?.gameMode ?? gameMode,
+      webUrl,
+      winner,
+      showDetails,
+      gifUrl: hasGif,
+      playersPerTeam,
+      matchId: lobby.id,
+    });
     const buttons = buildOnlineLobbyButtons(lobby.id, started, finished, matchFormat === 'LIVRE');
 
     try {
@@ -322,19 +367,33 @@ export class LeagueMatchService {
 
   async createOnline(dto: CreateOnlineMatchDto) {
     const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hora
+    const gameMode = dto.gameMode ?? GameMode.CLASSIC;
+    const matchType = dto.matchFormat || MatchType.ALEATORIO;
+
+    this.assertModeSupportsFormat(gameMode, matchType);
     await this.discordServerService.findOrCreate(dto.discordServerId);
 
     return this.prisma.customLeagueMatch.create({
       data: {
         ServerDiscordId: dto.discordServerId,
         creatorDiscordId: dto.creatorDiscordId,
-        matchType: dto.matchFormat || MatchType.ALEATORIO,
+        matchType,
+        gameMode,
         playersPerTeam: dto.playersPerTeam ?? 5,
         status: MatchStatus.WAITING,
         expiresAt,
       },
       include: MATCH_INCLUDE,
     });
+  }
+
+  /** ARAM não tem lanes, então sortear posições (ALEATORIO_COMPLETO) só vale no Clássico. */
+  private assertModeSupportsFormat(gameMode: GameMode, matchType: MatchType): void {
+    if (matchType === MatchType.ALEATORIO_COMPLETO && !supportsLanes(gameMode)) {
+      throw new BadRequestException(
+        `O formato Aleatório Completo sorteia lanes e não funciona no modo ${GAME_MODE_LABELS[gameMode]}.`,
+      );
+    }
   }
 
   async findActiveByServer(discordServerId: string) {
@@ -454,7 +513,7 @@ export class LeagueMatchService {
 
     let showDetails = false;
 
-    if (match.matchType === 'ALEATORIO_COMPLETO' && playersPerTeam === 5) {
+    if (match.matchType === 'ALEATORIO_COMPLETO' && playersPerTeam === 5 && supportsLanes(match.gameMode)) {
       const positions: Position[] = ['TOP', 'JUNGLE', 'MID', 'ADC', 'SUPPORT'];
       const bluePositions = this.shuffleArray([...positions]);
       const redPositions  = this.shuffleArray([...positions]);
@@ -782,6 +841,9 @@ export class LeagueMatchService {
 
   async create(createLeagueMatchDto: CreateCustomLeagueMatchDto) {
     try {
+      const gameMode = createLeagueMatchDto.gameMode ?? GameMode.CLASSIC;
+      this.assertModeSupportsFormat(gameMode, createLeagueMatchDto.matchType ?? MatchType.ALEATORIO);
+
       if (createLeagueMatchDto.matchType === MatchType.ALEATORIO_COMPLETO) {
         MatchValidator.validateCompleteRandomMatch(createLeagueMatchDto);
       } else {
@@ -834,6 +896,7 @@ export class LeagueMatchService {
           data: {
             riotMatchId: createLeagueMatchDto.riotMatchId,
             matchType: createLeagueMatchDto.matchType || MatchType.ALEATORIO,
+            gameMode,
             playersPerTeam,
             ServerDiscordId: createLeagueMatchDto.ServerDiscordId,
             teamBlueId: teamBlue.id,
