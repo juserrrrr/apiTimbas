@@ -23,6 +23,7 @@ import { Cron } from '@nestjs/schedule';
 import { buildMatchEmbed, MATCH_TYPE_LABELS } from '../discord/helpers/embed.helper';
 import { buildOnlineLobbyButtons } from '../discord/helpers/match-buttons.helper';
 import { supportsLanes, GAME_MODE_LABELS } from './game-mode.constants';
+import { getQueueGifAttachment } from '../discord/helpers/queue-gif.helper';
 import * as path from 'path';
 import * as fs from 'fs';
 
@@ -234,9 +235,9 @@ export class LeagueMatchService {
     const formatName = MATCH_TYPE_LABELS[matchFormat ?? 'ALEATORIO'] ?? 'Aleatório';
     const maxPlayers = playersPerTeam * 2;
 
-    const gifPath = path.join(process.cwd(), 'images', 'timbasQueueGif.gif');
-    const hasGif = fs.existsSync(gifPath);
-    const files = hasGif ? [{ attachment: gifPath, name: 'timbas.gif' }] : [];
+    const gif = getQueueGifAttachment();
+    const hasGif = !!gif;
+    const files = gif ? [gif] : [];
 
     const embed = buildMatchEmbed({
       blueTeam: [],

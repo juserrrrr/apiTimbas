@@ -37,6 +37,8 @@ COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/data ./data
+# o gif da fila é lido em runtime a partir de process.cwd()/images
+COPY --from=builder /app/images ./images
 
 EXPOSE 3333
 

@@ -12,6 +12,7 @@ import { MatchStateService } from '../services/match-state.service';
 import { LeagueMatchService } from '../../customLeagueMath/leagueMatch.service';
 import { buildMatchEmbed } from '../helpers/embed.helper';
 import { buildOfflineMatchButtons } from '../helpers/match-buttons.helper';
+import { getQueueGifAttachment } from '../helpers/queue-gif.helper';
 import { MatchType, GameMode } from '@prisma/client';
 import { GAME_MODE_LABELS, supportsLanes } from '../../customLeagueMath/game-mode.constants';
 
@@ -86,9 +87,7 @@ export class CriarPartidaCommand {
   ) {}
 
   private getGifAttachment() {
-    const gifPath = path.join(process.cwd(), 'images', 'timbasQueueGif.gif');
-    if (fs.existsSync(gifPath)) return { attachment: gifPath, name: 'timbas.gif' };
-    return null;
+    return getQueueGifAttachment();
   }
 
   @SlashCommand({ name: 'criarpartida', description: 'Cria uma partida personalizada de League of Legends.', guilds: process.env.DISCORD_GUILD_ID ? [process.env.DISCORD_GUILD_ID] : undefined })
