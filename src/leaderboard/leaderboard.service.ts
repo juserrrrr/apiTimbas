@@ -33,7 +33,7 @@ export interface MatchTypeStat {
   winRate: number;
 }
 
-/** Desempenho do jogador por modo de jogo (Clássico x ARAM). */
+/** Desempenho do jogador por modo de jogo (Fenda, League Classic, ARAM). */
 export interface GameModeStat {
   gameMode: GameMode;
   label: string;
@@ -346,7 +346,7 @@ export class LeaderboardService {
       }))
       .sort((a, b) => b.winRate - a.winRate);
 
-    // Game mode stats (Clássico x ARAM)
+    // Game mode stats (Fenda, League Classic, ARAM)
     const gameModeMap = new Map<GameMode, { wins: number; losses: number }>();
     for (const result of matchResults) {
       if (!gameModeMap.has(result.gameMode)) gameModeMap.set(result.gameMode, { wins: 0, losses: 0 });

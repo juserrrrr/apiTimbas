@@ -220,7 +220,7 @@ export class LeagueMatchService {
     guildId: string,
     matchFormat: MatchType | undefined,
     playersPerTeam: number,
-    gameMode: GameMode = GameMode.CLASSIC,
+    gameMode: GameMode = GameMode.SUMMONERS_RIFT,
   ): Promise<void> {
     const guild = this.client.guilds.cache.get(guildId);
     if (!guild) return;
@@ -267,7 +267,7 @@ export class LeagueMatchService {
     message: any,
     matchFormat: MatchType | undefined,
     playersPerTeam: number,
-    gameMode: GameMode = GameMode.CLASSIC,
+    gameMode: GameMode = GameMode.SUMMONERS_RIFT,
   ) {
     const subject = this.getOrCreateSubject(matchId);
     let finished = false;
@@ -302,7 +302,7 @@ export class LeagueMatchService {
     lobby: any,
     matchFormat: MatchType | undefined,
     playersPerTeam: number,
-    gameMode: GameMode = GameMode.CLASSIC,
+    gameMode: GameMode = GameMode.SUMMONERS_RIFT,
   ) {
     const status = lobby?.status ?? 'WAITING';
     const players = lobby?.queuePlayers ?? [];
@@ -367,7 +367,7 @@ export class LeagueMatchService {
 
   async createOnline(dto: CreateOnlineMatchDto) {
     const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hora
-    const gameMode = dto.gameMode ?? GameMode.CLASSIC;
+    const gameMode = dto.gameMode ?? GameMode.SUMMONERS_RIFT;
     const matchType = dto.matchFormat || MatchType.ALEATORIO;
 
     this.assertModeSupportsFormat(gameMode, matchType);
@@ -387,7 +387,7 @@ export class LeagueMatchService {
     });
   }
 
-  /** ARAM não tem lanes, então sortear posições (ALEATORIO_COMPLETO) só vale no Clássico. */
+  /** ARAM não tem lanes, então sortear posições (ALEATORIO_COMPLETO) só vale nos mapas com rotas. */
   private assertModeSupportsFormat(gameMode: GameMode, matchType: MatchType): void {
     if (matchType === MatchType.ALEATORIO_COMPLETO && !supportsLanes(gameMode)) {
       throw new BadRequestException(
@@ -841,7 +841,7 @@ export class LeagueMatchService {
 
   async create(createLeagueMatchDto: CreateCustomLeagueMatchDto) {
     try {
-      const gameMode = createLeagueMatchDto.gameMode ?? GameMode.CLASSIC;
+      const gameMode = createLeagueMatchDto.gameMode ?? GameMode.SUMMONERS_RIFT;
       this.assertModeSupportsFormat(gameMode, createLeagueMatchDto.matchType ?? MatchType.ALEATORIO);
 
       if (createLeagueMatchDto.matchType === MatchType.ALEATORIO_COMPLETO) {

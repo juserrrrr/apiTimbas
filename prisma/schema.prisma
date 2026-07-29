@@ -172,12 +172,17 @@ enum MatchStatus {
 }
 
 /// Modo de jogo da partida personalizada.
-/// Cada modo já implica o seu mapa (CLASSIC = Summoner's Rift, ARAM = Howling
-/// Abyss), por isso não existe coluna de mapa separada: guardar os dois
-/// permitiria estados impossíveis como "ARAM no Summoner's Rift". O nome do
-/// mapa é derivado na exibição (ver GAME_MODE_MAP_NAMES no backend).
+/// Cada modo já implica o seu mapa, por isso não existe coluna de mapa
+/// separada: guardar os dois permitiria estados impossíveis como "ARAM no
+/// Summoner's Rift". O nome do mapa é derivado na exibição (ver
+/// GAME_MODE_MAP_NAMES no backend).
+///
+/// SUMMONERS_RIFT = Fenda do Invocador atual
+/// LOL_CLASSIC    = League Classic, a Fenda da Season 3 (lançado em 2026-07-29)
+/// ARAM           = Howling Abyss
 enum GameMode {
-  CLASSIC
+  SUMMONERS_RIFT
+  LOL_CLASSIC
   ARAM
 }
 
@@ -213,7 +218,7 @@ model CustomLeagueMatch {
   id               Int              @id @default(autoincrement())
   riotMatchId      String?          @unique
   matchType        MatchType        @default(ALEATORIO)
-  gameMode         GameMode         @default(CLASSIC)
+  gameMode         GameMode         @default(SUMMONERS_RIFT)
   playersPerTeam   Int              @default(5)
   teamBlueId       Int?
   teamRedId        Int?

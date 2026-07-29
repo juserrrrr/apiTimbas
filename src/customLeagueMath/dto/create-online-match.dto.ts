@@ -14,7 +14,7 @@ export class CreateOnlineMatchDto {
   @IsOptional()
   matchFormat?: MatchType;
 
-  /** Modo de jogo (define o mapa). Padrão: CLASSIC (Summoner's Rift). */
+  /** Modo de jogo (define o mapa). Padrão: SUMMONERS_RIFT (Fenda atual). */
   @IsEnum(GameMode)
   @IsOptional()
   gameMode?: GameMode;

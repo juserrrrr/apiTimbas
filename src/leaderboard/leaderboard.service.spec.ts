@@ -62,14 +62,14 @@ describe('LeaderboardService', () => {
         match({ id: 1, gameMode: GameMode.ARAM, won: true }),
         match({ id: 2, gameMode: GameMode.ARAM, won: true }),
         match({ id: 3, gameMode: GameMode.ARAM, won: false }),
-        match({ id: 4, gameMode: GameMode.CLASSIC, won: true }),
-        match({ id: 5, gameMode: GameMode.CLASSIC, won: false }),
+        match({ id: 4, gameMode: GameMode.SUMMONERS_RIFT, won: true }),
+        match({ id: 5, gameMode: GameMode.SUMMONERS_RIFT, won: false }),
       ] as any);
 
       const stats = await service.getPlayerDetailStats(serverId, userId);
 
       const aram = stats.gameModeStats.find((g) => g.gameMode === GameMode.ARAM)!;
-      const classic = stats.gameModeStats.find((g) => g.gameMode === GameMode.CLASSIC)!;
+      const classic = stats.gameModeStats.find((g) => g.gameMode === GameMode.SUMMONERS_RIFT)!;
 
       expect(aram).toEqual(
         expect.objectContaining({ wins: 2, losses: 1, total: 3, winRate: 0.67 }),
@@ -82,7 +82,7 @@ describe('LeaderboardService', () => {
     it('deve trazer o label e o nome do mapa de cada modo', async () => {
       prismaMock.customLeagueMatch.findMany.mockResolvedValue([
         match({ id: 1, gameMode: GameMode.ARAM, won: true }),
-        match({ id: 2, gameMode: GameMode.CLASSIC, won: true }),
+        match({ id: 2, gameMode: GameMode.SUMMONERS_RIFT, won: true }),
       ] as any);
 
       const stats = await service.getPlayerDetailStats(serverId, userId);
@@ -90,14 +90,14 @@ describe('LeaderboardService', () => {
       expect(stats.gameModeStats).toEqual(
         expect.arrayContaining([
           expect.objectContaining({ gameMode: GameMode.ARAM, label: 'ARAM', mapName: 'Howling Abyss' }),
-          expect.objectContaining({ gameMode: GameMode.CLASSIC, label: 'Clássico', mapName: "Summoner's Rift" }),
+          expect.objectContaining({ gameMode: GameMode.SUMMONERS_RIFT, label: 'Normal', mapName: "Summoner's Rift" }),
         ]),
       );
     });
 
     it('deve ordenar por número de partidas, do modo mais jogado para o menos', async () => {
       prismaMock.customLeagueMatch.findMany.mockResolvedValue([
-        match({ id: 1, gameMode: GameMode.CLASSIC, won: true }),
+        match({ id: 1, gameMode: GameMode.SUMMONERS_RIFT, won: true }),
         match({ id: 2, gameMode: GameMode.ARAM, won: true }),
         match({ id: 3, gameMode: GameMode.ARAM, won: false }),
         match({ id: 4, gameMode: GameMode.ARAM, won: true }),
@@ -105,18 +105,18 @@ describe('LeaderboardService', () => {
 
       const stats = await service.getPlayerDetailStats(serverId, userId);
 
-      expect(stats.gameModeStats.map((g) => g.gameMode)).toEqual([GameMode.ARAM, GameMode.CLASSIC]);
+      expect(stats.gameModeStats.map((g) => g.gameMode)).toEqual([GameMode.ARAM, GameMode.SUMMONERS_RIFT]);
     });
 
     it('deve listar só os modos que o jogador realmente jogou', async () => {
       prismaMock.customLeagueMatch.findMany.mockResolvedValue([
-        match({ id: 1, gameMode: GameMode.CLASSIC, won: true }),
+        match({ id: 1, gameMode: GameMode.SUMMONERS_RIFT, won: true }),
       ] as any);
 
       const stats = await service.getPlayerDetailStats(serverId, userId);
 
       expect(stats.gameModeStats).toHaveLength(1);
-      expect(stats.gameModeStats[0].gameMode).toBe(GameMode.CLASSIC);
+      expect(stats.gameModeStats[0].gameMode).toBe(GameMode.SUMMONERS_RIFT);
     });
 
     it('deve devolver lista vazia quando não há partidas', async () => {
@@ -158,8 +158,8 @@ describe('LeaderboardService', () => {
       // senão alguma partida sumiu ou foi contada duas vezes na agregação.
       prismaMock.customLeagueMatch.findMany.mockResolvedValue([
         match({ id: 1, gameMode: GameMode.ARAM, won: true, side: Side.BLUE }),
-        match({ id: 2, gameMode: GameMode.CLASSIC, won: false, side: Side.RED }),
-        match({ id: 3, gameMode: GameMode.CLASSIC, won: true, side: Side.RED }),
+        match({ id: 2, gameMode: GameMode.SUMMONERS_RIFT, won: false, side: Side.RED }),
+        match({ id: 3, gameMode: GameMode.SUMMONERS_RIFT, won: true, side: Side.RED }),
       ] as any);
 
       const stats = await service.getPlayerDetailStats(serverId, userId);

@@ -18,7 +18,7 @@ import { GAME_MODE_LABELS, supportsLanes } from '../../customLeagueMath/game-mod
 const FORMAT_NAMES: Record<number, string> = { 0: 'Aleatório', 1: 'Livre', 2: 'Balanceado', 3: 'Aleatório Completo' };
 const FORMAT_API: Record<number, MatchType> = { 0: MatchType.ALEATORIO, 1: MatchType.LIVRE, 2: MatchType.BALANCEADO, 3: MatchType.ALEATORIO_COMPLETO };
 const MODE_NAMES: Record<number, string> = { 0: 'Offline', 1: 'Online' };
-const GAME_MODE_API: Record<number, GameMode> = { 0: GameMode.CLASSIC, 1: GameMode.ARAM };
+const GAME_MODE_API: Record<number, GameMode> = { 0: GameMode.SUMMONERS_RIFT, 1: GameMode.LOL_CLASSIC, 2: GameMode.ARAM };
 
 class CriarPartidaOptions {
   @IntegerOption({
@@ -60,11 +60,12 @@ class CriarPartidaOptions {
   // Opções não obrigatórias precisam vir depois das obrigatórias (regra do Discord).
   @IntegerOption({
     name: 'mapa',
-    description: "Onde a partida vai ser jogada (padrão: Summoner's Rift)",
+    description: "Onde a partida vai ser jogada (padrão: Summoner's Rift atual)",
     required: false,
     choices: [
-      { name: "Clássico - Summoner's Rift", value: 0 },
-      { name: 'ARAM - Howling Abyss', value: 1 },
+      { name: "Normal - Summoner's Rift", value: 0 },
+      { name: 'League Classic - Fenda da Season 3', value: 1 },
+      { name: 'ARAM - Howling Abyss', value: 2 },
     ],
   })
   gameMode?: number;
@@ -96,7 +97,7 @@ export class CriarPartidaCommand {
     @Options() { onlineMode, playersPerTeam, matchFormat, gameMode, debug }: CriarPartidaOptions,
   ) {
     const member = interaction.member as GuildMember;
-    const selectedGameMode = GAME_MODE_API[gameMode ?? 0] ?? GameMode.CLASSIC;
+    const selectedGameMode = GAME_MODE_API[gameMode ?? 0] ?? GameMode.SUMMONERS_RIFT;
 
     if (debug && interaction.user.id !== interaction.guild!.ownerId) {
       await interaction.reply({ content: '❌ Você não tem permissão para usar o modo de debug.', flags: MessageFlags.Ephemeral });

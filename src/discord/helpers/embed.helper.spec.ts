@@ -10,11 +10,25 @@ const baseOptions = {
 
 describe('embed.helper', () => {
   describe('generateLeagueEmbedText', () => {
-    it('deve mostrar o Summoner\'s Rift no modo Clássico', () => {
-      const text = generateLeagueEmbedText({ ...baseOptions, gameMode: GameMode.CLASSIC });
+    it('deve mostrar a Fenda atual no modo Normal', () => {
+      const text = generateLeagueEmbedText({ ...baseOptions, gameMode: GameMode.SUMMONERS_RIFT });
 
-      expect(text).toContain("[Clássico] - Summoner's Rift");
+      expect(text).toContain("[League of Legends] - Summoner's Rift");
       expect(text).not.toContain('Howling Abyss');
+    });
+
+    it('deve mostrar o League Classic com a Fenda da Season 3', () => {
+      const text = generateLeagueEmbedText({ ...baseOptions, gameMode: GameMode.LOL_CLASSIC });
+
+      expect(text).toContain("[League Classic] - Summoner's Rift");
+      expect(text).not.toContain('Howling Abyss');
+    });
+
+    it('deve distinguir o League Classic da Fenda atual, que usam o mesmo mapa', () => {
+      const normal = generateLeagueEmbedText({ ...baseOptions, gameMode: GameMode.SUMMONERS_RIFT });
+      const classic = generateLeagueEmbedText({ ...baseOptions, gameMode: GameMode.LOL_CLASSIC });
+
+      expect(normal).not.toEqual(classic);
     });
 
     it('deve mostrar o Howling Abyss no ARAM', () => {
@@ -24,10 +38,10 @@ describe('embed.helper', () => {
       expect(text).not.toContain("Summoner's Rift");
     });
 
-    it('deve usar o Clássico quando o modo não é informado', () => {
+    it('deve usar a Fenda atual quando o modo não é informado', () => {
       const text = generateLeagueEmbedText(baseOptions);
 
-      expect(text).toContain("[Clássico] - Summoner's Rift");
+      expect(text).toContain("[League of Legends] - Summoner's Rift");
     });
 
     it('não deve truncar o nome do mapa em nenhum modo', () => {

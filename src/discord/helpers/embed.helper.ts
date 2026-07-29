@@ -64,7 +64,7 @@ export function generateLeagueEmbedText({
   redTeam,
   matchFormat,
   onlineMode,
-  gameMode = GameMode.CLASSIC,
+  gameMode = GameMode.SUMMONERS_RIFT,
   winner,
   showDetails = false,
   playersPerTeam = 5,

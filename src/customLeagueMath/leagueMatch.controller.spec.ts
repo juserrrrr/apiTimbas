@@ -77,7 +77,7 @@ describe('LeagueMatchController', () => {
 
     it('deve anunciar o embed no Discord com o gameMode salvo na partida', async () => {
       // Regressão: o anúncio precisa usar o modo persistido, senão uma partida
-      // de ARAM criada pelo site aparece como Clássico no Discord.
+      // de ARAM criada pelo site aparece como Fenda atual no Discord.
       mockLeagueMatchService.createOnline.mockResolvedValue({
         id: 7,
         playersPerTeam: 5,
@@ -98,11 +98,11 @@ describe('LeagueMatchController', () => {
       );
     });
 
-    it('deve anunciar como Clássico quando a partida foi criada sem modo', async () => {
+    it('deve anunciar como Fenda atual quando a partida foi criada sem modo', async () => {
       mockLeagueMatchService.createOnline.mockResolvedValue({
         id: 8,
         playersPerTeam: 5,
-        gameMode: GameMode.CLASSIC,
+        gameMode: GameMode.SUMMONERS_RIFT,
       });
 
       await controller.createOnline({ discordServerId: 'server-1' } as any, req);
@@ -112,7 +112,7 @@ describe('LeagueMatchController', () => {
         'server-1',
         undefined,
         5,
-        GameMode.CLASSIC,
+        GameMode.SUMMONERS_RIFT,
       );
     });
 

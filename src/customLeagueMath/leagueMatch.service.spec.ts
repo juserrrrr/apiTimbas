@@ -71,13 +71,13 @@ describe('LeagueMatchService', () => {
       expect(result).toEqual(expectedMatch);
     });
 
-    it('deve cair no modo CLASSIC quando o gameMode não é informado', async () => {
+    it('deve cair na Fenda atual quando o gameMode não é informado', async () => {
       prismaMock.customLeagueMatch.create.mockResolvedValue({ id: 1 } as any);
 
       await service.createOnline({ discordServerId: 'server-1' });
 
       expect(prismaMock.customLeagueMatch.create).toHaveBeenCalledWith({
-        data: expect.objectContaining({ gameMode: GameMode.CLASSIC }),
+        data: expect.objectContaining({ gameMode: GameMode.SUMMONERS_RIFT }),
         include: expect.anything(),
       });
     });
@@ -105,16 +105,31 @@ describe('LeagueMatchService', () => {
       expect(prismaMock.customLeagueMatch.create).not.toHaveBeenCalled();
     });
 
-    it('deve aceitar ALEATORIO_COMPLETO no Clássico', async () => {
+    it('deve aceitar ALEATORIO_COMPLETO na Fenda atual', async () => {
       prismaMock.customLeagueMatch.create.mockResolvedValue({ id: 1 } as any);
 
       await service.createOnline({
         discordServerId: 'server-1',
-        gameMode: GameMode.CLASSIC,
+        gameMode: GameMode.SUMMONERS_RIFT,
         matchFormat: MatchType.ALEATORIO_COMPLETO,
       });
 
       expect(prismaMock.customLeagueMatch.create).toHaveBeenCalled();
+    });
+
+    it('deve aceitar ALEATORIO_COMPLETO no League Classic, que tem as rotas normais', async () => {
+      prismaMock.customLeagueMatch.create.mockResolvedValue({ id: 1 } as any);
+
+      await service.createOnline({
+        discordServerId: 'server-1',
+        gameMode: GameMode.LOL_CLASSIC,
+        matchFormat: MatchType.ALEATORIO_COMPLETO,
+      });
+
+      expect(prismaMock.customLeagueMatch.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ gameMode: GameMode.LOL_CLASSIC }),
+        include: expect.anything(),
+      });
     });
   });
 
@@ -322,7 +337,7 @@ describe('LeagueMatchService', () => {
         queuePlayers,
         playersPerTeam: 5,
         matchType: MatchType.ALEATORIO_COMPLETO,
-        gameMode: GameMode.CLASSIC,
+        gameMode: GameMode.SUMMONERS_RIFT,
       } as any);
 
       prismaMock.userTeamLeague.update.mockResolvedValue({} as any);
@@ -334,6 +349,24 @@ describe('LeagueMatchService', () => {
       expect(prismaMock.customLeagueMatch.update).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ showDetails: true }) })
       );
+    });
+
+    it('deve distribuir posições no League Classic, que tem as rotas normais', async () => {
+      jest.spyOn(service, 'findOne').mockResolvedValue({
+        id: matchId,
+        status: MatchStatus.WAITING,
+        creatorDiscordId,
+        queuePlayers,
+        playersPerTeam: 5,
+        matchType: MatchType.ALEATORIO_COMPLETO,
+        gameMode: GameMode.LOL_CLASSIC,
+      } as any);
+
+      prismaMock.userTeamLeague.update.mockResolvedValue({} as any);
+
+      await service.draw(matchId, creatorDiscordId);
+
+      expect(prismaMock.userTeamLeague.update).toHaveBeenCalledTimes(10);
     });
 
     it('não deve distribuir posições no ARAM, mesmo se a partida for ALEATORIO_COMPLETO', async () => {
