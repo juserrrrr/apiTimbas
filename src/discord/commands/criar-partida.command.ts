@@ -64,7 +64,7 @@ class CriarPartidaOptions {
     required: false,
     choices: [
       { name: "Normal - Summoner's Rift", value: 0 },
-      { name: 'League Classic - Fenda da Season 3', value: 1 },
+      { name: "League Classic - Summoner's Rift de 2013", value: 1 },
       { name: 'ARAM - Howling Abyss', value: 2 },
     ],
   })
