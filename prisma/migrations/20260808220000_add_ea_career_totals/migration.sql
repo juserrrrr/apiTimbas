@@ -1,0 +1,16 @@
+ALTER TABLE "EaClub"
+ADD COLUMN "eaStatsUpdatedAt" TIMESTAMP(3),
+ADD COLUMN "eaGamesPlayed" INTEGER,
+ADD COLUMN "eaWins" INTEGER,
+ADD COLUMN "eaDraws" INTEGER,
+ADD COLUMN "eaLosses" INTEGER,
+ADD COLUMN "eaGoalsFor" INTEGER,
+ADD COLUMN "eaGoalsAgainst" INTEGER;
+
+ALTER TABLE "EaClubPlayer"
+ADD COLUMN "careerGames" INTEGER,
+ADD COLUMN "careerGoals" INTEGER,
+ADD COLUMN "careerAssists" INTEGER,
+ADD COLUMN "careerMvps" INTEGER,
+ADD COLUMN "careerRating" DOUBLE PRECISION,
+ADD COLUMN "careerStatsUpdatedAt" TIMESTAMP(3);

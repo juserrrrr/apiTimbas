@@ -315,16 +315,23 @@ enum EaClubMatchResult {
 }
 
 model EaClub {
-  id             String         @id @default(cuid())
-  externalClubId String
-  name           String
-  platform       String
-  nickname       String?
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
-  lastSyncAt     DateTime?
-  matches        EaClubMatch[]
-  players        EaClubPlayer[]
+  id               String         @id @default(cuid())
+  externalClubId   String
+  name             String
+  platform         String
+  nickname         String?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  lastSyncAt       DateTime?
+  eaStatsUpdatedAt DateTime?
+  eaGamesPlayed    Int?
+  eaWins           Int?
+  eaDraws          Int?
+  eaLosses         Int?
+  eaGoalsFor       Int?
+  eaGoalsAgainst   Int?
+  matches          EaClubMatch[]
+  players          EaClubPlayer[]
 
   @@unique([externalClubId, platform])
   @@index([name])
@@ -346,22 +353,28 @@ model EaClubMatch {
   createdAt          DateTime            @default(now())
   playerStats        EaMatchPlayerStat[]
 
+  @@unique([clubId, externalMatchId])
   @@index([clubId, playedAt])
   @@index([clubId, result, playedAt])
   @@index([clubId, opponentName])
-  @@unique([clubId, externalMatchId])
 }
 
 model EaClubPlayer {
-  id               String              @id @default(cuid())
-  clubId           String
-  club             EaClub              @relation(fields: [clubId], references: [id], onDelete: Cascade)
-  externalPlayerId String?
-  identityKey      String
-  playerName       String
-  createdAt        DateTime            @default(now())
-  updatedAt        DateTime            @updatedAt
-  matchStats       EaMatchPlayerStat[]
+  id                   String              @id @default(cuid())
+  clubId               String
+  club                 EaClub              @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  externalPlayerId     String?
+  identityKey          String
+  playerName           String
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+  careerGames          Int?
+  careerGoals          Int?
+  careerAssists        Int?
+  careerMvps           Int?
+  careerRating         Float?
+  careerStatsUpdatedAt DateTime?
+  matchStats           EaMatchPlayerStat[]
 
   @@unique([clubId, identityKey])
   @@index([clubId, playerName])

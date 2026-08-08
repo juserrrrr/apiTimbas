@@ -12,6 +12,20 @@ export interface EaClubMember {
   externalPlayerId?: string;
   playerName: string;
   favoritePosition?: string;
+  gamesPlayed?: number;
+  goals?: number;
+  assists?: number;
+  manOfTheMatch?: number;
+  averageRating?: number;
+}
+
+export interface EaClubOverallStats {
+  gamesPlayed?: number;
+  wins?: number;
+  draws?: number;
+  losses?: number;
+  goalsFor?: number;
+  goalsAgainst?: number;
 }
 
 export interface EaClubMatchPlayer {

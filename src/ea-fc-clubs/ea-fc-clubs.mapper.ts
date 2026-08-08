@@ -3,6 +3,7 @@ import {
   EaClubMatch,
   EaClubMatchPlayer,
   EaClubMember,
+  EaClubOverallStats,
   EaExternalRecord,
   EaFcPayloadError,
 } from './ea-fc-clubs.types';
@@ -203,5 +204,23 @@ export function mapEaMember(value: EaExternalRecord): EaClubMember {
     externalPlayerId: asString(value.playerId ?? value.blazeId),
     playerName,
     favoritePosition: asString(value.favoritePosition ?? value.proPos),
+    gamesPlayed: asInteger(value.gamesPlayed),
+    goals: asInteger(value.goals),
+    assists: asInteger(value.assists),
+    manOfTheMatch: asInteger(value.manOfTheMatch ?? value.mom),
+    averageRating: asNumber(value.ratingAve ?? value.averageRating),
+  };
+}
+
+export function mapEaClubOverallStats(
+  value: EaExternalRecord,
+): EaClubOverallStats {
+  return {
+    gamesPlayed: asInteger(value.gamesPlayed),
+    wins: asInteger(value.wins),
+    draws: asInteger(value.ties ?? value.draws),
+    losses: asInteger(value.losses),
+    goalsFor: asInteger(value.goals ?? value.goalsFor),
+    goalsAgainst: asInteger(value.goalsAgainst),
   };
 }

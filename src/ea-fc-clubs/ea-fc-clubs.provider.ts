@@ -6,6 +6,7 @@ import { firstValueFrom } from 'rxjs';
 import {
   mapEaClub,
   mapEaClubSearchResult,
+  mapEaClubOverallStats,
   mapEaMatch,
   mapEaMember,
 } from './ea-fc-clubs.mapper';
@@ -14,11 +15,13 @@ import {
   parseClubSearchPayload,
   parseMatchesPayload,
   parseMembersPayload,
+  parseOverallStatsPayload,
 } from './ea-fc-clubs.schemas';
 import {
   EaClub,
   EaClubMatch,
   EaClubMember,
+  EaClubOverallStats,
   EaFcClubNotFoundError,
   EaFcMatchType,
   EaFcPayloadError,
@@ -113,6 +116,17 @@ export class EaFcClubsProvider {
       clubId,
     });
     return parseMembersPayload(payload).map(mapEaMember);
+  }
+
+  async getClubOverallStats(
+    clubId: string,
+    platform: EaFcPlatform,
+  ): Promise<EaClubOverallStats> {
+    const payload = await this.request('clubs/overallStats', {
+      platform,
+      clubIds: clubId,
+    });
+    return mapEaClubOverallStats(parseOverallStatsPayload(payload));
   }
 
   async getClubMatches(

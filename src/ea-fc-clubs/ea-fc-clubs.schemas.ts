@@ -38,6 +38,18 @@ export function parseMembersPayload(payload: unknown): EaExternalRecord[] {
   return members.filter(isRecord);
 }
 
+export function parseOverallStatsPayload(payload: unknown): EaExternalRecord {
+  const value = Array.isArray(payload) ? payload[0] : payload;
+  if (!isRecord(value)) {
+    throw new EaFcPayloadError('EA overall stats response is malformed');
+  }
+  if (value.gamesPlayed === undefined) {
+    const nested = Object.values(value).find(isRecord);
+    if (nested) return nested;
+  }
+  return value;
+}
+
 export function parseClubSearchPayload(payload: unknown): EaExternalRecord[] {
   if (!Array.isArray(payload)) {
     throw new EaFcPayloadError('EA club search response is not an array');

@@ -1,7 +1,9 @@
 import { EA_MATCH_FIXTURE } from './fixtures/ea-match.fixture';
 import {
   mapEaClub,
+  mapEaClubOverallStats,
   mapEaClubSearchResult,
+  mapEaMember,
   mapEaMatch,
 } from './ea-fc-clubs.mapper';
 import { EaFcPayloadError } from './ea-fc-clubs.types';
@@ -72,6 +74,44 @@ describe('EA FC Clubs mapper', () => {
         'common-gen5',
       ).name,
     ).toBe('Pró Amadores');
+  });
+
+  it('maps EA aggregate club and member career totals', () => {
+    expect(
+      mapEaClubOverallStats({
+        gamesPlayed: '120',
+        wins: '70',
+        ties: '20',
+        losses: '30',
+        goals: '300',
+        goalsAgainst: '180',
+      }),
+    ).toEqual({
+      gamesPlayed: 120,
+      wins: 70,
+      draws: 20,
+      losses: 30,
+      goalsFor: 300,
+      goalsAgainst: 180,
+    });
+    expect(
+      mapEaMember({
+        name: 'Gabriel',
+        gamesPlayed: '90',
+        goals: '100',
+        assists: '45',
+        manOfTheMatch: '12',
+        ratingAve: '8.2',
+      }),
+    ).toEqual(
+      expect.objectContaining({
+        gamesPlayed: 90,
+        goals: 100,
+        assists: 45,
+        manOfTheMatch: 12,
+        averageRating: 8.2,
+      }),
+    );
   });
 
   it('rejects a match missing its two club records', () => {

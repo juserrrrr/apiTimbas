@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Cron, CronExpression } from '@nestjs/schedule';
+import { Cron } from '@nestjs/schedule';
 import { EaFcClubsService } from './ea-fc-clubs.service';
 
 @Injectable()
@@ -13,7 +13,7 @@ export class EaFcClubsSyncScheduler {
     private readonly config: ConfigService,
   ) {}
 
-  @Cron(CronExpression.EVERY_30_MINUTES, {
+  @Cron('0 0 */2 * * *', {
     name: 'ea-fc-clubs-auto-sync',
   })
   async synchronizeClubs() {
