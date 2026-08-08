@@ -346,10 +346,17 @@ export class EaFcClubsService {
       row.passes += stat.passesCompleted ?? 0;
       row.tackles += stat.tacklesCompleted ?? 0;
       row.saves += stat.saves ?? 0;
+      if (stat.position) {
+        const position = stat.position.trim().toLocaleLowerCase('en-US');
+        row.positions[position] = (row.positions[position] ?? 0) + 1;
+      }
       grouped.set(stat.playerId, row);
     }
     const rows = Array.from(grouped.values()).map((row) => ({
       ...row,
+      primaryPosition:
+        Object.entries(row.positions).sort((a, b) => b[1] - a[1])[0]?.[0] ??
+        null,
       averageRating:
         row.ratedMatches === 0 ? null : row.ratingSum / row.ratedMatches,
     }));
@@ -368,6 +375,7 @@ export class EaFcClubsService {
           passes: row.passes,
           tackles: row.tackles,
           saves: row.saves,
+          primaryPosition: row.primaryPosition,
         }));
     const topScorers = rank('goals');
     const assistRanking = rank('assists');
@@ -375,6 +383,14 @@ export class EaFcClubsService {
     const ratingRanking = rank(
       'averageRating',
       rows.filter((row) => row.ratedMatches >= minimumAppearances),
+    );
+    const defenderRanking = rank(
+      'averageRating',
+      rows.filter(
+        (row) =>
+          row.primaryPosition === 'defender' &&
+          row.ratedMatches >= minimumAppearances,
+      ),
     );
     const mvpRanking = rank('mvps');
     const appearancesRanking = rank('appearances');
@@ -403,6 +419,7 @@ export class EaFcClubsService {
       assists: assistRanking,
       goalContributions: contributionRanking,
       averageRating: ratingRanking,
+      defenders: defenderRanking,
       mvps: mvpRanking,
       appearances: appearancesRanking,
       passes: passesRanking,
@@ -422,6 +439,13 @@ export class EaFcClubsService {
           'Média de nota',
           'averageRating',
           ratingRanking,
+          minimumAppearances,
+        ),
+        category(
+          'defenders',
+          'Melhores defensores',
+          'averageRating',
+          defenderRanking,
           minimumAppearances,
         ),
         category('mvps', 'MVPs', 'mvps', mvpRanking),
@@ -603,6 +627,7 @@ export class EaFcClubsService {
       passes: 0,
       tackles: 0,
       saves: 0,
+      positions: {} as Record<string, number>,
     };
   }
 

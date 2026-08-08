@@ -8,6 +8,9 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { AuthGuard } from '../auth/guards/auth.guard';
+import { RoleGuard } from '../auth/guards/role.guard';
+import { Roles } from '../decorators/roles.decorator';
+import { Role } from '../enums/role.enum';
 import {
   CreateEaClubDto,
   SearchEaClubsDto,
@@ -17,17 +20,19 @@ import { EaLeaderboardQueryDto } from './dto/leaderboard-query.dto';
 import { EaMatchQueryDto } from './dto/match-query.dto';
 import { EaFcClubsService } from './ea-fc-clubs.service';
 
-@UseGuards(AuthGuard)
+@UseGuards(AuthGuard, RoleGuard)
 @Controller('ea-clubs')
 export class EaFcClubsController {
   constructor(private readonly clubs: EaFcClubsService) {}
 
   @Post('validate')
+  @Roles(Role.ADMIN)
   validate(@Body() dto: ValidateEaClubDto) {
     return this.clubs.validateClub(dto);
   }
 
   @Post()
+  @Roles(Role.ADMIN)
   create(@Body() dto: CreateEaClubDto) {
     return this.clubs.createClub(dto);
   }
@@ -38,6 +43,7 @@ export class EaFcClubsController {
   }
 
   @Get('search')
+  @Roles(Role.ADMIN)
   search(@Query() query: SearchEaClubsDto) {
     return this.clubs.searchClubs(query);
   }
@@ -48,6 +54,7 @@ export class EaFcClubsController {
   }
 
   @Post(':id/sync')
+  @Roles(Role.ADMIN)
   sync(@Param('id') id: string) {
     return this.clubs.sync(id);
   }
