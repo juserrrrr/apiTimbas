@@ -366,16 +366,26 @@ export class EaFcClubsService {
     await this.requireClub(id);
     const player = await this.prisma.eaClubPlayer.findFirst({
       where: { id: playerId, clubId: id },
-      include: { matchStats: true },
+      include: {
+        matchStats: {
+          include: { match: true },
+          orderBy: { match: { playedAt: 'desc' } },
+        },
+      },
     });
     if (!player) throw new NotFoundException('Jogador não encontrado.');
     const totals = this.playerTotals(player.matchStats);
+    const matchHistory = player.matchStats.map(({ match, ...stat }) => ({
+      ...stat,
+      match,
+    }));
     return {
       ...player,
       matchStats: undefined,
       ...totals,
       matches: totals.appearances,
       manOfTheMatch: totals.mvps,
+      matchHistory,
       passAccuracy:
         totals.passCompletionRate === null
           ? null
@@ -499,11 +509,13 @@ export class EaFcClubsService {
       key,
       label,
       minimumMatches,
-      entries: ranking.map((row) => ({
-        player: { id: row.playerId, playerName: row.playerName },
-        value: row[field],
-        appearances: row.appearances,
-      })),
+      entries: ranking
+        .filter((row) => Number(row[field] ?? 0) > 0)
+        .map((row) => ({
+          player: { id: row.playerId, playerName: row.playerName },
+          value: row[field],
+          appearances: row.appearances,
+        })),
     });
     const aggregateCategory = (
       key: string,
@@ -527,7 +539,7 @@ export class EaFcClubsService {
       label,
       source: 'EA_CLUB',
       entries: [...careerPlayers]
-        .filter((player) => player[field] !== null)
+        .filter((player) => Number(player[field] ?? 0) > 0)
         .sort((a, b) => Number(b[field] ?? -1) - Number(a[field] ?? -1))
         .map((player) => ({
           player: { id: player.id, playerName: player.playerName },
@@ -566,6 +578,32 @@ export class EaFcClubsService {
           'eaClubTacklesMade',
         ),
         aggregateCategory('eaClubRating', 'No clube · Nota', 'eaClubRating'),
+        aggregateCategory('eaClubMvps', 'No clube · MVPs', 'eaClubMvps'),
+        aggregateCategory(
+          'eaClubPassAccuracy',
+          'No clube · Precisão de passe',
+          'eaClubPassSuccessRate',
+        ),
+        aggregateCategory(
+          'eaClubTackleAccuracy',
+          'No clube · Precisão de desarme',
+          'eaClubTackleSuccessRate',
+        ),
+        aggregateCategory(
+          'eaClubShotAccuracy',
+          'No clube · Aproveitamento de chute',
+          'eaClubShotSuccessRate',
+        ),
+        aggregateCategory(
+          'eaClubCleanSheetsDef',
+          'No clube · Clean sheets DEF',
+          'eaClubCleanSheetsDef',
+        ),
+        aggregateCategory(
+          'eaClubCleanSheetsGk',
+          'No clube · Clean sheets GK',
+          'eaClubCleanSheetsGk',
+        ),
         category('goals', 'Artilheiros', 'goals', topScorers),
         category('assists', 'Assistências', 'assists', assistRanking),
         category(
