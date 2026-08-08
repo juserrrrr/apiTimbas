@@ -324,9 +324,115 @@ export class EaFcClubsService {
     await this.requireClub(id);
     const player = await this.prisma.eaClubPlayer.findFirst({
       where: { id: playerId, clubId: id },
+      include: {
+        matchStats: {
+          select: {
+            position: true,
+            rating: true,
+            goals: true,
+            assists: true,
+            passesAttempted: true,
+            passesCompleted: true,
+            tacklesAttempted: true,
+            tacklesCompleted: true,
+            saves: true,
+            manOfTheMatch: true,
+          },
+        },
+      },
     });
     if (!player) throw new NotFoundException('Jogador não encontrado.');
-    return player;
+    const { matchStats, ...profile } = player;
+    const grouped = new Map<
+      string,
+      {
+        position: string;
+        appearances: number;
+        ratingSum: number;
+        ratedMatches: number;
+        goals: number;
+        assists: number;
+        passesAttempted: number;
+        passesCompleted: number;
+        tacklesAttempted: number;
+        tacklesCompleted: number;
+        saves: number;
+        mvps: number;
+      }
+    >();
+
+    for (const stat of matchStats) {
+      const position = stat.position?.trim().toLocaleLowerCase('en-US');
+      if (!position) continue;
+      const row = grouped.get(position) ?? {
+        position,
+        appearances: 0,
+        ratingSum: 0,
+        ratedMatches: 0,
+        goals: 0,
+        assists: 0,
+        passesAttempted: 0,
+        passesCompleted: 0,
+        tacklesAttempted: 0,
+        tacklesCompleted: 0,
+        saves: 0,
+        mvps: 0,
+      };
+      row.appearances += 1;
+      row.ratingSum += stat.rating ?? 0;
+      row.ratedMatches += stat.rating === null ? 0 : 1;
+      row.goals += stat.goals;
+      row.assists += stat.assists;
+      row.passesAttempted += stat.passesAttempted ?? 0;
+      row.passesCompleted += stat.passesCompleted ?? 0;
+      row.tacklesAttempted += stat.tacklesAttempted ?? 0;
+      row.tacklesCompleted += stat.tacklesCompleted ?? 0;
+      row.saves += stat.saves ?? 0;
+      row.mvps += stat.manOfTheMatch ? 1 : 0;
+      grouped.set(position, row);
+    }
+
+    const positionAnalysis = Array.from(grouped.values())
+      .map((row) => ({
+        position: row.position,
+        appearances: row.appearances,
+        averageRating:
+          row.ratedMatches > 0 ? row.ratingSum / row.ratedMatches : null,
+        goals: row.goals,
+        assists: row.assists,
+        goalContributions: row.goals + row.assists,
+        passesCompleted: row.passesCompleted,
+        passAccuracy:
+          row.passesAttempted > 0
+            ? (row.passesCompleted / row.passesAttempted) * 100
+            : null,
+        tacklesCompleted: row.tacklesCompleted,
+        tackleAccuracy:
+          row.tacklesAttempted > 0
+            ? (row.tacklesCompleted / row.tacklesAttempted) * 100
+            : null,
+        saves: row.saves,
+        mvps: row.mvps,
+      }))
+      .sort((a, b) => b.appearances - a.appearances);
+    const eligiblePositions = positionAnalysis.filter(
+      (position) =>
+        position.appearances >= this.defaultMinimumAppearances &&
+        position.averageRating !== null,
+    );
+    const bestPosition = [...eligiblePositions].sort(
+      (a, b) =>
+        Number(b.averageRating) - Number(a.averageRating) ||
+        b.appearances - a.appearances,
+    )[0];
+
+    return {
+      ...profile,
+      positionAnalysis,
+      mostPlayedPosition: positionAnalysis[0]?.position ?? null,
+      bestPosition: bestPosition?.position ?? null,
+      positionAnalysisMinimumAppearances: this.defaultMinimumAppearances,
+    };
   }
 
   async getLeaderboard(id: string, query: EaLeaderboardQueryDto) {
