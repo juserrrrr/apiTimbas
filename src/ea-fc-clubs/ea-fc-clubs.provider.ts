@@ -66,7 +66,10 @@ export class EaFcClubsProvider {
   ) {
     this.timeoutMs = Number(config.get('EA_FC_TIMEOUT_MS') ?? 10000);
     this.maxRetries = Number(config.get('EA_FC_MAX_RETRIES') ?? 2);
-    this.maxResults = Number(config.get('EA_FC_MAX_RESULTS') ?? 10);
+    this.maxResults = Math.min(
+      100,
+      Math.max(1, Number(config.get('EA_FC_MAX_RESULTS') ?? 100)),
+    );
     const requestsPerSecond = Math.max(
       1,
       Number(config.get('EA_FC_REQUESTS_PER_SECOND') ?? 4),

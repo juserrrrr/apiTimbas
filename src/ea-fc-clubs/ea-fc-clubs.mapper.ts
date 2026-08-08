@@ -9,9 +9,17 @@ import {
 import { isRecord } from './ea-fc-clubs.schemas';
 
 function asString(value: unknown): string | undefined {
-  if (typeof value === 'string' && value.trim()) return value.trim();
+  if (typeof value === 'string' && value.trim()) {
+    return repairMojibake(value.trim());
+  }
   if (typeof value === 'number' && Number.isFinite(value)) return String(value);
   return undefined;
+}
+
+function repairMojibake(value: string): string {
+  if (!/[ÃÂ][\u0080-\u00bf]|â[\u0080-\u00bf]/.test(value)) return value;
+  const repaired = Buffer.from(value, 'latin1').toString('utf8');
+  return repaired.includes('\uFFFD') ? value : repaired;
 }
 
 function asNumber(value: unknown): number | undefined {

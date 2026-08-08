@@ -65,6 +65,15 @@ describe('EA FC Clubs mapper', () => {
     });
   });
 
+  it('repairs UTF-8 club names decoded as latin1 by the upstream API', () => {
+    expect(
+      mapEaClubSearchResult(
+        { clubInfo: { clubId: 123456, name: 'PrÃ³ Amadores' } },
+        'common-gen5',
+      ).name,
+    ).toBe('Pró Amadores');
+  });
+
   it('rejects a match missing its two club records', () => {
     expect(() => mapEaMatch({ ...EA_MATCH_FIXTURE, clubs: {} })).toThrow(
       EaFcPayloadError,

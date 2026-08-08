@@ -32,6 +32,7 @@ describe('EaFcClubsProvider', () => {
           platform: 'common-gen5',
           clubIds: '123456',
           matchType: 'friendlyMatch',
+          maxResultCount: 100,
         }),
       }),
     );

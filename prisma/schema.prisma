@@ -332,7 +332,7 @@ model EaClub {
 
 model EaClubMatch {
   id                 String              @id @default(cuid())
-  externalMatchId    String              @unique
+  externalMatchId    String
   clubId             String
   club               EaClub              @relation(fields: [clubId], references: [id], onDelete: Cascade)
   playedAt           DateTime
@@ -349,6 +349,7 @@ model EaClubMatch {
   @@index([clubId, playedAt])
   @@index([clubId, result, playedAt])
   @@index([clubId, opponentName])
+  @@unique([clubId, externalMatchId])
 }
 
 model EaClubPlayer {

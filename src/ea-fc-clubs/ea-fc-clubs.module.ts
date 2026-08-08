@@ -5,6 +5,7 @@ import { AuthModule } from '../auth/auth.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { EaFcClubsController } from './ea-fc-clubs.controller';
 import { EaFcClubsProvider } from './ea-fc-clubs.provider';
+import { EaFcClubsSyncScheduler } from './ea-fc-clubs-sync.scheduler';
 import { EaFcClubsService } from './ea-fc-clubs.service';
 
 @Module({
@@ -15,7 +16,7 @@ import { EaFcClubsService } from './ea-fc-clubs.service';
     HttpModule.register({ baseURL: 'https://proclubs.ea.com/api/fc' }),
   ],
   controllers: [EaFcClubsController],
-  providers: [EaFcClubsProvider, EaFcClubsService],
+  providers: [EaFcClubsProvider, EaFcClubsService, EaFcClubsSyncScheduler],
   exports: [EaFcClubsService],
 })
 export class EaFcClubsModule {}

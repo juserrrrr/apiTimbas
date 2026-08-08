@@ -81,6 +81,49 @@ export class EaFcClubsService {
     return this.prisma.eaClub.findMany({ orderBy: { createdAt: 'asc' } });
   }
 
+  async syncAllClubs() {
+    const clubs = await this.prisma.eaClub.findMany({
+      select: { id: true, name: true },
+      orderBy: { createdAt: 'asc' },
+    });
+    const results: Array<{
+      clubId: string;
+      clubName: string;
+      imported: number;
+      failed: number;
+      error?: string;
+    }> = [];
+
+    for (const club of clubs) {
+      try {
+        const result = await this.sync(club.id);
+        results.push({
+          clubId: club.id,
+          clubName: club.name,
+          imported: result.imported,
+          failed: result.failed,
+        });
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : 'Unknown synchronization error';
+        this.logger.error(
+          `Automatic EA FC sync failed for club ${club.id}: ${message}`,
+        );
+        results.push({
+          clubId: club.id,
+          clubName: club.name,
+          imported: 0,
+          failed: 1,
+          error: message,
+        });
+      }
+    }
+
+    return results;
+  }
+
   async getClub(id: string) {
     return this.requireClub(id);
   }
@@ -97,6 +140,7 @@ export class EaFcClubsService {
       (
         await this.prisma.eaClubMatch.findMany({
           where: {
+            clubId: id,
             externalMatchId: {
               in: matches.map((match) => match.externalMatchId),
             },
@@ -478,7 +522,12 @@ export class EaFcClubsService {
 
     return this.prisma.$transaction(async (tx) => {
       const duplicate = await tx.eaClubMatch.findUnique({
-        where: { externalMatchId: match.externalMatchId },
+        where: {
+          clubId_externalMatchId: {
+            clubId: club.id,
+            externalMatchId: match.externalMatchId,
+          },
+        },
         select: { id: true },
       });
       if (duplicate) return false;
