@@ -366,35 +366,9 @@ export class EaFcClubsService {
     await this.requireClub(id);
     const player = await this.prisma.eaClubPlayer.findFirst({
       where: { id: playerId, clubId: id },
-      include: {
-        matchStats: {
-          include: { match: true },
-          orderBy: { match: { playedAt: 'desc' } },
-        },
-      },
     });
     if (!player) throw new NotFoundException('Jogador não encontrado.');
-    const totals = this.playerTotals(player.matchStats);
-    const matchHistory = player.matchStats.map(({ match, ...stat }) => ({
-      ...stat,
-      match,
-    }));
-    return {
-      ...player,
-      matchStats: undefined,
-      ...totals,
-      matches: totals.appearances,
-      manOfTheMatch: totals.mvps,
-      matchHistory,
-      passAccuracy:
-        totals.passCompletionRate === null
-          ? null
-          : totals.passCompletionRate * 100,
-      tackleAccuracy:
-        totals.tackleCompletionRate === null
-          ? null
-          : totals.tackleCompletionRate * 100,
-    };
+    return player;
   }
 
   async getLeaderboard(id: string, query: EaLeaderboardQueryDto) {
@@ -841,78 +815,6 @@ export class EaFcClubsService {
 
   private normalizePlayerName(value: string) {
     return value.normalize('NFKC').trim().toLocaleLowerCase('en-US');
-  }
-
-  private playerTotals(
-    stats: Array<{
-      rating: number | null;
-      goals: number;
-      assists: number;
-      shots: number | null;
-      passesAttempted: number | null;
-      passesCompleted: number | null;
-      tacklesAttempted: number | null;
-      tacklesCompleted: number | null;
-      saves: number | null;
-      manOfTheMatch: boolean | null;
-    }>,
-  ) {
-    const totals = stats.reduce(
-      (sum, stat) => ({
-        goals: sum.goals + stat.goals,
-        assists: sum.assists + stat.assists,
-        shots: sum.shots + (stat.shots ?? 0),
-        passesAttempted: sum.passesAttempted + (stat.passesAttempted ?? 0),
-        passesCompleted: sum.passesCompleted + (stat.passesCompleted ?? 0),
-        tacklesAttempted: sum.tacklesAttempted + (stat.tacklesAttempted ?? 0),
-        tacklesCompleted: sum.tacklesCompleted + (stat.tacklesCompleted ?? 0),
-        saves: sum.saves + (stat.saves ?? 0),
-        mvps: sum.mvps + (stat.manOfTheMatch ? 1 : 0),
-        ratingSum: sum.ratingSum + (stat.rating ?? 0),
-        ratedMatches: sum.ratedMatches + (stat.rating === null ? 0 : 1),
-      }),
-      {
-        goals: 0,
-        assists: 0,
-        shots: 0,
-        passesAttempted: 0,
-        passesCompleted: 0,
-        tacklesAttempted: 0,
-        tacklesCompleted: 0,
-        saves: 0,
-        mvps: 0,
-        ratingSum: 0,
-        ratedMatches: 0,
-      },
-    );
-    const appearances = stats.length;
-    return {
-      appearances,
-      goals: totals.goals,
-      assists: totals.assists,
-      goalContributions: totals.goals + totals.assists,
-      mvps: totals.mvps,
-      shots: totals.shots,
-      passesAttempted: totals.passesAttempted,
-      passesCompleted: totals.passesCompleted,
-      tacklesAttempted: totals.tacklesAttempted,
-      tacklesCompleted: totals.tacklesCompleted,
-      saves: totals.saves,
-      goalsPerMatch: appearances ? totals.goals / appearances : 0,
-      assistsPerMatch: appearances ? totals.assists / appearances : 0,
-      goalContributionsPerMatch: appearances
-        ? (totals.goals + totals.assists) / appearances
-        : 0,
-      averageRating: totals.ratedMatches
-        ? totals.ratingSum / totals.ratedMatches
-        : null,
-      passCompletionRate: totals.passesAttempted
-        ? totals.passesCompleted / totals.passesAttempted
-        : null,
-      tackleCompletionRate: totals.tacklesAttempted
-        ? totals.tacklesCompleted / totals.tacklesAttempted
-        : null,
-    };
   }
 
   private emptyLeaderboardRow(playerId: string, playerName: string) {
