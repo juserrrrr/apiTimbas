@@ -1,0 +1,636 @@
+import {
+  BadGatewayException,
+  Injectable,
+  Logger,
+  NotFoundException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { EaClubMatchResult, Prisma } from '@prisma/client';
+import { PrismaService } from '../prisma/prisma.service';
+import {
+  CreateEaClubDto,
+  SearchEaClubsDto,
+  ValidateEaClubDto,
+} from './dto/create-ea-club.dto';
+import { EaLeaderboardQueryDto } from './dto/leaderboard-query.dto';
+import { EaMatchQueryDto } from './dto/match-query.dto';
+import { EaFcClubsProvider } from './ea-fc-clubs.provider';
+import {
+  EaClubMatch,
+  EaFcClubNotFoundError,
+  EaFcPayloadError,
+  EaFcProviderError,
+} from './ea-fc-clubs.types';
+
+@Injectable()
+export class EaFcClubsService {
+  private readonly logger = new Logger(EaFcClubsService.name);
+  private readonly defaultMinimumAppearances: number;
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly provider: EaFcClubsProvider,
+    config: ConfigService,
+  ) {
+    this.defaultMinimumAppearances = Math.max(
+      1,
+      Number(config.get('EA_FC_LEADERBOARD_MIN_APPEARANCES') ?? 3),
+    );
+  }
+
+  async validateClub(dto: ValidateEaClubDto) {
+    return this.callProvider(() =>
+      this.provider.getClub(dto.externalClubId, dto.platform),
+    );
+  }
+
+  async searchClubs(dto: SearchEaClubsDto) {
+    const clubs = await this.callProvider(() =>
+      this.provider.searchClubs(dto.name.trim(), dto.platform),
+    );
+    return clubs.map((club) => ({
+      externalClubId: club.externalId,
+      name: club.name,
+      platform: club.platform,
+    }));
+  }
+
+  async createClub(dto: CreateEaClubDto) {
+    const external = await this.callProvider(() =>
+      this.provider.getClub(dto.externalClubId, dto.platform),
+    );
+    return this.prisma.eaClub.upsert({
+      where: {
+        externalClubId_platform: {
+          externalClubId: external.externalId,
+          platform: dto.platform,
+        },
+      },
+      update: { name: external.name, nickname: dto.nickname },
+      create: {
+        externalClubId: external.externalId,
+        name: external.name,
+        platform: dto.platform,
+        nickname: dto.nickname,
+      },
+    });
+  }
+
+  listClubs() {
+    return this.prisma.eaClub.findMany({ orderBy: { createdAt: 'asc' } });
+  }
+
+  async getClub(id: string) {
+    return this.requireClub(id);
+  }
+
+  async sync(id: string) {
+    const club = await this.requireClub(id);
+    const matches = await this.callProvider(() =>
+      this.provider.getRecentMatches(
+        club.externalClubId,
+        club.platform as 'common-gen5',
+      ),
+    );
+    const existing = new Set(
+      (
+        await this.prisma.eaClubMatch.findMany({
+          where: {
+            externalMatchId: {
+              in: matches.map((match) => match.externalMatchId),
+            },
+          },
+          select: { externalMatchId: true },
+        })
+      ).map((match) => match.externalMatchId),
+    );
+
+    let imported = 0;
+    let skipped = existing.size;
+    const errors: Array<{ externalMatchId: string; message: string }> = [];
+    for (const match of matches) {
+      if (existing.has(match.externalMatchId)) continue;
+      try {
+        const wasImported = await this.importMatch(club, match);
+        if (wasImported) imported += 1;
+        else skipped += 1;
+      } catch (error) {
+        if (
+          error instanceof Prisma.PrismaClientKnownRequestError &&
+          error.code === 'P2002'
+        ) {
+          skipped += 1;
+          continue;
+        }
+        this.logger.error(
+          `Failed to import EA match ${match.externalMatchId}: ${(error as Error).message}`,
+        );
+        errors.push({
+          externalMatchId: match.externalMatchId,
+          message: 'Não foi possível importar esta partida.',
+        });
+      }
+    }
+    const lastSyncAt = new Date();
+    await this.prisma.eaClub.update({
+      where: { id },
+      data: { lastSyncAt },
+    });
+    return {
+      imported,
+      skipped,
+      failed: errors.length,
+      errors: errors.map(
+        (error) => `${error.externalMatchId}: ${error.message}`,
+      ),
+      failureDetails: errors,
+      lastSyncAt,
+    };
+  }
+
+  async getDashboard(id: string) {
+    const club = await this.requireClub(id);
+    const [total, wins, draws, losses, goals, recentMatches] =
+      await Promise.all([
+        this.prisma.eaClubMatch.count({ where: { clubId: id } }),
+        this.prisma.eaClubMatch.count({
+          where: { clubId: id, result: EaClubMatchResult.WIN },
+        }),
+        this.prisma.eaClubMatch.count({
+          where: { clubId: id, result: EaClubMatchResult.DRAW },
+        }),
+        this.prisma.eaClubMatch.count({
+          where: { clubId: id, result: EaClubMatchResult.LOSS },
+        }),
+        this.prisma.eaClubMatch.aggregate({
+          where: { clubId: id },
+          _sum: { goalsFor: true, goalsAgainst: true },
+        }),
+        this.prisma.eaClubMatch.findMany({
+          where: { clubId: id },
+          orderBy: { playedAt: 'desc' },
+          take: 5,
+        }),
+      ]);
+    const pointsPercentage =
+      total === 0
+        ? 0
+        : Math.round(((wins * 3 + draws) / (total * 3)) * 1000) / 10;
+    return {
+      club,
+      matches: total,
+      wins,
+      draws,
+      losses,
+      pointsPercentage,
+      winRate: pointsPercentage,
+      goalsFor: goals._sum.goalsFor ?? 0,
+      goalsAgainst: goals._sum.goalsAgainst ?? 0,
+      recentMatches,
+    };
+  }
+
+  async getMatches(id: string, query: EaMatchQueryDto) {
+    await this.requireClub(id);
+    const where: Prisma.EaClubMatchWhereInput = {
+      clubId: id,
+      result: query.result,
+      opponentName: query.opponent
+        ? { contains: query.opponent, mode: 'insensitive' }
+        : undefined,
+      playedAt:
+        query.from || query.to
+          ? {
+              gte: query.from ? new Date(query.from) : undefined,
+              ...(query.to && /^\d{4}-\d{2}-\d{2}$/.test(query.to)
+                ? {
+                    lt: new Date(
+                      new Date(query.to).getTime() + 24 * 60 * 60 * 1000,
+                    ),
+                  }
+                : { lte: query.to ? new Date(query.to) : undefined }),
+            }
+          : undefined,
+      playerStats: query.playerId
+        ? { some: { playerId: query.playerId } }
+        : undefined,
+    };
+    const perPage = query.limit ?? query.perPage;
+    const [items, total] = await Promise.all([
+      this.prisma.eaClubMatch.findMany({
+        where,
+        orderBy: { playedAt: 'desc' },
+        skip: (query.page - 1) * perPage,
+        take: perPage,
+      }),
+      this.prisma.eaClubMatch.count({ where }),
+    ]);
+    const pages = Math.ceil(total / perPage);
+    return {
+      data: items,
+      items,
+      total,
+      page: query.page,
+      pages,
+      perPage,
+    };
+  }
+
+  async getMatch(id: string, matchId: string) {
+    const club = await this.requireClub(id);
+    const match = await this.prisma.eaClubMatch.findFirst({
+      where: { id: matchId, clubId: id },
+      include: {
+        playerStats: {
+          include: { player: true },
+          orderBy: [{ rating: 'desc' }, { goals: 'desc' }],
+        },
+      },
+    });
+    if (!match) throw new NotFoundException('Partida não encontrada.');
+    const players = match.playerStats.map((stat) => ({
+      ...stat,
+      player: stat.player,
+    }));
+    return {
+      ...match,
+      club,
+      players,
+      homeClub: match.isHome
+        ? {
+            externalId: club.externalClubId,
+            name: club.name,
+            score: match.goalsFor,
+          }
+        : {
+            externalId: match.opponentExternalId,
+            name: match.opponentName,
+            score: match.goalsAgainst,
+          },
+      awayClub: match.isHome
+        ? {
+            externalId: match.opponentExternalId,
+            name: match.opponentName,
+            score: match.goalsAgainst,
+          }
+        : {
+            externalId: club.externalClubId,
+            name: club.name,
+            score: match.goalsFor,
+          },
+    };
+  }
+
+  async getPlayers(id: string) {
+    await this.requireClub(id);
+    const players = await this.prisma.eaClubPlayer.findMany({
+      where: { clubId: id, matchStats: { some: {} } },
+      include: { _count: { select: { matchStats: true } } },
+      orderBy: { playerName: 'asc' },
+    });
+    return players.map(({ _count, ...player }) => ({
+      ...player,
+      appearances: _count.matchStats,
+    }));
+  }
+
+  async getPlayer(id: string, playerId: string) {
+    await this.requireClub(id);
+    const player = await this.prisma.eaClubPlayer.findFirst({
+      where: { id: playerId, clubId: id },
+      include: { matchStats: true },
+    });
+    if (!player) throw new NotFoundException('Jogador não encontrado.');
+    const totals = this.playerTotals(player.matchStats);
+    return {
+      ...player,
+      matchStats: undefined,
+      ...totals,
+      matches: totals.appearances,
+      manOfTheMatch: totals.mvps,
+      passAccuracy:
+        totals.passCompletionRate === null
+          ? null
+          : totals.passCompletionRate * 100,
+      tackleAccuracy:
+        totals.tackleCompletionRate === null
+          ? null
+          : totals.tackleCompletionRate * 100,
+    };
+  }
+
+  async getLeaderboard(id: string, query: EaLeaderboardQueryDto) {
+    await this.requireClub(id);
+    const minimumAppearances =
+      query.minimumAppearances ?? this.defaultMinimumAppearances;
+    const stats = await this.prisma.eaMatchPlayerStat.findMany({
+      where: { match: { clubId: id } },
+      include: { player: { select: { id: true, playerName: true } } },
+    });
+    const grouped = new Map<
+      string,
+      ReturnType<EaFcClubsService['emptyLeaderboardRow']>
+    >();
+    for (const stat of stats) {
+      const row =
+        grouped.get(stat.playerId) ??
+        this.emptyLeaderboardRow(stat.player.id, stat.player.playerName);
+      row.appearances += 1;
+      row.goals += stat.goals;
+      row.assists += stat.assists;
+      row.goalContributions += stat.goals + stat.assists;
+      row.ratingSum += stat.rating ?? 0;
+      row.ratedMatches += stat.rating === null ? 0 : 1;
+      row.mvps += stat.manOfTheMatch ? 1 : 0;
+      row.passes += stat.passesCompleted ?? 0;
+      row.tackles += stat.tacklesCompleted ?? 0;
+      row.saves += stat.saves ?? 0;
+      grouped.set(stat.playerId, row);
+    }
+    const rows = Array.from(grouped.values()).map((row) => ({
+      ...row,
+      averageRating:
+        row.ratedMatches === 0 ? null : row.ratingSum / row.ratedMatches,
+    }));
+    const rank = (field: keyof (typeof rows)[number], eligible = rows) =>
+      [...eligible]
+        .sort((a, b) => Number(b[field] ?? -1) - Number(a[field] ?? -1))
+        .map((row) => ({
+          playerId: row.playerId,
+          playerName: row.playerName,
+          appearances: row.appearances,
+          goals: row.goals,
+          assists: row.assists,
+          goalContributions: row.goalContributions,
+          averageRating: row.averageRating,
+          mvps: row.mvps,
+          passes: row.passes,
+          tackles: row.tackles,
+          saves: row.saves,
+        }));
+    const topScorers = rank('goals');
+    const assistRanking = rank('assists');
+    const contributionRanking = rank('goalContributions');
+    const ratingRanking = rank(
+      'averageRating',
+      rows.filter((row) => row.ratedMatches >= minimumAppearances),
+    );
+    const mvpRanking = rank('mvps');
+    const appearancesRanking = rank('appearances');
+    const passesRanking = rank('passes');
+    const tacklesRanking = rank('tackles');
+    const savesRanking = rank('saves');
+    const category = (
+      key: string,
+      label: string,
+      field: keyof (typeof rows)[number],
+      ranking: ReturnType<typeof rank>,
+      minimumMatches?: number,
+    ) => ({
+      key,
+      label,
+      minimumMatches,
+      entries: ranking.map((row) => ({
+        player: { id: row.playerId, playerName: row.playerName },
+        value: row[field],
+        appearances: row.appearances,
+      })),
+    });
+    return {
+      minimumAppearances,
+      topScorers,
+      assists: assistRanking,
+      goalContributions: contributionRanking,
+      averageRating: ratingRanking,
+      mvps: mvpRanking,
+      appearances: appearancesRanking,
+      passes: passesRanking,
+      tackles: tacklesRanking,
+      saves: savesRanking,
+      categories: [
+        category('goals', 'Artilheiros', 'goals', topScorers),
+        category('assists', 'Assistências', 'assists', assistRanking),
+        category(
+          'goalContributions',
+          'G+A',
+          'goalContributions',
+          contributionRanking,
+        ),
+        category(
+          'averageRating',
+          'Média de nota',
+          'averageRating',
+          ratingRanking,
+          minimumAppearances,
+        ),
+        category('mvps', 'MVPs', 'mvps', mvpRanking),
+        category(
+          'appearances',
+          'Mais partidas',
+          'appearances',
+          appearancesRanking,
+        ),
+        category('passes', 'Passes', 'passes', passesRanking),
+        category('tackles', 'Desarmes', 'tackles', tacklesRanking),
+        category('saves', 'Defesas', 'saves', savesRanking),
+      ],
+    };
+  }
+
+  private async importMatch(
+    club: { id: string; externalClubId: string },
+    match: EaClubMatch,
+  ): Promise<boolean> {
+    const isHome = match.homeClubId === club.externalClubId;
+    const isAway = match.awayClubId === club.externalClubId;
+    if (!isHome && !isAway)
+      throw new Error('Connected club is absent from match');
+    const goalsFor = isHome ? match.homeScore : match.awayScore;
+    const goalsAgainst = isHome ? match.awayScore : match.homeScore;
+    const opponentExternalId = isHome ? match.awayClubId : match.homeClubId;
+    const opponentName = isHome ? match.awayClubName : match.homeClubName;
+    const players = match.playersByClub[club.externalClubId] ?? [];
+
+    return this.prisma.$transaction(async (tx) => {
+      const duplicate = await tx.eaClubMatch.findUnique({
+        where: { externalMatchId: match.externalMatchId },
+        select: { id: true },
+      });
+      if (duplicate) return false;
+      const created = await tx.eaClubMatch.create({
+        data: {
+          externalMatchId: match.externalMatchId,
+          clubId: club.id,
+          playedAt: match.playedAt,
+          isHome,
+          opponentExternalId,
+          opponentName,
+          goalsFor,
+          goalsAgainst,
+          result:
+            goalsFor > goalsAgainst
+              ? EaClubMatchResult.WIN
+              : goalsFor < goalsAgainst
+                ? EaClubMatchResult.LOSS
+                : EaClubMatchResult.DRAW,
+          rawData: match.rawData as Prisma.InputJsonValue,
+        },
+      });
+      for (const stat of players) {
+        const normalizedName = stat.playerName
+          .normalize('NFKC')
+          .trim()
+          .toLocaleLowerCase('en-US');
+        const identityKey = stat.externalPlayerId
+          ? `ea:${stat.externalPlayerId}`
+          : `anonymous:${match.externalMatchId}:${normalizedName}:${stat.position ?? ''}`;
+        const player = await tx.eaClubPlayer.upsert({
+          where: { clubId_identityKey: { clubId: club.id, identityKey } },
+          update: { playerName: stat.playerName },
+          create: {
+            clubId: club.id,
+            externalPlayerId: stat.externalPlayerId,
+            identityKey,
+            playerName: stat.playerName,
+          },
+        });
+        await tx.eaMatchPlayerStat.create({
+          data: {
+            matchId: created.id,
+            playerId: player.id,
+            position: stat.position,
+            rating: stat.rating,
+            goals: stat.goals,
+            assists: stat.assists,
+            shots: stat.shots,
+            passesAttempted: stat.passesAttempted,
+            passesCompleted: stat.passesCompleted,
+            tacklesAttempted: stat.tacklesAttempted,
+            tacklesCompleted: stat.tacklesCompleted,
+            saves: stat.saves,
+            manOfTheMatch: stat.manOfTheMatch,
+          },
+        });
+      }
+      return true;
+    });
+  }
+
+  private playerTotals(
+    stats: Array<{
+      rating: number | null;
+      goals: number;
+      assists: number;
+      shots: number | null;
+      passesAttempted: number | null;
+      passesCompleted: number | null;
+      tacklesAttempted: number | null;
+      tacklesCompleted: number | null;
+      saves: number | null;
+      manOfTheMatch: boolean | null;
+    }>,
+  ) {
+    const totals = stats.reduce(
+      (sum, stat) => ({
+        goals: sum.goals + stat.goals,
+        assists: sum.assists + stat.assists,
+        shots: sum.shots + (stat.shots ?? 0),
+        passesAttempted: sum.passesAttempted + (stat.passesAttempted ?? 0),
+        passesCompleted: sum.passesCompleted + (stat.passesCompleted ?? 0),
+        tacklesAttempted: sum.tacklesAttempted + (stat.tacklesAttempted ?? 0),
+        tacklesCompleted: sum.tacklesCompleted + (stat.tacklesCompleted ?? 0),
+        saves: sum.saves + (stat.saves ?? 0),
+        mvps: sum.mvps + (stat.manOfTheMatch ? 1 : 0),
+        ratingSum: sum.ratingSum + (stat.rating ?? 0),
+        ratedMatches: sum.ratedMatches + (stat.rating === null ? 0 : 1),
+      }),
+      {
+        goals: 0,
+        assists: 0,
+        shots: 0,
+        passesAttempted: 0,
+        passesCompleted: 0,
+        tacklesAttempted: 0,
+        tacklesCompleted: 0,
+        saves: 0,
+        mvps: 0,
+        ratingSum: 0,
+        ratedMatches: 0,
+      },
+    );
+    const appearances = stats.length;
+    return {
+      appearances,
+      goals: totals.goals,
+      assists: totals.assists,
+      goalContributions: totals.goals + totals.assists,
+      mvps: totals.mvps,
+      shots: totals.shots,
+      passesAttempted: totals.passesAttempted,
+      passesCompleted: totals.passesCompleted,
+      tacklesAttempted: totals.tacklesAttempted,
+      tacklesCompleted: totals.tacklesCompleted,
+      saves: totals.saves,
+      goalsPerMatch: appearances ? totals.goals / appearances : 0,
+      assistsPerMatch: appearances ? totals.assists / appearances : 0,
+      goalContributionsPerMatch: appearances
+        ? (totals.goals + totals.assists) / appearances
+        : 0,
+      averageRating: totals.ratedMatches
+        ? totals.ratingSum / totals.ratedMatches
+        : null,
+      passCompletionRate: totals.passesAttempted
+        ? totals.passesCompleted / totals.passesAttempted
+        : null,
+      tackleCompletionRate: totals.tacklesAttempted
+        ? totals.tacklesCompleted / totals.tacklesAttempted
+        : null,
+    };
+  }
+
+  private emptyLeaderboardRow(playerId: string, playerName: string) {
+    return {
+      playerId,
+      playerName,
+      appearances: 0,
+      goals: 0,
+      assists: 0,
+      goalContributions: 0,
+      ratingSum: 0,
+      ratedMatches: 0,
+      mvps: 0,
+      passes: 0,
+      tackles: 0,
+      saves: 0,
+    };
+  }
+
+  private async requireClub(id: string) {
+    const club = await this.prisma.eaClub.findUnique({ where: { id } });
+    if (!club) throw new NotFoundException('Clube EA FC não encontrado.');
+    return club;
+  }
+
+  private async callProvider<T>(operation: () => Promise<T>): Promise<T> {
+    try {
+      return await operation();
+    } catch (error) {
+      if (error instanceof EaFcClubNotFoundError) {
+        throw new NotFoundException(
+          'Não encontramos nenhum clube com esse Club ID.',
+        );
+      }
+      if (error instanceof EaFcPayloadError) {
+        this.logger.error(`Unexpected EA FC payload: ${error.message}`);
+        throw new BadGatewayException(
+          'A EA retornou dados em formato inesperado.',
+        );
+      }
+      if (error instanceof EaFcProviderError) {
+        throw new ServiceUnavailableException(error.message);
+      }
+      throw error;
+    }
+  }
+}

@@ -15,6 +15,7 @@ import { ClashModule } from './clash/clash.module';
 import { AiModule } from './ai/ai.module';
 import { VerifyModule } from './verify/verify.module';
 import { PlayerStatsModule } from './playerStats/player-stats.module';
+import { EaFcClubsModule } from './ea-fc-clubs/ea-fc-clubs.module';
 
 @Module({
   imports: [
@@ -46,6 +47,7 @@ import { PlayerStatsModule } from './playerStats/player-stats.module';
     AiModule,
     VerifyModule,
     PlayerStatsModule,
+    EaFcClubsModule,
   ],
   controllers: [],
   providers: [{ provide: APP_GUARD, useClass: AppThrottlerGuard }],

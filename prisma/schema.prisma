@@ -307,3 +307,84 @@ model Achievement {
   @@unique([serverId, userId, type])
   @@index([serverId, userId])
 }
+
+enum EaClubMatchResult {
+  WIN
+  DRAW
+  LOSS
+}
+
+model EaClub {
+  id             String         @id @default(cuid())
+  externalClubId String
+  name           String
+  platform       String
+  nickname       String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  lastSyncAt     DateTime?
+  matches        EaClubMatch[]
+  players        EaClubPlayer[]
+
+  @@unique([externalClubId, platform])
+  @@index([name])
+}
+
+model EaClubMatch {
+  id                 String              @id @default(cuid())
+  externalMatchId    String              @unique
+  clubId             String
+  club               EaClub              @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  playedAt           DateTime
+  isHome             Boolean
+  opponentExternalId String
+  opponentName       String
+  goalsFor           Int
+  goalsAgainst       Int
+  result             EaClubMatchResult
+  rawData            Json?
+  createdAt          DateTime            @default(now())
+  playerStats        EaMatchPlayerStat[]
+
+  @@index([clubId, playedAt])
+  @@index([clubId, result, playedAt])
+  @@index([clubId, opponentName])
+}
+
+model EaClubPlayer {
+  id               String              @id @default(cuid())
+  clubId           String
+  club             EaClub              @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  externalPlayerId String?
+  identityKey      String
+  playerName       String
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+  matchStats       EaMatchPlayerStat[]
+
+  @@unique([clubId, identityKey])
+  @@index([clubId, playerName])
+  @@index([clubId, externalPlayerId])
+}
+
+model EaMatchPlayerStat {
+  matchId          String
+  match            EaClubMatch  @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  playerId         String
+  player           EaClubPlayer @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  position         String?
+  rating           Float?
+  goals            Int          @default(0)
+  assists          Int          @default(0)
+  shots            Int?
+  passesAttempted  Int?
+  passesCompleted  Int?
+  tacklesAttempted Int?
+  tacklesCompleted Int?
+  saves            Int?
+  manOfTheMatch    Boolean?
+
+  @@id([matchId, playerId])
+  @@index([playerId, matchId])
+  @@index([matchId])
+}
