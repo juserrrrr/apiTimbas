@@ -7,6 +7,7 @@ import {
   mapEaClub,
   mapEaClubSearchResult,
   mapEaClubOverallStats,
+  mapEaClubMemberStats,
   mapEaMatch,
   mapEaMember,
 } from './ea-fc-clubs.mapper';
@@ -21,6 +22,7 @@ import {
   EaClub,
   EaClubMatch,
   EaClubMember,
+  EaClubMemberStats,
   EaClubOverallStats,
   EaFcClubNotFoundError,
   EaFcMatchType,
@@ -127,6 +129,17 @@ export class EaFcClubsProvider {
       clubIds: clubId,
     });
     return mapEaClubOverallStats(parseOverallStatsPayload(payload));
+  }
+
+  async getClubMemberStats(
+    clubId: string,
+    platform: EaFcPlatform,
+  ): Promise<EaClubMemberStats[]> {
+    const payload = await this.request('members/stats', {
+      platform,
+      clubId,
+    });
+    return parseMembersPayload(payload).map(mapEaClubMemberStats);
   }
 
   async getClubMatches(

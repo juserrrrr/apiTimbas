@@ -1,0 +1,15 @@
+ALTER TABLE "EaClubPlayer"
+ADD COLUMN "eaClubGames" INTEGER,
+ADD COLUMN "eaClubGoals" INTEGER,
+ADD COLUMN "eaClubAssists" INTEGER,
+ADD COLUMN "eaClubMvps" INTEGER,
+ADD COLUMN "eaClubRating" DOUBLE PRECISION,
+ADD COLUMN "eaClubPassesMade" INTEGER,
+ADD COLUMN "eaClubPassSuccessRate" DOUBLE PRECISION,
+ADD COLUMN "eaClubTacklesMade" INTEGER,
+ADD COLUMN "eaClubTackleSuccessRate" DOUBLE PRECISION,
+ADD COLUMN "eaClubShotSuccessRate" DOUBLE PRECISION,
+ADD COLUMN "eaClubCleanSheetsDef" INTEGER,
+ADD COLUMN "eaClubCleanSheetsGk" INTEGER,
+ADD COLUMN "eaClubRedCards" INTEGER,
+ADD COLUMN "eaClubStatsUpdatedAt" TIMESTAMP(3);

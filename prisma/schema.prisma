@@ -360,21 +360,35 @@ model EaClubMatch {
 }
 
 model EaClubPlayer {
-  id                   String              @id @default(cuid())
-  clubId               String
-  club                 EaClub              @relation(fields: [clubId], references: [id], onDelete: Cascade)
-  externalPlayerId     String?
-  identityKey          String
-  playerName           String
-  createdAt            DateTime            @default(now())
-  updatedAt            DateTime            @updatedAt
-  careerGames          Int?
-  careerGoals          Int?
-  careerAssists        Int?
-  careerMvps           Int?
-  careerRating         Float?
-  careerStatsUpdatedAt DateTime?
-  matchStats           EaMatchPlayerStat[]
+  id                      String              @id @default(cuid())
+  clubId                  String
+  club                    EaClub              @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  externalPlayerId        String?
+  identityKey             String
+  playerName              String
+  createdAt               DateTime            @default(now())
+  updatedAt               DateTime            @updatedAt
+  careerGames             Int?
+  careerGoals             Int?
+  careerAssists           Int?
+  careerMvps              Int?
+  careerRating            Float?
+  careerStatsUpdatedAt    DateTime?
+  eaClubGames             Int?
+  eaClubGoals             Int?
+  eaClubAssists           Int?
+  eaClubMvps              Int?
+  eaClubRating            Float?
+  eaClubPassesMade        Int?
+  eaClubPassSuccessRate   Float?
+  eaClubTacklesMade       Int?
+  eaClubTackleSuccessRate Float?
+  eaClubShotSuccessRate   Float?
+  eaClubCleanSheetsDef    Int?
+  eaClubCleanSheetsGk     Int?
+  eaClubRedCards          Int?
+  eaClubStatsUpdatedAt    DateTime?
+  matchStats              EaMatchPlayerStat[]
 
   @@unique([clubId, identityKey])
   @@index([clubId, playerName])

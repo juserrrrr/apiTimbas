@@ -28,6 +28,23 @@ export interface EaClubOverallStats {
   goalsAgainst?: number;
 }
 
+export interface EaClubMemberStats {
+  playerName: string;
+  gamesPlayed?: number;
+  goals?: number;
+  assists?: number;
+  manOfTheMatch?: number;
+  averageRating?: number;
+  passesMade?: number;
+  passSuccessRate?: number;
+  tacklesMade?: number;
+  tackleSuccessRate?: number;
+  shotSuccessRate?: number;
+  cleanSheetsDef?: number;
+  cleanSheetsGk?: number;
+  redCards?: number;
+}
+
 export interface EaClubMatchPlayer {
   externalPlayerId?: string;
   playerName: string;

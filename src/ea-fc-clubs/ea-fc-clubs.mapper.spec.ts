@@ -3,6 +3,7 @@ import {
   mapEaClub,
   mapEaClubOverallStats,
   mapEaClubSearchResult,
+  mapEaClubMemberStats,
   mapEaMember,
   mapEaMatch,
 } from './ea-fc-clubs.mapper';
@@ -110,6 +111,33 @@ describe('EA FC Clubs mapper', () => {
         assists: 45,
         manOfTheMatch: 12,
         averageRating: 8.2,
+      }),
+    );
+  });
+
+  it('maps club-only member performance totals', () => {
+    expect(
+      mapEaClubMemberStats({
+        name: 'Gabriel',
+        gamesPlayed: '80',
+        goals: '35',
+        assists: '20',
+        passesMade: '1440',
+        passSuccessRate: '87.5',
+        tacklesMade: '210',
+        tackleSuccessRate: '72.4',
+        shotSuccessRate: '31.2',
+        cleanSheetsDef: '14',
+        cleanSheetsGK: '0',
+        redCards: '1',
+      }),
+    ).toEqual(
+      expect.objectContaining({
+        gamesPlayed: 80,
+        passesMade: 1440,
+        passSuccessRate: 87.5,
+        tacklesMade: 210,
+        tackleSuccessRate: 72.4,
       }),
     );
   });

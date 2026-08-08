@@ -3,6 +3,7 @@ import {
   EaClubMatch,
   EaClubMatchPlayer,
   EaClubMember,
+  EaClubMemberStats,
   EaClubOverallStats,
   EaExternalRecord,
   EaFcPayloadError,
@@ -222,5 +223,28 @@ export function mapEaClubOverallStats(
     losses: asInteger(value.losses),
     goalsFor: asInteger(value.goals ?? value.goalsFor),
     goalsAgainst: asInteger(value.goalsAgainst),
+  };
+}
+
+export function mapEaClubMemberStats(
+  value: EaExternalRecord,
+): EaClubMemberStats {
+  const playerName = asString(value.name) ?? asString(value.playername);
+  if (!playerName) throw new EaFcPayloadError('EA member name is missing');
+  return {
+    playerName,
+    gamesPlayed: asInteger(value.gamesPlayed),
+    goals: asInteger(value.goals),
+    assists: asInteger(value.assists),
+    manOfTheMatch: asInteger(value.manOfTheMatch ?? value.mom),
+    averageRating: asNumber(value.ratingAve ?? value.averageRating),
+    passesMade: asInteger(value.passesMade),
+    passSuccessRate: asNumber(value.passSuccessRate),
+    tacklesMade: asInteger(value.tacklesMade),
+    tackleSuccessRate: asNumber(value.tackleSuccessRate),
+    shotSuccessRate: asNumber(value.shotSuccessRate),
+    cleanSheetsDef: asInteger(value.cleanSheetsDef),
+    cleanSheetsGk: asInteger(value.cleanSheetsGK ?? value.cleanSheetsGk),
+    redCards: asInteger(value.redCards),
   };
 }

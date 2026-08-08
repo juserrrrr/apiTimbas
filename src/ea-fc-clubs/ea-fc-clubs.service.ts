@@ -351,7 +351,7 @@ export class EaFcClubsService {
     const players = await this.prisma.eaClubPlayer.findMany({
       where: {
         clubId: id,
-        OR: [{ matchStats: { some: {} } }, { careerGames: { not: null } }],
+        OR: [{ matchStats: { some: {} } }, { eaClubGames: { not: null } }],
       },
       include: { _count: { select: { matchStats: true } } },
       orderBy: { playerName: 'asc' },
@@ -397,15 +397,26 @@ export class EaFcClubsService {
         include: { player: { select: { id: true, playerName: true } } },
       }),
       this.prisma.eaClubPlayer.findMany({
-        where: { clubId: id, careerGames: { not: null } },
+        where: {
+          clubId: id,
+          eaClubGames: { not: null },
+        },
         select: {
           id: true,
           playerName: true,
-          careerGames: true,
-          careerGoals: true,
-          careerAssists: true,
-          careerMvps: true,
-          careerRating: true,
+          eaClubGames: true,
+          eaClubGoals: true,
+          eaClubAssists: true,
+          eaClubMvps: true,
+          eaClubRating: true,
+          eaClubPassesMade: true,
+          eaClubPassSuccessRate: true,
+          eaClubTacklesMade: true,
+          eaClubTackleSuccessRate: true,
+          eaClubShotSuccessRate: true,
+          eaClubCleanSheetsDef: true,
+          eaClubCleanSheetsGk: true,
+          eaClubRedCards: true,
         },
       }),
     ]);
@@ -494,26 +505,34 @@ export class EaFcClubsService {
         appearances: row.appearances,
       })),
     });
-    const careerCategory = (
+    const aggregateCategory = (
       key: string,
       label: string,
       field:
-        | 'careerGames'
-        | 'careerGoals'
-        | 'careerAssists'
-        | 'careerMvps'
-        | 'careerRating',
+        | 'eaClubGames'
+        | 'eaClubGoals'
+        | 'eaClubAssists'
+        | 'eaClubMvps'
+        | 'eaClubRating'
+        | 'eaClubPassesMade'
+        | 'eaClubPassSuccessRate'
+        | 'eaClubTacklesMade'
+        | 'eaClubTackleSuccessRate'
+        | 'eaClubShotSuccessRate'
+        | 'eaClubCleanSheetsDef'
+        | 'eaClubCleanSheetsGk'
+        | 'eaClubRedCards',
     ) => ({
       key,
       label,
-      source: 'EA_CAREER',
+      source: 'EA_CLUB',
       entries: [...careerPlayers]
         .filter((player) => player[field] !== null)
         .sort((a, b) => Number(b[field] ?? -1) - Number(a[field] ?? -1))
         .map((player) => ({
           player: { id: player.id, playerName: player.playerName },
           value: player[field] ?? 0,
-          appearances: player.careerGames ?? undefined,
+          appearances: player.eaClubGames ?? undefined,
         })),
     });
     return {
@@ -529,19 +548,24 @@ export class EaFcClubsService {
       tackles: tacklesRanking,
       saves: savesRanking,
       categories: [
-        careerCategory('careerGoals', 'Carreira EA · Gols', 'careerGoals'),
-        careerCategory(
-          'careerAssists',
-          'Carreira EA · Assistências',
-          'careerAssists',
+        aggregateCategory('eaClubGoals', 'No clube · Gols', 'eaClubGoals'),
+        aggregateCategory(
+          'eaClubAssists',
+          'No clube · Assistências',
+          'eaClubAssists',
         ),
-        careerCategory(
-          'careerAppearances',
-          'Carreira EA · Partidas',
-          'careerGames',
+        aggregateCategory('eaClubGames', 'No clube · Partidas', 'eaClubGames'),
+        aggregateCategory(
+          'eaClubPasses',
+          'No clube · Passes certos',
+          'eaClubPassesMade',
         ),
-        careerCategory('careerRating', 'Carreira EA · Nota', 'careerRating'),
-        careerCategory('careerMvps', 'Carreira EA · MVPs', 'careerMvps'),
+        aggregateCategory(
+          'eaClubTackles',
+          'No clube · Desarmes certos',
+          'eaClubTacklesMade',
+        ),
+        aggregateCategory('eaClubRating', 'No clube · Nota', 'eaClubRating'),
         category('goals', 'Artilheiros', 'goals', topScorers),
         category('assists', 'Assistências', 'assists', assistRanking),
         category(
@@ -634,18 +658,17 @@ export class EaFcClubsService {
           where: { clubId_identityKey: { clubId: club.id, identityKey } },
         });
         if (!player && stat.externalPlayerId) {
-          const careerIdentityKey = `career:${normalizedName}`;
-          const careerPlayer = await tx.eaClubPlayer.findUnique({
+          const aggregatePlayers = await tx.eaClubPlayer.findMany({
             where: {
-              clubId_identityKey: {
-                clubId: club.id,
-                identityKey: careerIdentityKey,
+              clubId: club.id,
+              identityKey: {
+                in: [`career:${normalizedName}`, `clubstats:${normalizedName}`],
               },
             },
           });
-          if (careerPlayer) {
+          if (aggregatePlayers.length === 1) {
             player = await tx.eaClubPlayer.update({
-              where: { id: careerPlayer.id },
+              where: { id: aggregatePlayers[0].id },
               data: {
                 identityKey,
                 externalPlayerId: stat.externalPlayerId,
@@ -716,7 +739,7 @@ export class EaFcClubsService {
     }
 
     try {
-      const members = await this.provider.getClubMembers(
+      const members = await this.provider.getClubMemberStats(
         club.externalClubId,
         platform,
       );
@@ -734,18 +757,26 @@ export class EaFcClubsService {
         const matches = byName.get(key) ?? [];
         if (matches.length > 1) {
           this.logger.warn(
-            `Skipped ambiguous EA career totals for ${member.playerName} in club ${club.id}`,
+            `Skipped ambiguous EA club totals for ${member.playerName} in club ${club.id}`,
           );
           continue;
         }
         const data = {
           playerName: member.playerName,
-          careerGames: member.gamesPlayed,
-          careerGoals: member.goals,
-          careerAssists: member.assists,
-          careerMvps: member.manOfTheMatch,
-          careerRating: member.averageRating,
-          careerStatsUpdatedAt: updatedAt,
+          eaClubGames: member.gamesPlayed,
+          eaClubGoals: member.goals,
+          eaClubAssists: member.assists,
+          eaClubMvps: member.manOfTheMatch,
+          eaClubRating: member.averageRating,
+          eaClubPassesMade: member.passesMade,
+          eaClubPassSuccessRate: member.passSuccessRate,
+          eaClubTacklesMade: member.tacklesMade,
+          eaClubTackleSuccessRate: member.tackleSuccessRate,
+          eaClubShotSuccessRate: member.shotSuccessRate,
+          eaClubCleanSheetsDef: member.cleanSheetsDef,
+          eaClubCleanSheetsGk: member.cleanSheetsGk,
+          eaClubRedCards: member.redCards,
+          eaClubStatsUpdatedAt: updatedAt,
         };
         if (matches[0]) {
           await this.prisma.eaClubPlayer.update({
@@ -756,7 +787,7 @@ export class EaFcClubsService {
           const player = await this.prisma.eaClubPlayer.create({
             data: {
               clubId: club.id,
-              identityKey: `career:${key}`,
+              identityKey: `clubstats:${key}`,
               ...data,
             },
           });
@@ -765,7 +796,7 @@ export class EaFcClubsService {
       }
     } catch (error) {
       this.logger.warn(
-        `EA member career totals unavailable for club ${club.id}: ${error instanceof Error ? error.message : 'unknown error'}`,
+        `EA member club totals unavailable for club ${club.id}: ${error instanceof Error ? error.message : 'unknown error'}`,
       );
     }
   }
