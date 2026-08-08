@@ -196,50 +196,8 @@ export class EaFcClubsService {
 
   async getDashboard(id: string) {
     const club = await this.requireClub(id);
-    const [total, wins, draws, losses, goals, recentMatches, earliestMatch] =
-      await Promise.all([
-        this.prisma.eaClubMatch.count({ where: { clubId: id } }),
-        this.prisma.eaClubMatch.count({
-          where: { clubId: id, result: EaClubMatchResult.WIN },
-        }),
-        this.prisma.eaClubMatch.count({
-          where: { clubId: id, result: EaClubMatchResult.DRAW },
-        }),
-        this.prisma.eaClubMatch.count({
-          where: { clubId: id, result: EaClubMatchResult.LOSS },
-        }),
-        this.prisma.eaClubMatch.aggregate({
-          where: { clubId: id },
-          _sum: { goalsFor: true, goalsAgainst: true },
-        }),
-        this.prisma.eaClubMatch.findMany({
-          where: { clubId: id },
-          orderBy: { playedAt: 'desc' },
-          take: 20,
-        }),
-        this.prisma.eaClubMatch.findFirst({
-          where: { clubId: id },
-          orderBy: { playedAt: 'asc' },
-          select: { playedAt: true },
-        }),
-      ]);
-    const pointsPercentage =
-      total === 0
-        ? 0
-        : Math.round(((wins * 3 + draws) / (total * 3)) * 1000) / 10;
     return {
       club,
-      matches: total,
-      wins,
-      draws,
-      losses,
-      pointsPercentage,
-      winRate: pointsPercentage,
-      goalsFor: goals._sum.goalsFor ?? 0,
-      goalsAgainst: goals._sum.goalsAgainst ?? 0,
-      recentMatches,
-      trackingStartedAt: club.createdAt,
-      earliestImportedMatchAt: earliestMatch?.playedAt ?? null,
       eaAllTimeStats:
         club.eaGamesPlayed === null && club.eaGoalsFor === null
           ? null
