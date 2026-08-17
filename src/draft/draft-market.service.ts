@@ -1,13 +1,13 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import {
+  DraftBudgetTxType,
   DraftLeagueStatus,
   Prisma,
   TransferOfferKind,
   TransferOfferStatus,
-  WalletTxType,
 } from '@prisma/client';
 import { Actor } from '../common/actor.service';
-import { WalletService } from '../economy/wallet.service';
+import { DraftBudgetService, salaryFor } from './draft-budget.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { DraftAccessService } from './draft-access.service';
 import { CreateOfferDto } from './dto/draft.dto';
@@ -17,7 +17,7 @@ export class DraftMarketService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly access: DraftAccessService,
-    private readonly wallet: WalletService,
+    private readonly budget: DraftBudgetService,
   ) {}
 
   async createOffer(leagueId: string, dto: CreateOfferDto, actor: Actor) {
@@ -95,12 +95,11 @@ export class DraftMarketService {
         }
 
         if (offer.price > 0) {
-          await this.wallet.transfer(
-            offer.fromRoster.userId,
-            offer.toRoster!.userId,
+          await this.budget.transfer(
+            { leagueId, rosterId: offer.fromRosterId },
+            offer.toRosterId!,
             offer.price,
-            `Transferência de ${current.name} na ${league.name}`,
-            { type: 'draftTransfer', id: offer.id },
+            `Transferência de ${current.name}`,
             tx,
           );
         }
@@ -168,19 +167,16 @@ export class DraftMarketService {
         where: { id: playerId },
         data: { rosterId: null, starter: false, slot: null },
       });
-      if (refund > 0) {
-        await this.wallet.credit(
-          {
-            userId: actor.id,
-            amount: refund,
-            type: WalletTxType.DRAFT_SALE,
-            description: `Venda de ${player.name} na ${league.name}`,
-            referenceType: 'draftPlayer',
-            referenceId: playerId,
-          },
-          tx,
-        );
-      }
+      await this.budget.credit(
+        {
+          leagueId,
+          rosterId: roster.id,
+          amount: refund,
+          type: DraftBudgetTxType.SALE,
+          description: `Venda de ${player.name}`,
+        },
+        tx,
+      );
       return { released: true, refund };
     });
   }
@@ -256,19 +252,16 @@ export class DraftMarketService {
       });
       if (duplicated) throw new BadRequestException('Esse jogador já está nesta liga.');
 
-      if (source.price > 0) {
-        await this.wallet.debit(
-          {
-            userId: actor.id,
-            amount: source.price,
-            type: WalletTxType.DRAFT_PURCHASE,
-            description: `Contratação de ${source.name} na ${league.name}`,
-            referenceType: 'catalogPlayer',
-            referenceId: catalogPlayerId,
-          },
-          tx,
-        );
-      }
+      await this.budget.debit(
+        {
+          leagueId,
+          rosterId: roster.id,
+          amount: source.price,
+          type: DraftBudgetTxType.SIGNING,
+          description: `Contratação de ${source.name}, vindo do ${source.team.name}`,
+        },
+        tx,
+      );
 
       const signed = await tx.draftPlayer.create({
         data: {
@@ -283,6 +276,7 @@ export class DraftMarketService {
           birthDate: source.birthDate,
           photoUrl: source.photoUrl,
           price: source.price,
+          salary: salaryFor(source.price),
           pace: source.pace,
           shooting: source.shooting,
           passing: source.passing,
@@ -329,19 +323,16 @@ export class DraftMarketService {
       const current = await tx.draftPlayer.findUniqueOrThrow({ where: { id: player.id } });
       if (current.rosterId) throw new BadRequestException('Esse jogador acabou de ser contratado por outro elenco.');
 
-      if (player.price > 0) {
-        await this.wallet.debit(
-          {
-            userId: actor.id,
-            amount: player.price,
-            type: WalletTxType.DRAFT_PURCHASE,
-            description: `Contratação de ${player.name} na ${leagueName}`,
-            referenceType: 'draftPlayer',
-            referenceId: player.id,
-          },
-          tx,
-        );
-      }
+      await this.budget.debit(
+        {
+          leagueId,
+          rosterId,
+          amount: player.price,
+          type: DraftBudgetTxType.SIGNING,
+          description: `Contratação de ${player.name}, que estava livre`,
+        },
+        tx,
+      );
 
       const updated = await tx.draftPlayer.update({ where: { id: player.id }, data: { rosterId } });
       return { signed: true, price: player.price, player: updated };

@@ -871,6 +871,18 @@ enum TacticIntensity {
   HIGH
 }
 
+/// De onde vem e para onde vai o dinheiro do elenco dentro da liga.
+enum DraftBudgetTxType {
+  SEED
+  MATCH_REWARD
+  SALARY
+  SIGNING
+  SALE
+  TRANSFER_IN
+  TRANSFER_OUT
+  ADJUST
+}
+
 enum DraftMatchStatus {
   SCHEDULED
   AWAITING_PROOF
@@ -908,6 +920,10 @@ model DraftLeague {
   pickDeadline              DateTime?
   pointsWin                 Int                 @default(3)
   pointsDraw                Int                 @default(1)
+  // O dinheiro é da liga, não da conta: cada elenco começa com este caixa, que
+  // nasce de novo a cada draft. Premiação de rodada e salário mexem nele.
+  startingBudget            Int                 @default(1000)
+  paySalaries               Boolean             @default(true)
   coinsWin                  Int                 @default(60)
   coinsDraw                 Int                 @default(25)
   coinsLoss                 Int                 @default(10)
@@ -931,6 +947,7 @@ model DraftLeague {
   offers                    TransferOffer[]
   staff                     DraftStaff[]
   sources                   DraftLeagueSource[]
+  budgetEntries             DraftBudgetEntry[]
 
   @@index([status])
   @@index([status, registrationEndsAt])
@@ -992,6 +1009,8 @@ model DraftPlayer {
   roster          DraftRoster?    @relation(fields: [rosterId], references: [id])
   starter         Boolean         @default(false)
   slot            String?
+  // Salário cobrado do caixa do elenco a cada rodada.
+  salary          Int             @default(0)
   appearances     Int             @default(0)
   goals           Int             @default(0)
   assists         Int             @default(0)
@@ -1011,34 +1030,38 @@ model DraftPlayer {
 }
 
 model DraftRoster {
-  id             String          @id @default(cuid())
+  id             String             @id @default(cuid())
   leagueId       String
-  league         DraftLeague     @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+  league         DraftLeague        @relation(fields: [leagueId], references: [id], onDelete: Cascade)
   userId         Int
-  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user           User               @relation(fields: [userId], references: [id], onDelete: Cascade)
   name           String
   tag            String?
   logoUrl        String?
-  formation      String          @default("4-3-3")
-  mentality      TacticMentality @default(BALANCED)
-  pressing       TacticIntensity @default(MEDIUM)
-  tempo          TacticIntensity @default(MEDIUM)
+  formation      String             @default("4-3-3")
+  mentality      TacticMentality    @default(BALANCED)
+  pressing       TacticIntensity    @default(MEDIUM)
+  tempo          TacticIntensity    @default(MEDIUM)
   tacticsAt      DateTime?
-  draftOrder     Int             @default(0)
-  played         Int             @default(0)
-  wins           Int             @default(0)
-  draws          Int             @default(0)
-  losses         Int             @default(0)
-  goalsFor       Int             @default(0)
-  goalsAgainst   Int             @default(0)
-  points         Int             @default(0)
-  createdAt      DateTime        @default(now())
+  budget         Int                @default(0)
+  earned         Int                @default(0)
+  spent          Int                @default(0)
+  draftOrder     Int                @default(0)
+  played         Int                @default(0)
+  wins           Int                @default(0)
+  draws          Int                @default(0)
+  losses         Int                @default(0)
+  goalsFor       Int                @default(0)
+  goalsAgainst   Int                @default(0)
+  points         Int                @default(0)
+  createdAt      DateTime           @default(now())
   players        DraftPlayer[]
   picks          DraftPick[]
-  homeMatches    DraftMatch[]    @relation("DraftHome")
-  awayMatches    DraftMatch[]    @relation("DraftAway")
-  offersMade     TransferOffer[] @relation("TransferFrom")
-  offersReceived TransferOffer[] @relation("TransferTo")
+  homeMatches    DraftMatch[]       @relation("DraftHome")
+  awayMatches    DraftMatch[]       @relation("DraftAway")
+  offersMade     TransferOffer[]    @relation("TransferFrom")
+  offersReceived TransferOffer[]    @relation("TransferTo")
+  budgetEntries  DraftBudgetEntry[]
 
   @@unique([leagueId, userId])
   @@unique([leagueId, name])
@@ -1062,6 +1085,25 @@ model DraftPick {
   @@unique([leagueId, playerId])
   @@unique([leagueId, pickNumber])
   @@index([rosterId])
+}
+
+/// Extrato do caixa do elenco na liga. Serve para explicar para onde foi o
+/// dinheiro, e morre junto com a liga.
+model DraftBudgetEntry {
+  id           String            @id @default(cuid())
+  leagueId     String
+  league       DraftLeague       @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+  rosterId     String
+  roster       DraftRoster       @relation(fields: [rosterId], references: [id], onDelete: Cascade)
+  amount       Int
+  balanceAfter Int
+  type         DraftBudgetTxType
+  description  String
+  round        Int?
+  createdAt    DateTime          @default(now())
+
+  @@index([rosterId, createdAt])
+  @@index([leagueId, createdAt])
 }
 
 model DraftMatch {

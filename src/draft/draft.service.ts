@@ -3,6 +3,7 @@ import { CompetitionRole, DraftLeagueStatus, Prisma } from '@prisma/client';
 import { Actor } from '../common/actor.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { DraftAccessService } from './draft-access.service';
+import { salaryFor } from './draft-budget.service';
 import { pickCoordinate, upcomingPicks } from './draft-order';
 import {
   CreateDraftLeagueDto,
@@ -161,6 +162,7 @@ export class DraftService {
         logoUrl: dto.logoUrl,
         formation: league.formation,
         draftOrder: count + 1,
+        budget: league.startingBudget,
       },
       include: { user: { select: { id: true, name: true, avatar: true } } },
     });
@@ -194,7 +196,11 @@ export class DraftService {
     return this.prisma.$transaction(async (tx) => {
       if (dto.replace) await tx.draftPlayer.deleteMany({ where: { leagueId } });
       const created = await tx.draftPlayer.createMany({
-        data: players.map((player) => ({ ...player, leagueId })),
+        data: players.map((player) => ({
+          ...player,
+          leagueId,
+          salary: salaryFor(player.price ?? 100),
+        })),
         skipDuplicates: true,
       });
       const total = await tx.draftPlayer.count({ where: { leagueId } });

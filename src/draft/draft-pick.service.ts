@@ -4,6 +4,7 @@ import { DraftLeague, DraftLeagueStatus, DraftMatchStatus, Prisma } from '@prism
 import { Actor } from '../common/actor.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { DraftAccessService } from './draft-access.service';
+import { DraftBudgetService } from './draft-budget.service';
 import { nextMatchDates, pickCoordinate, roundRobinPairs } from './draft-order';
 
 @Injectable()
@@ -13,6 +14,7 @@ export class DraftPickService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly access: DraftAccessService,
+    private readonly budget: DraftBudgetService,
   ) {}
 
   async startDraft(leagueId: string, actor: Actor, shuffle: boolean) {
@@ -41,6 +43,8 @@ export class DraftPickService {
       for (const [index, roster] of ordered.entries()) {
         await tx.draftRoster.update({ where: { id: roster.id }, data: { draftOrder: index + 1 } });
       }
+      // Dinheiro é da temporada: começar o draft zera e reparte o caixa de novo.
+      await this.budget.seed(leagueId, league.startingBudget, tx);
       return tx.draftLeague.update({
         where: { id: leagueId },
         data: {

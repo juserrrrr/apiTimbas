@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  NotFoundException,
   Param,
   ParseIntPipe,
   Patch,
@@ -19,6 +20,7 @@ import { ActorService } from '../common/actor.service';
 import { Roles } from '../decorators/roles.decorator';
 import { Role } from '../enums/role.enum';
 import { DraftAccessService } from './draft-access.service';
+import { DraftBudgetService } from './draft-budget.service';
 import { DraftFixtureService } from './draft-fixture.service';
 import { DraftMarketService } from './draft-market.service';
 import { DraftPickService } from './draft-pick.service';
@@ -53,6 +55,7 @@ export class DraftController {
     private readonly market: DraftMarketService,
     private readonly fixtures: DraftFixtureService,
     private readonly simulation: DraftSimulationService,
+    private readonly budgets: DraftBudgetService,
     private readonly access: DraftAccessService,
     private readonly actor: ActorService,
   ) {}
@@ -154,6 +157,15 @@ export class DraftController {
   @Post(':id/tactics')
   async tactics(@Req() req: AuthedRequest, @Param('id') id: string, @Body() dto: SetTacticsDto) {
     return this.draft.setTactics(id, dto, await this.me(req));
+  }
+
+  @Get(':id/budget')
+  async budget(@Req() req: AuthedRequest, @Param('id') id: string, @Query('rosterId') rosterId?: string) {
+    const actor = await this.me(req);
+    const access = await this.access.of(id, actor);
+    const target = rosterId && access.canModerate ? rosterId : access.rosterId;
+    if (!target) throw new NotFoundException('Você não tem elenco nesta liga.');
+    return this.budgets.statement(target);
   }
 
   @Get(':id/base-market')

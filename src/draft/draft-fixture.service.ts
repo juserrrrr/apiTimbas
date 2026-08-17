@@ -1,13 +1,13 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import {
+  DraftBudgetTxType,
   DraftLeague,
   DraftMatchStatus,
   MatchProofStatus,
   Prisma,
-  WalletTxType,
 } from '@prisma/client';
 import { Actor } from '../common/actor.service';
-import { WalletService } from '../economy/wallet.service';
+import { DraftBudgetService } from './draft-budget.service';
 import { overallFromAttributes } from '../football/attributes';
 import { applyChange, attributeChange, nextForm, nextRatingAvg } from '../football/development';
 import { PlayerPerformance, SimulatedMatch } from '../football/match-simulation';
@@ -25,7 +25,7 @@ export class DraftFixtureService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly access: DraftAccessService,
-    private readonly wallet: WalletService,
+    private readonly budget: DraftBudgetService,
     private readonly reader: ScoreReaderService,
   ) {}
 
@@ -249,8 +249,10 @@ export class DraftFixtureService {
 
         await this.applyRosterStats(tx, match.league, match.homeRosterId, homeScore, awayScore);
         await this.applyRosterStats(tx, match.league, match.awayRosterId, awayScore, homeScore);
-        await this.creditRound(tx, match.league, match.homeRoster.userId, homeScore, awayScore, matchId);
-        await this.creditRound(tx, match.league, match.awayRoster.userId, awayScore, homeScore, matchId);
+        await this.creditRound(tx, match.league, match.homeRosterId, homeScore, awayScore, match.round);
+        await this.creditRound(tx, match.league, match.awayRosterId, awayScore, homeScore, match.round);
+        await this.paySalaries(tx, match.league, match.homeRosterId, match.round);
+        await this.paySalaries(tx, match.league, match.awayRosterId, match.round);
         if (performances) await this.applyPerformances(tx, performances);
         else await this.bumpAppearances(tx, match.homeRosterId, match.awayRosterId);
         await this.advanceRound(tx, match.league.id);
@@ -284,25 +286,48 @@ export class DraftFixtureService {
     });
   }
 
+  /// Premiação da rodada cai no caixa da liga, não na carteira da conta.
   private async creditRound(
     tx: Prisma.TransactionClient,
     league: DraftLeague,
-    userId: number,
+    rosterId: string,
     scored: number,
     conceded: number,
-    matchId: string,
+    round: number,
   ) {
     const amount = scored > conceded ? league.coinsWin : scored === conceded ? league.coinsDraw : league.coinsLoss;
-    if (amount <= 0) return;
-    const label = scored > conceded ? 'Vitória' : scored === conceded ? 'Empate' : 'Participação';
-    await this.wallet.credit(
+    const label = scored > conceded ? 'Vitória' : scored === conceded ? 'Empate' : 'Derrota';
+    await this.budget.credit(
       {
-        userId,
+        leagueId: league.id,
+        rosterId,
         amount,
-        type: scored > conceded ? WalletTxType.MATCH_WIN : scored === conceded ? WalletTxType.MATCH_DRAW : WalletTxType.MATCH_LOSS,
-        description: `${label} na rodada da ${league.name}`,
-        referenceType: 'draftMatch',
-        referenceId: matchId,
+        type: DraftBudgetTxType.MATCH_REWARD,
+        description: `${label} na rodada ${round}`,
+        round,
+      },
+      tx,
+    );
+  }
+
+  /// Folha salarial da rodada. É obrigação: passa mesmo sem caixa e deixa o
+  /// elenco no vermelho, o que trava contratação até ele se recuperar.
+  private async paySalaries(
+    tx: Prisma.TransactionClient,
+    league: DraftLeague,
+    rosterId: string,
+    round: number,
+  ) {
+    if (!league.paySalaries) return;
+    const wages = await tx.draftPlayer.aggregate({ where: { rosterId }, _sum: { salary: true } });
+    await this.budget.charge(
+      {
+        leagueId: league.id,
+        rosterId,
+        amount: wages._sum.salary ?? 0,
+        type: DraftBudgetTxType.SALARY,
+        description: `Folha salarial da rodada ${round}`,
+        round,
       },
       tx,
     );

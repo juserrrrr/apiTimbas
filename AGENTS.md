@@ -36,8 +36,16 @@ src/
 
 ### Competition modules
 `tournament/` and `draft/` are **separate products** and must not import from each
-other. They share only platform infrastructure: `economy/` (one coin balance per
-user), `score-reader/`, and the `MatchProof` table (two nullable FKs, one per domain).
+other. They share `score-reader/` and the `MatchProof` table (two nullable FKs, one
+per domain).
+
+Money is not shared. `economy/` is the account wallet, one balance per user, and
+only `tournament/` pays into it. A draft league runs on its own cash: `DraftRoster.
+budget`, seeded from `DraftLeague.startingBudget` when the draft starts, spent on
+signings, transfers and the wage bill, and reset on the next draft. Every move is
+logged in `DraftBudgetEntry`, which dies with the league. Voluntary spending is
+blocked without cash; salary is an obligation, so it goes through and leaves the
+roster in the red, which blocks signings until it recovers.
 
 Neither is scoped to a Discord server, competitions are platform-wide. Only
 match/ranking features use `serverId`.

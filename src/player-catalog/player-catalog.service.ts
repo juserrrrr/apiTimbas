@@ -309,6 +309,7 @@ export class PlayerCatalogService {
         birthDate: player.birthDate,
         photoUrl: player.photoUrl,
         price: player.price,
+        salary: Math.max(1, Math.round(player.price / 10)),
         pace: player.pace,
         shooting: player.shooting,
         passing: player.passing,

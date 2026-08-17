@@ -96,6 +96,17 @@ export class CreateDraftLeagueDto {
   @Type(() => Number)
   @IsInt()
   @Min(0)
+  @Max(10000000)
+  startingBudget?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  paySalaries?: boolean;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
   @Max(100000)
   coinsWin?: number;
 
