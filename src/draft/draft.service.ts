@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { CompetitionRole, DraftLeagueStatus, Prisma } from '@prisma/client';
+import { CompetitionRole, DraftLeagueStatus, DraftResultMode, Prisma } from '@prisma/client';
 import { Actor } from '../common/actor.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { DraftAccessService } from './draft-access.service';
@@ -131,9 +131,14 @@ export class DraftService {
     });
   }
 
-  /// Tática é do treinador do elenco, e o moderador pode ajustar pelo elenco de
-  /// alguém que não apareceu.
+  /// Tática só faz sentido na liga simulada, que é onde o servidor joga a partida.
+  /// Na liga real quem escala e monta a tática é a pessoa, dentro do EA FC.
   async setTactics(leagueId: string, dto: SetTacticsDto, actor: Actor) {
+    const league = await this.access.requireLeague(leagueId);
+    if (league.resultMode === DraftResultMode.REPORTED) {
+      throw new BadRequestException('Nesta liga a tática é feita dentro do jogo, não aqui.');
+    }
+
     const access = await this.access.of(leagueId, actor);
     const rosterId = dto.rosterId && access.canModerate ? dto.rosterId : access.rosterId;
     if (!rosterId) throw new ForbiddenException('Você não tem elenco nesta liga.');

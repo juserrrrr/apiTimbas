@@ -67,6 +67,12 @@ logged in `DraftBudgetEntry`, which dies with the league. Voluntary spending is
 blocked without cash; salary is an obligation, so it goes through and leaves the
 roster in the red, which blocks signings until it recovers.
 
+Tactics belong to `SIMULATED` only. In `REPORTED` the match happens inside EA FC
+26, so the platform has no business asking for mentality or pressing: the API
+refuses `setTactics` there and the screen does not show it. The lineup still exists
+in both, but it means different things: who takes the field in the simulation, and
+who counts as having played in the real one.
+
 In `REPORTED` mode nobody simulates the match, so goals only exist if someone
 types them: `report` takes an optional list of scorers, checked against the two
 squads and against the score, and that is what fills the league's top scorers.
