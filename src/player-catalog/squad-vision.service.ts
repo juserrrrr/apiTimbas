@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { ScoreReadMode } from '@prisma/client';
 import { AiSettingsService } from '../ai/ai-settings.service';
-import { ChatClient, describeAiError } from '../ai/chat.client';
+import { ChatClient, describeAiError, parseJsonObject } from '../ai/chat.client';
 import { LocalOcrService } from '../score-reader/local-ocr.service';
 import { normalizePosition } from './position.mapper';
 
@@ -192,23 +192,8 @@ Regras:
 }
 
 function parseSquad(text: string): { teamName: string | null; players: ExtractedPlayer[]; notes: string } | null {
-  const cleaned = text
-    .trim()
-    .replace(/^```json\s*/i, '')
-    .replace(/^```\s*/i, '')
-    .replace(/\s*```$/i, '')
-    .trim();
-
-  const candidate = cleaned.startsWith('{') ? cleaned : cleaned.slice(cleaned.indexOf('{'), cleaned.lastIndexOf('}') + 1);
-  if (!candidate) return null;
-
-  let parsed: Record<string, unknown>;
-  try {
-    parsed = JSON.parse(candidate);
-  } catch {
-    return null;
-  }
-  if (!Array.isArray(parsed.players)) return null;
+  const parsed = parseJsonObject(text);
+  if (!parsed || !Array.isArray(parsed.players)) return null;
 
   const seen = new Set<string>();
   const players = (parsed.players as Array<Record<string, unknown>>)
@@ -260,23 +245,8 @@ Regras:
 }
 
 function parseTeams(text: string): { teams: ExtractedTeam[]; notes: string } | null {
-  const cleaned = text
-    .trim()
-    .replace(/^```json\s*/i, '')
-    .replace(/^```\s*/i, '')
-    .replace(/\s*```$/i, '')
-    .trim();
-
-  const candidate = cleaned.startsWith('{') ? cleaned : cleaned.slice(cleaned.indexOf('{'), cleaned.lastIndexOf('}') + 1);
-  if (!candidate) return null;
-
-  let parsed: Record<string, unknown>;
-  try {
-    parsed = JSON.parse(candidate);
-  } catch {
-    return null;
-  }
-  if (!Array.isArray(parsed.teams)) return null;
+  const parsed = parseJsonObject(text);
+  if (!parsed || !Array.isArray(parsed.teams)) return null;
 
   const seen = new Set<string>();
   const teams = (parsed.teams as Array<Record<string, unknown>>)

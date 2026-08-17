@@ -1,0 +1,3 @@
+ALTER TYPE "CatalogSource" ADD VALUE IF NOT EXISTS 'AI';
+
+ALTER TABLE "CatalogPlayer" ADD COLUMN IF NOT EXISTS "shirtNumber" INTEGER;

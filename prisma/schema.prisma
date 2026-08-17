@@ -760,6 +760,7 @@ enum CatalogSource {
   FOOTBALL_DATA
   GENERIC
   WIKIPEDIA
+  AI
 }
 
 model CatalogCompetition {
@@ -807,6 +808,7 @@ model CatalogPlayer {
   externalId      String?
   name            String
   position        String
+  shirtNumber     Int?
   overall         Int           @default(70)
   nationality     String?
   birthDate       DateTime?

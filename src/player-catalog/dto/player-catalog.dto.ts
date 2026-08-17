@@ -283,6 +283,13 @@ export class UpdatePlayerDto extends CatalogPlayerInputDto {
   @IsOptional()
   @IsBoolean()
   active?: boolean;
+
+  /// Muda o jogador de clube dentro da competição em que ele já está.
+  @IsOptional()
+  @Transform(emptyToNull)
+  @IsString()
+  @MaxLength(60)
+  realTeam?: string | null;
 }
 
 export class BulkTeamsDto {
@@ -300,6 +307,60 @@ export class SyncWikipediaSquadsDto {
   @MinLength(2, { each: true })
   @MaxLength(100, { each: true })
   teams: string[];
+}
+
+export class AiSquadDto {
+  @IsArray()
+  @ArrayMaxSize(12)
+  @IsString({ each: true })
+  @MinLength(2, { each: true })
+  @MaxLength(100, { each: true })
+  teams: string[];
+
+  /// Data de referência do elenco, no formato AAAA-MM-DD. Sem ela, vale hoje.
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, {
+    message: 'referenceDate deve estar no formato AAAA-MM-DD',
+  })
+  referenceDate?: string;
+
+  @IsOptional()
+  @Transform(emptyToNull)
+  @IsString()
+  @MaxLength(60)
+  competition?: string | null;
+}
+
+/// A IA monta a competição: ela diz quais clubes disputam, e os elencos vêm
+/// junto quando o admin pede.
+export class AiCompetitionDto {
+  @Transform(trim)
+  @IsString()
+  @MinLength(3)
+  @MaxLength(80)
+  name: string;
+
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @Matches(/^[A-Za-z0-9_-]{2,20}$/, {
+    message: 'code deve ter de 2 a 20 letras, números, hífen ou underline',
+  })
+  code?: string;
+
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, {
+    message: 'referenceDate deve estar no formato AAAA-MM-DD',
+  })
+  referenceDate?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  withSquads?: boolean;
 }
 
 export class ParseTextDto {

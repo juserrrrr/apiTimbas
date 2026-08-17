@@ -14,10 +14,13 @@ import {
   PermissionGuard,
   RequirePermissions,
 } from '../access/permission.guard';
+import { AiSquadService } from './ai-squad.service';
 import { CatalogSyncService } from './catalog-sync.service';
 import { PlayerCatalogService } from './player-catalog.service';
 import { SquadVisionService } from './squad-vision.service';
 import {
+  AiCompetitionDto,
+  AiSquadDto,
   BulkPlayersDto,
   BulkTeamsDto,
   CreateCompetitionDto,
@@ -44,6 +47,7 @@ export class PlayerCatalogController {
     private readonly catalog: PlayerCatalogService,
     private readonly sync: CatalogSyncService,
     private readonly vision: SquadVisionService,
+    private readonly aiSquad: AiSquadService,
   ) {}
 
   @Get('players')
@@ -100,6 +104,27 @@ export class PlayerCatalogController {
   @Post('wikipedia/sync')
   syncWikipedia(@Body() dto: SyncWikipediaSquadsDto) {
     return this.sync.syncWikipedia(dto.teams);
+  }
+
+  /// Devolve o elenco que a IA conhece sem gravar nada, para conferir antes.
+  @Post('ai/squad')
+  previewAiSquad(@Body() dto: AiSquadDto) {
+    return this.aiSquad.fetchSquads(
+      dto.teams,
+      dto.referenceDate,
+      dto.competition,
+    );
+  }
+
+  @Post('ai/sync')
+  syncAiSquads(@Body() dto: AiSquadDto) {
+    return this.sync.syncAiSquads(dto);
+  }
+
+  /// A IA monta a competição inteira: clubes primeiro, elencos em seguida.
+  @Post('ai/competition')
+  createAiCompetition(@Body() dto: AiCompetitionDto) {
+    return this.sync.createAiCompetition(dto);
   }
 
   @Get('competitions/:id/teams')

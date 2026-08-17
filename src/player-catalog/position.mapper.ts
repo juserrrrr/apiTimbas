@@ -65,6 +65,12 @@ export const CATALOG_POSITIONS = [
   'ATA',
 ];
 
+/// Camisa vem como número, string ou lixo, dependendo da fonte.
+export function normalizeShirtNumber(raw: unknown): number | null {
+  const value = Math.round(Number(raw));
+  return Number.isFinite(value) && value >= 1 && value <= 99 ? value : null;
+}
+
 export function normalizePosition(raw: string | null | undefined): string {
   if (!raw) return 'MEI';
   const key = raw

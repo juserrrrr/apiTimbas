@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { AiSettingsService } from '../ai/ai-settings.service';
-import { ChatClient, describeAiError } from '../ai/chat.client';
+import { ChatClient, describeAiError, parseJsonObject } from '../ai/chat.client';
 import { ATTRIBUTE_KEYS, PlayerAttributes, clampAttribute, overallFromAttributes } from '../football/attributes';
 
 export interface PlayerToEstimate {
@@ -111,25 +111,8 @@ Regras:
 }
 
 function parseEstimation(text: string, batch: PlayerToEstimate[]): EstimatedPlayer[] {
-  const cleaned = text
-    .trim()
-    .replace(/^```json\s*/i, '')
-    .replace(/^```\s*/i, '')
-    .replace(/\s*```$/i, '')
-    .trim();
-
-  const candidate = cleaned.startsWith('{')
-    ? cleaned
-    : cleaned.slice(cleaned.indexOf('{'), cleaned.lastIndexOf('}') + 1);
-  if (!candidate) return [];
-
-  let parsed: Record<string, unknown>;
-  try {
-    parsed = JSON.parse(candidate);
-  } catch {
-    return [];
-  }
-  if (!Array.isArray(parsed.players)) return [];
+  const parsed = parseJsonObject(text);
+  if (!parsed || !Array.isArray(parsed.players)) return [];
 
   const byName = new Map(batch.map((player) => [player.name.toLowerCase(), player]));
 

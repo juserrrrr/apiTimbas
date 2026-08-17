@@ -394,14 +394,47 @@ export class PlayerCatalogService {
     const repriced =
       dto.overall !== undefined && dto.price === undefined ? { price: marketValueFor(dto.overall) } : {};
 
+    // realTeam não é coluna: é o time em que o jogador está pendurado.
+    const { realTeam, ...fields } = dto;
+    const moved = realTeam === undefined ? {} : await this.moveTo(player, realTeam, dto.name ?? player.name);
+
     return this.prisma.catalogPlayer.update({
       where: { id: playerId },
       data: {
-        ...dto,
+        ...fields,
+        ...moved,
         ...repriced,
         ...(manualAttributes ? { attributesModel: null, attributesNote: null, attributesAt: new Date() } : {}),
       },
+      include: { team: { select: { id: true, name: true, competition: { select: { id: true, name: true } } } } },
     });
+  }
+
+  /// Troca de clube dentro da competição em que o jogador já estava. O time de
+  /// destino é criado na hora se ainda não existir.
+  private async moveTo(
+    player: { id: string; teamId: string },
+    clubName: string | null,
+    name: string,
+  ): Promise<{ teamId?: string }> {
+    const current = await this.requireTeam(player.teamId);
+    const target = clubName?.trim() || SEM_CLUBE;
+    if (target === current.name) return {};
+
+    const team =
+      (await this.prisma.catalogTeam.findUnique({
+        where: { competitionId_name: { competitionId: current.competitionId, name: target } },
+      })) ??
+      (await this.prisma.catalogTeam.create({
+        data: { competitionId: current.competitionId, name: target, source: CatalogSource.MANUAL },
+      }));
+
+    const taken = await this.prisma.catalogPlayer.findUnique({
+      where: { teamId_name: { teamId: team.id, name } },
+    });
+    if (taken) throw new BadRequestException(`${target} já tem um ${name} na base.`);
+
+    return { teamId: team.id };
   }
 
   async removePlayer(playerId: string) {

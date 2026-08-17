@@ -2,15 +2,28 @@ import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import axios from 'axios';
 import { CatalogSource } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { normalizePosition } from './position.mapper';
+import { PlayerAttributes } from '../football/attributes';
+import { marketValueFor } from '../football/market-value';
+import { AiSquadService } from './ai-squad.service';
+import { normalizePosition, normalizeShirtNumber } from './position.mapper';
 import { parseSquadWikitext } from './wikipedia-squad.parser';
 
 export interface SyncedPlayer {
   externalId: string | null;
   name: string;
   position: string;
+  shirtNumber: number | null;
   nationality: string | null;
   birthDate: Date | null;
+  /// Só a IA traz o card pronto. As outras fontes deixam para a estimativa.
+  card: SyncedCard | null;
+}
+
+export interface SyncedCard {
+  attributes: PlayerAttributes;
+  overall: number;
+  model: string;
+  note: string | null;
 }
 
 export interface SyncedTeam {
@@ -24,6 +37,13 @@ export interface SyncedTeam {
 const FOOTBALL_DATA_BASE = 'https://api.football-data.org/v4';
 const WIKIPEDIA_API = 'https://en.wikipedia.org/w/api.php';
 const WIKIPEDIA_CODE = 'WIKIPEDIA';
+const AI_CODE = 'AI_SQUADS';
+/// Abaixo disso o modelo já avisou que não tem certeza de que o jogador estava
+/// no elenco. Entra na base só quem ele reconhece de verdade.
+const MIN_AI_CONFIDENCE = 40;
+/// Cada clube é uma chamada de modelo. Mais que isso numa requisição só e o
+/// navegador desiste antes da resposta.
+const MAX_AI_TEAMS_PER_SYNC = 12;
 const WIKIPEDIA_HEADERS = {
   'User-Agent': 'Timbas/1.0 (https://github.com/juserrrrr/apiTimbas)',
   'Api-User-Agent': 'Timbas/1.0 (https://github.com/juserrrrr/apiTimbas)',
@@ -33,7 +53,10 @@ const WIKIPEDIA_HEADERS = {
 export class CatalogSyncService {
   private readonly logger = new Logger(CatalogSyncService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly aiSquad: AiSquadService,
+  ) {}
 
   hasFootballDataToken(): boolean {
     return Boolean(process.env.FOOTBALL_DATA_TOKEN?.trim());
@@ -49,10 +72,32 @@ export class CatalogSyncService {
       );
     }
 
-    if (competition.source === CatalogSource.WIKIPEDIA) {
-      throw new BadRequestException(
-        'Envie a lista de times novamente para atualizar os elencos da Wikipedia.',
-      );
+    /// Wikipedia e IA não têm endpoint de competição: atualizar é refazer a
+    /// pergunta para os clubes que já estão aqui. A IA vai de doze em doze,
+    /// começando pelos mais desatualizados, porque cada clube é uma chamada.
+    if (
+      competition.source === CatalogSource.WIKIPEDIA ||
+      competition.source === CatalogSource.AI
+    ) {
+      const isAi = competition.source === CatalogSource.AI;
+      const registered = await this.prisma.catalogTeam.findMany({
+        where: { competitionId },
+        orderBy: [{ syncedAt: 'asc' }, { name: 'asc' }],
+        select: { name: true },
+      });
+      if (registered.length === 0) {
+        throw new BadRequestException(
+          'Esta origem ainda não tem nenhum time. Envie a lista de clubes primeiro.',
+        );
+      }
+
+      const names = registered.map((team) => team.name);
+      return isAi
+        ? this.syncAiSquads(
+            { teams: names.slice(0, MAX_AI_TEAMS_PER_SYNC) },
+            competitionId,
+          )
+        : this.syncWikipedia(names, competitionId);
     }
 
     try {
@@ -90,7 +135,7 @@ export class CatalogSyncService {
     }
   }
 
-  async syncWikipedia(names: string[]) {
+  async syncWikipedia(names: string[], competitionId?: string) {
     const teams = [
       ...new Set(names.map((name) => name.trim()).filter(Boolean)),
     ];
@@ -99,20 +144,24 @@ export class CatalogSyncService {
         'Informe ao menos um time para buscar na Wikipedia.',
       );
 
-    const competition = await this.prisma.catalogCompetition.upsert({
-      where: { code: WIKIPEDIA_CODE },
-      update: {
-        name: 'Elencos da Wikipedia',
-        source: CatalogSource.WIKIPEDIA,
-        sourcePath: WIKIPEDIA_API,
-      },
-      create: {
-        code: WIKIPEDIA_CODE,
-        name: 'Elencos da Wikipedia',
-        source: CatalogSource.WIKIPEDIA,
-        sourcePath: WIKIPEDIA_API,
-      },
-    });
+    const competition = competitionId
+      ? await this.prisma.catalogCompetition.findUniqueOrThrow({
+          where: { id: competitionId },
+        })
+      : await this.prisma.catalogCompetition.upsert({
+          where: { code: WIKIPEDIA_CODE },
+          update: {
+            name: 'Elencos da Wikipedia',
+            source: CatalogSource.WIKIPEDIA,
+            sourcePath: WIKIPEDIA_API,
+          },
+          create: {
+            code: WIKIPEDIA_CODE,
+            name: 'Elencos da Wikipedia',
+            source: CatalogSource.WIKIPEDIA,
+            sourcePath: WIKIPEDIA_API,
+          },
+        });
 
     const squads: SyncedTeam[] = [];
     const failures: string[] = [];
@@ -156,6 +205,187 @@ export class CatalogSyncService {
     return { ...result, failures };
   }
 
+  /// A liga inteira de uma vez: a IA diz quais clubes disputam a competição, os
+  /// times entram como pastas vazias e os elencos vêm depois, doze por chamada,
+  /// porque vinte clubes numa requisição só não voltam a tempo.
+  async createAiCompetition(input: {
+    name: string;
+    code?: string;
+    referenceDate?: string;
+    withSquads?: boolean;
+  }) {
+    const found = await this.aiSquad.fetchCompetitionTeams(
+      input.name,
+      input.referenceDate,
+    );
+
+    const code = (input.code?.trim() || slugCode(input.name)).toUpperCase();
+    const competition = await this.prisma.catalogCompetition.upsert({
+      where: { code },
+      update: {
+        name: input.name,
+        country: found.country,
+        source: CatalogSource.AI,
+      },
+      create: {
+        code,
+        name: input.name,
+        country: found.country,
+        source: CatalogSource.AI,
+      },
+    });
+
+    const syncedAt = new Date();
+    let created = 0;
+    for (const team of found.teams) {
+      const existing = await this.prisma.catalogTeam.findUnique({
+        where: {
+          competitionId_name: {
+            competitionId: competition.id,
+            name: team.name,
+          },
+        },
+      });
+      if (existing) continue;
+      await this.prisma.catalogTeam.create({
+        data: {
+          competitionId: competition.id,
+          name: team.name,
+          shortName: team.shortName,
+          source: CatalogSource.AI,
+          syncedAt,
+        },
+      });
+      created++;
+    }
+
+    const squads = input.withSquads
+      ? await this.syncAiSquads(
+          {
+            teams: found.teams
+              .slice(0, MAX_AI_TEAMS_PER_SYNC)
+              .map((team) => team.name),
+            referenceDate: input.referenceDate,
+            competition: found.competition,
+          },
+          competition.id,
+        )
+      : null;
+
+    return {
+      competition,
+      teams: found.teams,
+      created,
+      season: found.season,
+      beyondKnowledge: found.beyondKnowledge,
+      notes: found.notes,
+      model: found.model,
+      players: squads?.players ?? 0,
+      pending: Math.max(
+        0,
+        found.teams.length - (squads ? MAX_AI_TEAMS_PER_SYNC : 0),
+      ),
+    };
+  }
+
+  /// Elenco vindo da memória do modelo, para clube que a Wikipedia não cobre bem.
+  /// Emprestado e garoto da base ficam de fora: o que interessa é o grupo principal.
+  async syncAiSquads(
+    input: {
+      teams: string[];
+      referenceDate?: string;
+      competition?: string | null;
+    },
+    competitionId?: string,
+  ) {
+    const batch = await this.aiSquad.fetchSquads(
+      input.teams,
+      input.referenceDate,
+      input.competition,
+    );
+
+    const competition = competitionId
+      ? await this.prisma.catalogCompetition.findUniqueOrThrow({
+          where: { id: competitionId },
+        })
+      : await this.prisma.catalogCompetition.upsert({
+          where: { code: AI_CODE },
+          update: { name: 'Elencos pela IA', source: CatalogSource.AI },
+          create: {
+            code: AI_CODE,
+            name: 'Elencos pela IA',
+            source: CatalogSource.AI,
+          },
+        });
+
+    /// O time fica com o nome que foi pedido, não com o nome oficial que o
+    /// modelo devolveu: é esse nome que volta na próxima atualização.
+    const squads: SyncedTeam[] = batch.squads.map((squad) => ({
+      externalId: null,
+      name: squad.team,
+      shortName: null,
+      crestUrl: null,
+      players: squad.players
+        .filter(
+          (player) =>
+            !player.onLoan &&
+            !player.fromYouth &&
+            player.confidence >= MIN_AI_CONFIDENCE,
+        )
+        .map((player) => ({
+          externalId: null,
+          name: player.name,
+          position: player.position,
+          shirtNumber: player.shirtNumber,
+          nationality: player.nationality,
+          birthDate: player.birthDate
+            ? new Date(`${player.birthDate}T00:00:00Z`)
+            : null,
+          card:
+            player.attributes && player.overall !== null
+              ? {
+                  attributes: player.attributes,
+                  overall: player.overall,
+                  model: squad.model,
+                  note: player.note || null,
+                }
+              : null,
+        })),
+    }));
+
+    const result = await this.persist(competition.id, squads, CatalogSource.AI);
+    /// A data pedida costuma passar do que o modelo conhece. Isso não invalida a
+    /// importação, mas fica registrado aqui, senão ninguém lembra depois.
+    const outdated = batch.squads
+      .filter((squad) => squad.beyondKnowledge)
+      .map((squad) => squad.team);
+    const message = [
+      `${result.teams} times e ${result.players} jogadores atualizados.`,
+      batch.failures.length
+        ? `${batch.failures.length} time(s) sem elenco.`
+        : '',
+      outdated.length
+        ? `Elenco anterior à data pedida em: ${outdated.join(', ')}.`
+        : '',
+    ]
+      .filter(Boolean)
+      .join(' ');
+    await this.prisma.catalogCompetition.update({
+      where: { id: competition.id },
+      data: {
+        lastSyncAt: new Date(),
+        lastSyncOk: batch.failures.length === 0,
+        lastSyncMessage: message.slice(0, 240),
+      },
+    });
+
+    return {
+      ...result,
+      failures: batch.failures,
+      squads: batch.squads,
+    };
+  }
+
   private async fetchFromFootballData(code: string): Promise<SyncedTeam[]> {
     const token = process.env.FOOTBALL_DATA_TOKEN?.trim();
     if (!token) {
@@ -190,10 +420,12 @@ export class CatalogSyncService {
               externalId: player.id ? String(player.id) : null,
               name: String(player.name).trim(),
               position: normalizePosition(player.position),
+              shirtNumber: normalizeShirtNumber(player.shirtNumber),
               nationality: player.nationality ?? null,
               birthDate: player.dateOfBirth
                 ? new Date(player.dateOfBirth)
                 : null,
+              card: null,
             }))
         : [],
     }));
@@ -219,8 +451,10 @@ export class CatalogSyncService {
         externalId: null,
         name: player.name,
         position: normalizePosition(player.position),
+        shirtNumber: player.shirtNumber,
         nationality: player.nationality,
         birthDate: null,
+        card: null,
       }));
       if (players.length > 0) {
         return {
@@ -310,10 +544,14 @@ export class CatalogSyncService {
               externalId: player.id ? String(player.id) : null,
               name: String(player.name).trim(),
               position: normalizePosition(player.position),
+              shirtNumber: normalizeShirtNumber(
+                player.shirtNumber ?? player.number ?? player.squadNumber,
+              ),
               nationality: player.nationality ?? null,
               birthDate: player.dateOfBirth
                 ? new Date(player.dateOfBirth)
                 : null,
+              card: null,
             }))
         : [],
     }));
@@ -355,28 +593,43 @@ export class CatalogSyncService {
       teamCount++;
 
       for (const player of team.players) {
-        await this.prisma.catalogPlayer.upsert({
+        const existing = await this.prisma.catalogPlayer.findUnique({
           where: { teamId_name: { teamId: saved.id, name: player.name } },
-          update: {
-            externalId: player.externalId,
-            position: player.position,
-            nationality: player.nationality,
-            birthDate: player.birthDate,
-            active: true,
-            source,
-            syncedAt,
-          },
-          create: {
-            teamId: saved.id,
-            externalId: player.externalId,
-            name: player.name,
-            position: player.position,
-            nationality: player.nationality,
-            birthDate: player.birthDate,
-            source,
-            syncedAt,
-          },
+          select: { id: true, pace: true, attributesModel: true },
         });
+        const card = cardData(player, existing, syncedAt);
+
+        if (existing) {
+          await this.prisma.catalogPlayer.update({
+            where: { id: existing.id },
+            data: {
+              externalId: player.externalId,
+              position: player.position,
+              shirtNumber: player.shirtNumber,
+              nationality: player.nationality,
+              birthDate: player.birthDate,
+              active: true,
+              source,
+              syncedAt,
+              ...card,
+            },
+          });
+        } else {
+          await this.prisma.catalogPlayer.create({
+            data: {
+              teamId: saved.id,
+              externalId: player.externalId,
+              name: player.name,
+              position: player.position,
+              shirtNumber: player.shirtNumber,
+              nationality: player.nationality,
+              birthDate: player.birthDate,
+              source,
+              syncedAt,
+              ...card,
+            },
+          });
+        }
         playerCount++;
       }
 
@@ -394,6 +647,42 @@ export class CatalogSyncService {
 
     return { teams: teamCount, players: playerCount };
   }
+}
+
+/// O card do modelo entra quando o jogador ainda não tem atributo ou quando os
+/// que ele tem também vieram de um modelo. Número ajustado na mão fica de pé:
+/// ali `attributesModel` é nulo com atributo preenchido.
+function cardData(
+  player: SyncedPlayer,
+  existing: { pace: number | null; attributesModel: string | null } | null,
+  syncedAt: Date,
+) {
+  if (!player.card) return {};
+  const handEdited =
+    existing !== null &&
+    existing.pace !== null &&
+    existing.attributesModel === null;
+  if (handEdited) return {};
+
+  return {
+    ...player.card.attributes,
+    overall: player.card.overall,
+    price: marketValueFor(player.card.overall),
+    attributesModel: player.card.model,
+    attributesNote: player.card.note,
+    attributesAt: syncedAt,
+  };
+}
+
+/// Código da competição a partir do nome, no formato que o cadastro aceita.
+function slugCode(name: string): string {
+  const slug = name
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .replace(/[^A-Za-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 20);
+  return slug.length >= 2 ? slug : `LIGA_${Date.now().toString().slice(-6)}`;
 }
 
 function describeSyncError(error: unknown): string {

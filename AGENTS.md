@@ -178,9 +178,39 @@ is separate from `DraftPlayer`, which is a per-league copy taken at import time 
 a later sync never rewrites a league already in progress.
 
 Order of preference for filling it: a public API first (`FOOTBALL_DATA` via
-`FOOTBALL_DATA_TOKEN`, or `GENERIC` for any JSON URL), then manual entry, then
-image import through the AI stack. Syncing never deletes: players missing from the
-source are flagged inactive so rosters that already picked them keep working.
+`FOOTBALL_DATA_TOKEN`, or `GENERIC` for any JSON URL), then `WIKIPEDIA`, then the
+model itself (`AI`), then manual entry, then image import through the AI stack.
+Syncing never deletes: players missing from the source are flagged inactive so
+rosters that already picked them keep working.
+
+`AiSquadService` is the last resort, for the club no feed covers: it asks the
+`analysis` provider for the squad of a club on a given date and gets back one JSON
+per club with shirt number, position, nationality, birth date, loan and youth
+flags, the six card attributes with an overall, plus a per player confidence and a
+`beyondKnowledge` flag the model raises when the date is past what it knows. It is
+the only source that arrives complete: the price comes from `marketValueFor` and
+nobody needs to run the attribute estimate afterwards. `POST /admin/catalog/ai/squad`
+only answers, so an admin can read it before trusting it; `POST /admin/catalog/ai/sync`
+files the same answer under the `AI_SQUADS` competition, dropping anyone on loan,
+anyone still in the youth setup and anyone under 40 confidence. The model invents
+when pushed, so this source is never the first one to try.
+
+`POST /admin/catalog/ai/competition` builds a whole league in one go: the model
+names the clubs of a competition on that date, they become empty teams under a new
+competition, and the first twelve squads come along when `withSquads` is set. So
+an admin either types the clubs by hand in the panel or lets the model fill them.
+
+The reference date defaults to today and stays a real date, never the model's
+cutoff: asking for the current squad is the point. What keeps that honest is
+`beyondKnowledge`, which the model raises when the date is past what it knows and
+which is written into the competition's `lastSyncMessage` naming the clubs that
+came from an older season, so the staleness survives the request that caused it.
+
+Wikipedia and AI have no competition endpoint to re-read, so `sync` on those
+competitions re-asks for the clubs already registered there, the AI twelve at a
+time, oldest `syncedAt` first, since each club is one model call. Persisting a
+card never overwrites an attribute a human corrected: a row with attributes and no
+`attributesModel` was edited by hand and keeps its numbers.
 
 Each player carries the six card attributes in the EA FC order (`pace`,
 `shooting`, `passing`, `dribbling`, `defending`, `physical`). Goalkeepers reuse the

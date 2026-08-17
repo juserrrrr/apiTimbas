@@ -4,6 +4,7 @@ import { AiModule } from '../ai/ai.module';
 import { ScoreReaderModule } from '../score-reader/score-reader.module';
 import { AuthModule } from '../auth/auth.module';
 import { PrismaModule } from '../prisma/prisma.module';
+import { AiSquadService } from './ai-squad.service';
 import { AttributeAiService } from './attribute-ai.service';
 import { CatalogSyncService } from './catalog-sync.service';
 import { PlayerCatalogController } from './player-catalog.controller';
@@ -18,6 +19,7 @@ import { WorldSimulationService } from './world-simulation.service';
     PlayerCatalogService,
     CatalogSyncService,
     SquadVisionService,
+    AiSquadService,
     AttributeAiService,
     WorldSimulationService,
   ],

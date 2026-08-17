@@ -155,6 +155,27 @@ export class ChatClient {
   }
 }
 
+/// O modelo às vezes embrulha o JSON em cerca de código ou fala antes dele, mesmo
+/// com json: true. Aqui a resposta vira objeto ou vira null, sem estourar.
+export function parseJsonObject(text: string): Record<string, unknown> | null {
+  const cleaned = text
+    .trim()
+    .replace(/^```json\s*/i, '')
+    .replace(/^```\s*/i, '')
+    .replace(/\s*```$/i, '')
+    .trim();
+
+  const candidate = cleaned.startsWith('{') ? cleaned : cleaned.slice(cleaned.indexOf('{'), cleaned.lastIndexOf('}') + 1);
+  if (!candidate) return null;
+
+  try {
+    const parsed: unknown = JSON.parse(candidate);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
+}
+
 export function describeAiError(error: unknown): string {
   const status = (error as { response?: { status?: number } })?.response?.status;
   const data = errorData(error);
