@@ -21,6 +21,7 @@ import { EconomyModule } from './economy/economy.module';
 import { ScoreReaderModule } from './score-reader/score-reader.module';
 import { TournamentModule } from './tournament/tournament.module';
 import { DraftModule } from './draft/draft.module';
+import { DemoModule } from './demo/demo.module';
 
 @Module({
   imports: [
@@ -58,6 +59,7 @@ import { DraftModule } from './draft/draft.module';
     ScoreReaderModule,
     TournamentModule,
     DraftModule,
+    DemoModule,
   ],
   controllers: [],
   providers: [{ provide: APP_GUARD, useClass: AppThrottlerGuard }],

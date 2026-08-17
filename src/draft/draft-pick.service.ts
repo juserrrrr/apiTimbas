@@ -151,7 +151,7 @@ export class DraftPickService {
     );
   }
 
-  private async generateFixtures(tx: Prisma.TransactionClient, league: DraftLeague) {
+  async generateFixtures(tx: Prisma.TransactionClient, league: DraftLeague) {
     const rosters = await tx.draftRoster.findMany({
       where: { leagueId: league.id },
       orderBy: { draftOrder: 'asc' },

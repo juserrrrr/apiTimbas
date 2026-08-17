@@ -14,5 +14,6 @@ import { DraftService } from './draft.service';
   imports: [PrismaModule, AuthModule, EconomyModule, ScoreReaderModule],
   controllers: [DraftController],
   providers: [DraftService, DraftPickService, DraftMarketService, DraftFixtureService, DraftAccessService],
+  exports: [DraftPickService],
 })
 export class DraftModule {}

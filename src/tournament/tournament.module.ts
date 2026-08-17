@@ -20,6 +20,6 @@ import { TournamentService } from './tournament.service';
     MatchProofService,
     RegistrationWindowScheduler,
   ],
-  exports: [TournamentService],
+  exports: [TournamentService, TournamentResultService],
 })
 export class TournamentModule {}
