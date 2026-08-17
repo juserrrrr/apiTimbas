@@ -105,7 +105,7 @@ export class CreateDraftLeagueDto {
   @Type(() => Number)
   @IsInt()
   @Min(0)
-  @Max(20000000000)
+  @Max(50000000000)
   startingBudget?: number;
 
   @IsOptional()

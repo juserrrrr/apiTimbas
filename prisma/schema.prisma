@@ -810,7 +810,7 @@ model CatalogPlayer {
   nationality     String?
   birthDate       DateTime?
   photoUrl        String?
-  price           Int           @default(500000)
+  price           Float         @default(500000)
   active          Boolean       @default(true)
   source          CatalogSource @default(MANUAL)
   syncedAt        DateTime?
@@ -1020,7 +1020,7 @@ model DraftLeague {
   pointsDraw                 Int                 @default(1)
   // O dinheiro é da liga, não da conta: cada elenco começa com este caixa, que
   // nasce de novo a cada draft. Premiação de rodada e salário mexem nele.
-  startingBudget             Int                 @default(200000000)
+  startingBudget             Float               @default(800000000)
   paySalaries                Boolean             @default(true)
   // Leilão: lance aberto, prazo em horas, incremento mínimo em porcentagem do
   // lance atual e prorrogação quando alguém dá lance no fim, para não virar
@@ -1029,9 +1029,9 @@ model DraftLeague {
   auctionHours               Int                 @default(24)
   auctionMinIncrementPercent Int                 @default(5)
   auctionAntiSnipeMinutes    Int                 @default(5)
-  coinsWin                   Int                 @default(3000000)
-  coinsDraw                  Int                 @default(1000000)
-  coinsLoss                  Int                 @default(400000)
+  coinsWin                   Float               @default(15000000)
+  coinsDraw                  Float               @default(6000000)
+  coinsLoss                  Float               @default(2000000)
   resultMode                 DraftResultMode     @default(REPORTED)
   transferWindowOpen         Boolean             @default(true)
   // O mercado fecha esse tanto de minutos antes do horário da rodada e reabre
@@ -1104,7 +1104,7 @@ model DraftPlayer {
   nationality     String?
   birthDate       DateTime?
   photoUrl        String?
-  price           Int             @default(500000)
+  price           Float           @default(500000)
   pace            Int?
   shooting        Int?
   passing         Int?
@@ -1116,7 +1116,7 @@ model DraftPlayer {
   starter         Boolean         @default(false)
   slot            String?
   // Salário cobrado do caixa do elenco a cada rodada.
-  salary          Int             @default(0)
+  salary          Float           @default(0)
   appearances     Int             @default(0)
   goals           Int             @default(0)
   assists         Int             @default(0)
@@ -1153,9 +1153,9 @@ model DraftRoster {
   tempo           TacticIntensity    @default(MEDIUM)
   tacticsAt       DateTime?
   readyAt         DateTime?
-  budget          Int                @default(0)
-  earned          Int                @default(0)
-  spent           Int                @default(0)
+  budget          Float              @default(0)
+  earned          Float              @default(0)
+  spent           Float              @default(0)
   draftOrder      Int                @default(0)
   played          Int                @default(0)
   wins            Int                @default(0)
@@ -1191,7 +1191,7 @@ model DraftPick {
   player     DraftPlayer @relation(fields: [playerId], references: [id], onDelete: Cascade)
   round      Int
   pickNumber Int
-  price      Int         @default(0)
+  price      Float       @default(0)
   auto       Boolean     @default(false)
   createdAt  DateTime    @default(now())
 
@@ -1211,8 +1211,8 @@ model DraftAuction {
   // Nulo quando é o pool da liga indo a leilão: aí não há vendedor para receber.
   sellerRosterId String?
   sellerRoster   DraftRoster?      @relation("AuctionSeller", fields: [sellerRosterId], references: [id], onDelete: SetNull)
-  startingBid    Int
-  currentBid     Int               @default(0)
+  startingBid    Float
+  currentBid     Float             @default(0)
   bidCount       Int               @default(0)
   leaderRosterId String?
   leaderRoster   DraftRoster?      @relation("AuctionLeader", fields: [leaderRosterId], references: [id], onDelete: SetNull)
@@ -1233,7 +1233,7 @@ model DraftAuctionBid {
   auction   DraftAuction @relation(fields: [auctionId], references: [id], onDelete: Cascade)
   rosterId  String
   roster    DraftRoster  @relation(fields: [rosterId], references: [id], onDelete: Cascade)
-  amount    Int
+  amount    Float
   createdAt DateTime     @default(now())
 
   @@index([auctionId, createdAt])
@@ -1248,8 +1248,8 @@ model DraftBudgetEntry {
   league       DraftLeague       @relation(fields: [leagueId], references: [id], onDelete: Cascade)
   rosterId     String
   roster       DraftRoster       @relation(fields: [rosterId], references: [id], onDelete: Cascade)
-  amount       Int
-  balanceAfter Int
+  amount       Float
+  balanceAfter Float
   type         DraftBudgetTxType
   description  String
   round        Int?
@@ -1295,7 +1295,7 @@ model TransferOffer {
   toRosterId      String?
   toRoster        DraftRoster?        @relation("TransferTo", fields: [toRosterId], references: [id], onDelete: Cascade)
   offeredPlayerId String?
-  price           Int                 @default(0)
+  price           Float               @default(0)
   message         String?
   status          TransferOfferStatus @default(PENDING)
   respondedAt     DateTime?

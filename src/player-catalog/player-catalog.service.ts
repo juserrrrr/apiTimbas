@@ -151,6 +151,7 @@ export class PlayerCatalogService {
         data: {
           ...row.attributes,
           overall: row.overall,
+          price: marketValueFor(row.overall),
           attributesModel: estimation.model,
           attributesNote: row.note || null,
           attributesAt: now,
@@ -374,6 +375,7 @@ export class PlayerCatalogService {
       data: {
         ...row.attributes,
         overall: row.overall,
+        price: marketValueFor(row.overall),
         attributesModel: estimation.model,
         attributesNote: row.note || null,
         attributesAt: new Date(),
@@ -387,10 +389,16 @@ export class PlayerCatalogService {
 
     // Atributo mexido na mão deixa de ser estimativa da IA, então a autoria sai.
     const manualAttributes = ATTRIBUTE_KEYS.some((key) => dto[key] !== undefined);
+    // Corrigiu o overall e não disse quanto o jogador vale? O mercado responde
+    // por ele, senão a base fica com craque a preço de reserva.
+    const repriced =
+      dto.overall !== undefined && dto.price === undefined ? { price: marketValueFor(dto.overall) } : {};
+
     return this.prisma.catalogPlayer.update({
       where: { id: playerId },
       data: {
         ...dto,
+        ...repriced,
         ...(manualAttributes ? { attributesModel: null, attributesNote: null, attributesAt: new Date() } : {}),
       },
     });

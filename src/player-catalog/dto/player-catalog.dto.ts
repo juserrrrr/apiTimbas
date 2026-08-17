@@ -140,7 +140,7 @@ export class CatalogPlayerInputDto {
   @Type(() => Number)
   @IsInt()
   @Min(0)
-  @Max(2000000000)
+  @Max(5000000000)
   price?: number;
 
   @IsOptional()
@@ -229,7 +229,7 @@ export class CreatePlayerDto {
   @Type(() => Number)
   @IsInt()
   @Min(0)
-  @Max(2000000000)
+  @Max(5000000000)
   price?: number;
 }
 

@@ -8,7 +8,12 @@ import {
   TournamentStatus,
 } from '@prisma/client';
 import { Actor } from '../common/actor.service';
-import { marketValueFor, salaryFor } from '../football/market-value';
+import {
+  DEFAULT_ROUND_PRIZE,
+  DEFAULT_STARTING_BUDGET,
+  marketValueFor,
+  salaryFor,
+} from '../football/market-value';
 import { DraftFixtureService } from '../draft/draft-fixture.service';
 import { DraftPickService } from '../draft/draft-pick.service';
 import { DraftSimulationService } from '../draft/draft-simulation.service';
@@ -134,13 +139,13 @@ export class DemoService {
         rosterSize,
         pickSeconds: 3600,
         resultMode: dto.resultMode ?? DraftResultMode.REPORTED,
-        startingBudget: dto.startingBudget ?? 1000,
+        startingBudget: dto.startingBudget ?? DEFAULT_STARTING_BUDGET,
         paySalaries: dto.paySalaries ?? true,
         auctionsEnabled: dto.auctionsEnabled ?? true,
         auctionHours: dto.auctionHours ?? 24,
-        coinsWin: 60,
-        coinsDraw: 25,
-        coinsLoss: 10,
+        coinsWin: DEFAULT_ROUND_PRIZE.win,
+        coinsDraw: DEFAULT_ROUND_PRIZE.draw,
+        coinsLoss: DEFAULT_ROUND_PRIZE.loss,
         createdByDiscordId: actor.discordId,
         staff: { create: { userId: actor.id, role: 'OWNER' } },
       },

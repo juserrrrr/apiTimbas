@@ -54,10 +54,28 @@ REPORTED rounds, plays normally in SIMULATED ones, and the next person who joins
 takes it over with its squad, cash and history intact.
 
 A squad is a real squad: `rosterSize` defaults to 25, the same as EA FC, with 11
-starters picked by the formation and the rest on the bench and in reserve. Money is
-in reais on a football scale, not coins: `football/market-value.ts` prices a player
-from his overall on an exponential curve, so 70 overall costs around R$ 3.6 mi and
-90 costs around R$ 106 mi, and the salary per round is half a percent of that.
+starters picked by the formation and the rest on the bench and in reserve.
+
+Money is in reais on the real transfer market's scale, not coins. `football/
+market-value.ts` is calibrated against Transfermarkt and CIES 2026 at R$ 6,30 per
+euro, so 70 overall costs around R$ 20 mi, 80 around R$ 140 mi, 90 around R$ 815 mi
+and 99 around R$ 2,17 bi, which is the CIES projection for Yamal. The curve has two
+slopes on purpose: it opens fast up to 88 and flattens above it, because only a
+handful of clubs can pay at the top, and without the brake a 99 would cost tens of
+billions. Salary per round is 0,4% of the value, and `DEFAULT_ROUND_PRIZE` is sized
+against the wage bill so winning covers it and losing does not. `economy.spec.ts`
+locks that balance: change one of the three numbers without the others and it fails.
+
+Because a top player costs more than a 32-bit integer holds, every league-money
+column is `Float`, which is `double precision` in Postgres and stays a `number` in
+TypeScript, exact for whole reais well past the trillions. Do not narrow one back
+to `Int`.
+
+Value follows overall, always. Anything that writes an overall (AI estimation, the
+admin correcting it by hand, an import) writes `marketValueFor` with it, so nobody
+sits in the base as a star priced like a reserve. `football/overall-tier.ts` cuts
+the base into bands of ten, which is how the draft board and the base screen group
+players: 90+ craques, 80-89 estrelas, 70-79 titulares, below that elenco.
 
 Money is not shared. `economy/` is the account wallet, one balance per user, and
 only `tournament/` pays into it. A draft league runs on its own cash: `DraftRoster.
