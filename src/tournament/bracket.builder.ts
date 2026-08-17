@@ -267,6 +267,32 @@ export function compareStandings(a: StandingLike, b: StandingLike): number {
   );
 }
 
+/// Combinações de grupos que não decidem nada ou deixam a tabela incomparável:
+/// grupo que não fecha dois times, grupos de tamanhos diferentes (quem joga
+/// menos partidas soma menos pontos) e classificar o grupo inteiro.
+export function groupPlanIssue(
+  teamCount: number,
+  groupCount: number,
+  advancePerGroup: number,
+): string | null {
+  if (groupCount < 2) return 'A fase de grupos precisa de ao menos 2 grupos.';
+  if (advancePerGroup < 1) return 'Cada grupo precisa classificar ao menos 1 time.';
+  if (teamCount < groupCount * 2) {
+    return `Com ${groupCount} grupos são necessários ao menos ${groupCount * 2} times, cada grupo precisa de 2 no mínimo.`;
+  }
+  if (teamCount % groupCount !== 0) {
+    const fewer = groupCount * Math.floor(teamCount / groupCount);
+    const more = groupCount * Math.ceil(teamCount / groupCount);
+    return `${teamCount} times não dividem em ${groupCount} grupos do mesmo tamanho. Use ${fewer} ou ${more} times, ou mude o número de grupos.`;
+  }
+
+  const groupSize = teamCount / groupCount;
+  if (advancePerGroup >= groupSize) {
+    return `Classificar ${advancePerGroup} de grupos com ${groupSize} times passa todo mundo. Classifique no máximo ${groupSize - 1} por grupo.`;
+  }
+  return null;
+}
+
 /// Cada grupo roda o próprio turno, mas a chave única da partida é
 /// (torneio, fase, rodada, posição, mão) e não inclui o grupo. Por isso cada
 /// grupo recebe uma faixa exclusiva de posições.

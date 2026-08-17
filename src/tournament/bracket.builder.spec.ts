@@ -6,6 +6,7 @@ import {
   buildRoundRobin,
   buildSingleElimination,
   distributeIntoGroups,
+  groupPlanIssue,
   orderGroupQualifiers,
   seedSlots,
 } from './bracket.builder';
@@ -125,6 +126,33 @@ describe('buildRoundRobin', () => {
       (plan) => plan.leg === 2 && plan.homeIndex === first.awayIndex && plan.awayIndex === first.homeIndex,
     );
     expect(second).toBeDefined();
+  });
+});
+
+describe('groupPlanIssue', () => {
+  it('aceita a combinação que fecha grupos iguais e não passa todo mundo', () => {
+    expect(groupPlanIssue(16, 4, 2)).toBeNull();
+    expect(groupPlanIssue(12, 3, 3)).toBeNull();
+    expect(groupPlanIssue(16, 8, 1)).toBeNull();
+  });
+
+  it('recusa grupo que não fecha dois times', () => {
+    expect(groupPlanIssue(6, 4, 1)).toContain('ao menos 8 times');
+  });
+
+  it('recusa grupos de tamanhos diferentes e sugere os totais que servem', () => {
+    expect(groupPlanIssue(10, 3, 2)).toContain('9 ou 12 times');
+    expect(groupPlanIssue(7, 2, 1)).toContain('6 ou 8 times');
+  });
+
+  it('recusa classificar o grupo inteiro', () => {
+    expect(groupPlanIssue(8, 4, 2)).toContain('no máximo 1 por grupo');
+    expect(groupPlanIssue(12, 4, 3)).toContain('no máximo 2 por grupo');
+  });
+
+  it('recusa menos de 2 grupos ou nenhum classificado', () => {
+    expect(groupPlanIssue(8, 1, 2)).toContain('ao menos 2 grupos');
+    expect(groupPlanIssue(8, 2, 0)).toContain('ao menos 1 time');
   });
 });
 

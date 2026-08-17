@@ -19,6 +19,7 @@ import {
   compareStandings,
   distributeIntoGroups,
   groupName,
+  groupPlanIssue,
   knockoutRoundLabel,
 } from './bracket.builder';
 import { resolveWalkovers } from './bracket-advance';
@@ -35,6 +36,10 @@ import { TournamentAccessService } from './tournament-access.service';
 
 const MANAGED_STATUSES: TournamentStatus[] = [TournamentStatus.DRAFT, TournamentStatus.REGISTRATION];
 
+// Espelham os defaults do schema, usados para validar o plano de grupos antes de
+// o registro existir.
+const DEFAULTS = { maxTeams: 8, groupCount: 2, advancePerGroup: 2 };
+
 @Injectable()
 export class TournamentService {
   constructor(
@@ -43,6 +48,12 @@ export class TournamentService {
   ) {}
 
   async create(dto: CreateTournamentDto, actor: Actor) {
+    this.assertGroupSettings(dto.format ?? TournamentFormat.SINGLE_ELIMINATION, {
+      teamCount: dto.maxTeams ?? DEFAULTS.maxTeams,
+      groupCount: dto.groupCount ?? DEFAULTS.groupCount,
+      advancePerGroup: dto.advancePerGroup ?? DEFAULTS.advancePerGroup,
+    });
+
     const slug = await this.uniqueSlug(dto.name);
     return this.prisma.tournament.create({
       data: {
@@ -150,6 +161,17 @@ export class TournamentService {
       for (const locked of ['format', 'maxTeams', 'groupCount', 'advancePerGroup', 'legs', 'thirdPlace'] as const) {
         delete settings[locked];
       }
+    }
+
+    // Só revalida quando a edição mexe no plano: durante as inscrições o total de
+    // times ainda muda e nada mais precisa ficar preso a isso.
+    const planKeys = ['format', 'maxTeams', 'groupCount', 'advancePerGroup'] as const;
+    if (planKeys.some((key) => key in settings)) {
+      this.assertGroupSettings((settings.format as TournamentFormat) ?? tournament.format, {
+        teamCount: (settings.maxTeams as number) ?? tournament.maxTeams,
+        groupCount: (settings.groupCount as number) ?? tournament.groupCount,
+        advancePerGroup: (settings.advancePerGroup as number) ?? tournament.advancePerGroup,
+      });
     }
 
     return this.prisma.tournament.update({
@@ -502,17 +524,16 @@ export class TournamentService {
     if (format === TournamentFormat.DOUBLE_ELIMINATION && teamCount < 4) {
       throw new BadRequestException('Eliminação dupla precisa de ao menos 4 times.');
     }
-    if (format === TournamentFormat.GROUPS_KNOCKOUT) {
-      if (teamCount < groupCount * 2) {
-        throw new BadRequestException(`Com ${groupCount} grupos são necessários ao menos ${groupCount * 2} times.`);
-      }
-      if (advancePerGroup * groupCount < 2) {
-        throw new BadRequestException('A fase de grupos precisa classificar ao menos 2 times no total.');
-      }
-      if (advancePerGroup * groupCount > teamCount) {
-        throw new BadRequestException('Não dá para classificar mais times do que os inscritos.');
-      }
-    }
+    this.assertGroupSettings(format, { teamCount, groupCount, advancePerGroup });
+  }
+
+  private assertGroupSettings(
+    format: TournamentFormat,
+    plan: { teamCount: number; groupCount: number; advancePerGroup: number },
+  ) {
+    if (format !== TournamentFormat.GROUPS_KNOCKOUT) return;
+    const issue = groupPlanIssue(plan.teamCount, plan.groupCount, plan.advancePerGroup);
+    if (issue) throw new BadRequestException(issue);
   }
 
   private buildStandings(

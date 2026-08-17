@@ -155,7 +155,7 @@ export class TournamentController {
   ) {
     const actor = await this.me(req);
     await this.access.requireModerate(id, actor);
-    return this.results.walkover(matchId, dto.winnerTeamId, dto.reason, actor.discordId);
+    return this.results.walkover(id, matchId, dto.winnerTeamId, dto.reason, actor.discordId);
   }
 
   @Get(':id/proofs/pending')

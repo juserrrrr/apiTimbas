@@ -71,17 +71,24 @@ export class TournamentResultService {
     );
   }
 
-  async walkover(matchId: string, winnerTeamId: string, reason: string | undefined, reportedByDiscordId: string) {
-    const match = await this.prisma.tournamentMatch.findUnique({
-      where: { id: matchId },
+  async walkover(
+    tournamentId: string,
+    matchId: string,
+    winnerTeamId: string,
+    reason: string | undefined,
+    reportedByDiscordId: string,
+  ) {
+    const match = await this.prisma.tournamentMatch.findFirst({
+      where: { id: matchId, tournamentId },
       include: { tournament: true },
     });
-    if (!match) throw new NotFoundException('Partida não encontrada.');
+    if (!match) throw new NotFoundException('Partida não encontrada neste campeonato.');
+    this.assertMatchIsOpen(match);
     if (match.homeTeamId !== winnerTeamId && match.awayTeamId !== winnerTeamId) {
       throw new BadRequestException('O vencedor precisa ser um dos times da partida.');
     }
 
-    const loserTeamId = match.homeTeamId === winnerTeamId ? match.awayTeamId : match.homeTeamId;
+    const loserTeamId = (match.homeTeamId === winnerTeamId ? match.awayTeamId : match.homeTeamId)!;
 
     return this.prisma.$transaction(
       async (tx) => {
@@ -98,10 +105,8 @@ export class TournamentResultService {
           },
         });
 
-        if (loserTeamId) {
-          await this.applyTeamStats(tx, match.tournament, match.phase, winnerTeamId, 1, 0);
-          await this.applyTeamStats(tx, match.tournament, match.phase, loserTeamId, 0, 1);
-        }
+        await this.applyTeamStats(tx, match.tournament, match.phase, winnerTeamId, 1, 0);
+        await this.applyTeamStats(tx, match.tournament, match.phase, loserTeamId, 0, 1);
         await propagate(tx, updated, winnerTeamId, loserTeamId);
         await this.qualifyFromGroups(tx, match.tournament);
         await this.maybeFinish(tx, match.tournament);
@@ -125,18 +130,22 @@ export class TournamentResultService {
   }
 
   assertScoreIsValid(match: TournamentMatch, tournament: Tournament, homeScore: number, awayScore: number) {
-    if (!match.homeTeamId || !match.awayTeamId) {
-      throw new BadRequestException('A partida ainda não tem os dois times definidos.');
-    }
-    if (match.status === TournamentMatchStatus.FINISHED || match.status === TournamentMatchStatus.WALKOVER) {
-      throw new BadRequestException('Esta partida já foi encerrada.');
-    }
+    this.assertMatchIsOpen(match);
     if (homeScore !== awayScore) return;
     if (isKnockout(match.phase)) {
       throw new BadRequestException('Mata-mata não aceita empate. Informe o placar da decisão nos pênaltis.');
     }
     if (!tournament.allowDraws) {
       throw new BadRequestException('Este campeonato não aceita empates.');
+    }
+  }
+
+  private assertMatchIsOpen(match: TournamentMatch) {
+    if (!match.homeTeamId || !match.awayTeamId) {
+      throw new BadRequestException('A partida ainda não tem os dois times definidos.');
+    }
+    if (match.status === TournamentMatchStatus.FINISHED || match.status === TournamentMatchStatus.WALKOVER) {
+      throw new BadRequestException('Esta partida já foi encerrada.');
     }
   }
 
