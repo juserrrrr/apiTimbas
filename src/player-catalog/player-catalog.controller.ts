@@ -11,6 +11,7 @@ import {
   BulkTeamsDto,
   CreateCompetitionDto,
   CreateTeamDto,
+  EstimateAttributesDto,
   ExtractSquadDto,
   ExtractTeamsDto,
   ImportToLeagueDto,
@@ -91,6 +92,16 @@ export class PlayerCatalogController {
   @Post('teams/:teamId/players')
   savePlayers(@Param('teamId') teamId: string, @Body() dto: BulkPlayersDto) {
     return this.catalog.savePlayers(teamId, dto);
+  }
+
+  @Post('teams/:teamId/estimate-attributes')
+  estimateTeamAttributes(@Param('teamId') teamId: string, @Body() dto: EstimateAttributesDto) {
+    return this.catalog.estimateTeamAttributes(teamId, dto.onlyMissing ?? true);
+  }
+
+  @Post('players/:playerId/estimate-attributes')
+  estimatePlayerAttributes(@Param('playerId') playerId: string) {
+    return this.catalog.estimatePlayerAttributes(playerId);
   }
 
   @Patch('players/:playerId')

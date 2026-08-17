@@ -18,11 +18,14 @@ import { RoleGuard } from '../auth/guards/role.guard';
 import { ActorService } from '../common/actor.service';
 import { Roles } from '../decorators/roles.decorator';
 import { Role } from '../enums/role.enum';
+import { DraftAccessService } from './draft-access.service';
 import { DraftFixtureService } from './draft-fixture.service';
 import { DraftMarketService } from './draft-market.service';
 import { DraftPickService } from './draft-pick.service';
+import { DraftSimulationService } from './draft-simulation.service';
 import { DraftService } from './draft.service';
 import {
+  BaseMarketQueryDto,
   CreateDraftLeagueDto,
   CreateOfferDto,
   DraftStaffDto,
@@ -34,6 +37,8 @@ import {
   RespondOfferDto,
   ReviewDraftProofDto,
   SetLineupDto,
+  SetTacticsDto,
+  SignFromBaseDto,
   UpdateDraftLeagueDto,
 } from './dto/draft.dto';
 
@@ -47,6 +52,8 @@ export class DraftController {
     private readonly picks: DraftPickService,
     private readonly market: DraftMarketService,
     private readonly fixtures: DraftFixtureService,
+    private readonly simulation: DraftSimulationService,
+    private readonly access: DraftAccessService,
     private readonly actor: ActorService,
   ) {}
 
@@ -144,6 +151,21 @@ export class DraftController {
     return this.draft.setLineup(id, dto, await this.me(req));
   }
 
+  @Post(':id/tactics')
+  async tactics(@Req() req: AuthedRequest, @Param('id') id: string, @Body() dto: SetTacticsDto) {
+    return this.draft.setTactics(id, dto, await this.me(req));
+  }
+
+  @Get(':id/base-market')
+  baseMarket(@Param('id') id: string, @Query() query: BaseMarketQueryDto) {
+    return this.market.listBaseMarket(id, query.search, query.competitionId);
+  }
+
+  @Post(':id/base-market/sign')
+  async signFromBase(@Req() req: AuthedRequest, @Param('id') id: string, @Body() dto: SignFromBaseDto) {
+    return this.market.signFromBase(id, dto.catalogPlayerId, await this.me(req));
+  }
+
   @Get(':id/offers')
   async offers(@Req() req: AuthedRequest, @Param('id') id: string) {
     return this.market.listOffers(id, await this.me(req));
@@ -172,6 +194,12 @@ export class DraftController {
   @Post(':id/players/:playerId/release')
   async release(@Req() req: AuthedRequest, @Param('id') id: string, @Param('playerId') playerId: string) {
     return this.market.release(id, playerId, await this.me(req));
+  }
+
+  @Post(':id/matches/:matchId/simulate')
+  async simulate(@Req() req: AuthedRequest, @Param('id') id: string, @Param('matchId') matchId: string) {
+    await this.access.requireModerate(id, await this.me(req));
+    return this.simulation.playOne(id, matchId);
   }
 
   @Get(':id/matches')

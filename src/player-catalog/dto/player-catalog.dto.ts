@@ -73,6 +73,10 @@ export class UpdateCompetitionDto {
   @IsUrl({ require_tld: false, protocols: ['http', 'https'] })
   @MaxLength(400)
   sourcePath?: string | null;
+
+  @IsOptional()
+  @IsBoolean()
+  simulationEnabled?: boolean;
 }
 
 export class CreateTeamDto {
@@ -138,6 +142,54 @@ export class CatalogPlayerInputDto {
   @Min(0)
   @Max(1000000)
   price?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(99)
+  pace?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(99)
+  shooting?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(99)
+  passing?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(99)
+  dribbling?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(99)
+  defending?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(99)
+  physical?: number;
+}
+
+export class EstimateAttributesDto {
+  @IsOptional()
+  @IsBoolean()
+  onlyMissing?: boolean;
 }
 
 export class BulkPlayersDto {

@@ -117,25 +117,25 @@ enum Role {
 }
 
 model User {
-  id             Int              @id @default(autoincrement())
-  discordId      String           @unique
-  name           String
-  email          String?          @unique
-  password       String?
-  role           Role             @default(PLAYER)
-  avatar         String?
-  lastLoginIp    String?
-  lastLoginAt    DateTime?
-  dateOfBirth    DateTime?
-  dateCreated    DateTime         @default(now())
-  dateUpdated    DateTime         @updatedAt
-  TeamsLeague    UserTeamLeague[]
-  leagueAccounts LeagueAccount[]
+  id              Int                    @id @default(autoincrement())
+  discordId       String                 @unique
+  name            String
+  email           String?                @unique
+  password        String?
+  role            Role                   @default(PLAYER)
+  avatar          String?
+  lastLoginIp     String?
+  lastLoginAt     DateTime?
+  dateOfBirth     DateTime?
+  dateCreated     DateTime               @default(now())
+  dateUpdated     DateTime               @updatedAt
+  TeamsLeague     UserTeamLeague[]
+  leagueAccounts  LeagueAccount[]
   tournamentTeams TournamentTeamMember[]
   tournamentStaff TournamentStaff[]
-  wallet         Wallet?
-  draftRosters   DraftRoster[]
-  draftStaff     DraftStaff[]
+  wallet          Wallet?
+  draftRosters    DraftRoster[]
+  draftStaff      DraftStaff[]
 }
 
 model LeagueAccount {
@@ -480,46 +480,46 @@ enum CompetitionRole {
 }
 
 model Tournament {
-  id                 String            @id @default(cuid())
-  name               String
-  slug               String            @unique
-  description        String?
-  game               CompetitionGame   @default(EA_FC)
-  gameLabel          String?
-  format             TournamentFormat  @default(SINGLE_ELIMINATION)
-  status             TournamentStatus  @default(DRAFT)
-  maxTeams           Int               @default(8)
-  teamSize           Int               @default(1)
-  groupCount         Int               @default(2)
-  advancePerGroup    Int               @default(2)
-  legs               Int               @default(1)
-  thirdPlace         Boolean           @default(false)
-  allowDraws         Boolean           @default(true)
-  pointsWin          Int               @default(3)
-  pointsDraw         Int               @default(1)
-  pointsLoss         Int               @default(0)
-  coinsWin           Int               @default(50)
-  coinsDraw          Int               @default(20)
-  coinsLoss          Int               @default(5)
-  coinsChampion      Int               @default(500)
-  coinsRunnerUp      Int               @default(200)
-  requireProof       Boolean           @default(true)
-  autoApproveProof   Boolean           @default(true)
-  autoApproveMinConfidence Int         @default(80)
-  registrationEndsAt DateTime?
-  autoStartOnClose   Boolean           @default(false)
-  createdByDiscordId String
-  bannerUrl          String?
-  startsAt           DateTime?
-  finishedAt         DateTime?
-  championTeamId     String?
-  runnerUpTeamId     String?
-  createdAt          DateTime          @default(now())
-  updatedAt          DateTime          @updatedAt
-  teams              TournamentTeam[]
-  groups             TournamentGroup[]
-  matches            TournamentMatch[]
-  staff              TournamentStaff[]
+  id                       String            @id @default(cuid())
+  name                     String
+  slug                     String            @unique
+  description              String?
+  game                     CompetitionGame   @default(EA_FC)
+  gameLabel                String?
+  format                   TournamentFormat  @default(SINGLE_ELIMINATION)
+  status                   TournamentStatus  @default(DRAFT)
+  maxTeams                 Int               @default(8)
+  teamSize                 Int               @default(1)
+  groupCount               Int               @default(2)
+  advancePerGroup          Int               @default(2)
+  legs                     Int               @default(1)
+  thirdPlace               Boolean           @default(false)
+  allowDraws               Boolean           @default(true)
+  pointsWin                Int               @default(3)
+  pointsDraw               Int               @default(1)
+  pointsLoss               Int               @default(0)
+  coinsWin                 Int               @default(50)
+  coinsDraw                Int               @default(20)
+  coinsLoss                Int               @default(5)
+  coinsChampion            Int               @default(500)
+  coinsRunnerUp            Int               @default(200)
+  requireProof             Boolean           @default(true)
+  autoApproveProof         Boolean           @default(true)
+  autoApproveMinConfidence Int               @default(80)
+  registrationEndsAt       DateTime?
+  autoStartOnClose         Boolean           @default(false)
+  createdByDiscordId       String
+  bannerUrl                String?
+  startsAt                 DateTime?
+  finishedAt               DateTime?
+  championTeamId           String?
+  runnerUpTeamId           String?
+  createdAt                DateTime          @default(now())
+  updatedAt                DateTime          @updatedAt
+  teams                    TournamentTeam[]
+  groups                   TournamentGroup[]
+  matches                  TournamentMatch[]
+  staff                    TournamentStaff[]
 
   @@index([status])
   @@index([game])
@@ -528,14 +528,14 @@ model Tournament {
 }
 
 model TournamentStaff {
-  id           String          @id @default(cuid())
-  tournamentId String
-  tournament   Tournament      @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
-  userId       Int
-  user         User            @relation(fields: [userId], references: [id], onDelete: Cascade)
-  role         CompetitionRole @default(MODERATOR)
+  id            String          @id @default(cuid())
+  tournamentId  String
+  tournament    Tournament      @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  userId        Int
+  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role          CompetitionRole @default(MODERATOR)
   addedByUserId Int?
-  createdAt    DateTime        @default(now())
+  createdAt     DateTime        @default(now())
 
   @@unique([tournamentId, userId])
   @@index([userId])
@@ -684,18 +684,23 @@ enum CatalogSource {
 }
 
 model CatalogCompetition {
-  id         String        @id @default(cuid())
-  code       String        @unique
-  name       String
-  country    String?
-  source     CatalogSource @default(MANUAL)
-  sourcePath String?
-  lastSyncAt DateTime?
-  lastSyncOk Boolean?
-  lastSyncMessage String?
-  createdAt  DateTime      @default(now())
-  updatedAt  DateTime      @updatedAt
-  teams      CatalogTeam[]
+  id                String              @id @default(cuid())
+  code              String              @unique
+  name              String
+  country           String?
+  source            CatalogSource       @default(MANUAL)
+  sourcePath        String?
+  lastSyncAt        DateTime?
+  lastSyncOk        Boolean?
+  lastSyncMessage   String?
+  // Rodadas de mentira que mantêm a base viva. Uma vez por dia no máximo.
+  simulationEnabled Boolean             @default(true)
+  worldRound        Int                 @default(0)
+  lastWorldTickAt   DateTime?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+  teams             CatalogTeam[]
+  draftSources      DraftLeagueSource[]
 }
 
 model CatalogTeam {
@@ -717,22 +722,42 @@ model CatalogTeam {
 }
 
 model CatalogPlayer {
-  id          String        @id @default(cuid())
-  teamId      String
-  team        CatalogTeam   @relation(fields: [teamId], references: [id], onDelete: Cascade)
-  externalId  String?
-  name        String
-  position    String
-  overall     Int           @default(70)
-  nationality String?
-  birthDate   DateTime?
-  photoUrl    String?
-  price       Int           @default(100)
-  active      Boolean       @default(true)
-  source      CatalogSource @default(MANUAL)
-  syncedAt    DateTime?
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
+  id              String        @id @default(cuid())
+  teamId          String
+  team            CatalogTeam   @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  externalId      String?
+  name            String
+  position        String
+  overall         Int           @default(70)
+  nationality     String?
+  birthDate       DateTime?
+  photoUrl        String?
+  price           Int           @default(100)
+  active          Boolean       @default(true)
+  source          CatalogSource @default(MANUAL)
+  syncedAt        DateTime?
+  // Os seis atributos do card, na ordem do EA FC. Para goleiro as mesmas colunas
+  // valem elasticidade, manejo, chute, reflexos, velocidade e posicionamento,
+  // como no card do jogo. Nulo quando ninguém estimou ainda.
+  pace            Int?
+  shooting        Int?
+  passing         Int?
+  dribbling       Int?
+  defending       Int?
+  physical        Int?
+  attributesModel String?
+  attributesNote  String?
+  attributesAt    DateTime?
+  // Vida do jogador fora das nossas ligas: ele segue jogando na competição dele,
+  // ganha nota por partida, oscila de forma e evolui ou cai com o tempo.
+  form            Int           @default(0)
+  matchesPlayed   Int           @default(0)
+  ratingAvg       Float?
+  lastRating      Float?
+  lastPlayedAt    DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  draftCopies     DraftPlayer[]
 
   @@unique([teamId, name])
   @@index([teamId, position])
@@ -827,6 +852,25 @@ enum DraftOrderType {
   LINEAR
 }
 
+/// REPORTED: o placar vem de quem jogou, com prova por foto.
+/// SIMULATED: o job da rodada joga a partida com atributos, forma e tática.
+enum DraftResultMode {
+  REPORTED
+  SIMULATED
+}
+
+enum TacticMentality {
+  DEFENSIVE
+  BALANCED
+  ATTACKING
+}
+
+enum TacticIntensity {
+  LOW
+  MEDIUM
+  HIGH
+}
+
 enum DraftMatchStatus {
   SCHEDULED
   AWAITING_PROOF
@@ -848,42 +892,63 @@ enum TransferOfferStatus {
 }
 
 model DraftLeague {
-  id                 String            @id @default(cuid())
-  name               String
-  description        String?
-  status             DraftLeagueStatus @default(SETUP)
-  orderType          DraftOrderType    @default(SNAKE)
-  rosterSize         Int               @default(11)
-  formation          String            @default("4-3-3")
-  pickSeconds        Int               @default(120)
-  matchDays          Int[]             @default([0, 3])
-  matchHour          Int               @default(21)
-  totalRounds        Int               @default(0)
-  currentRound       Int               @default(0)
-  currentPickNumber  Int               @default(0)
-  pickDeadline       DateTime?
-  pointsWin          Int               @default(3)
-  pointsDraw         Int               @default(1)
-  coinsWin           Int               @default(60)
-  coinsDraw          Int               @default(25)
-  coinsLoss          Int               @default(10)
-  transferWindowOpen Boolean           @default(true)
-  registrationEndsAt DateTime?
-  autoStartOnClose   Boolean           @default(false)
-  createdByDiscordId String
-  startedAt          DateTime?
-  finishedAt         DateTime?
-  createdAt          DateTime          @default(now())
-  updatedAt          DateTime          @updatedAt
-  players            DraftPlayer[]
-  rosters            DraftRoster[]
-  picks              DraftPick[]
-  matches            DraftMatch[]
-  offers             TransferOffer[]
-  staff              DraftStaff[]
+  id                        String              @id @default(cuid())
+  name                      String
+  description               String?
+  status                    DraftLeagueStatus   @default(SETUP)
+  orderType                 DraftOrderType      @default(SNAKE)
+  rosterSize                Int                 @default(11)
+  formation                 String              @default("4-3-3")
+  pickSeconds               Int                 @default(120)
+  matchDays                 Int[]               @default([0, 3])
+  matchHour                 Int                 @default(21)
+  totalRounds               Int                 @default(0)
+  currentRound              Int                 @default(0)
+  currentPickNumber         Int                 @default(0)
+  pickDeadline              DateTime?
+  pointsWin                 Int                 @default(3)
+  pointsDraw                Int                 @default(1)
+  coinsWin                  Int                 @default(60)
+  coinsDraw                 Int                 @default(25)
+  coinsLoss                 Int                 @default(10)
+  resultMode                DraftResultMode     @default(REPORTED)
+  transferWindowOpen        Boolean             @default(true)
+  // O mercado fecha esse tanto de minutos antes do horário da rodada e reabre
+  // quando a rodada inteira termina.
+  marketClosesMinutesBefore Int                 @default(180)
+  marketAutoManaged         Boolean             @default(true)
+  registrationEndsAt        DateTime?
+  autoStartOnClose          Boolean             @default(false)
+  createdByDiscordId        String
+  startedAt                 DateTime?
+  finishedAt                DateTime?
+  createdAt                 DateTime            @default(now())
+  updatedAt                 DateTime            @updatedAt
+  players                   DraftPlayer[]
+  rosters                   DraftRoster[]
+  picks                     DraftPick[]
+  matches                   DraftMatch[]
+  offers                    TransferOffer[]
+  staff                     DraftStaff[]
+  sources                   DraftLeagueSource[]
 
   @@index([status])
   @@index([status, registrationEndsAt])
+  @@index([status, resultMode])
+}
+
+/// Competições da base que a liga aceita. Vazio significa só o que já está no
+/// pool: sem essa lista ninguém contrata de fora.
+model DraftLeagueSource {
+  id            String             @id @default(cuid())
+  leagueId      String
+  league        DraftLeague        @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+  competitionId String
+  competition   CatalogCompetition @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+  createdAt     DateTime           @default(now())
+
+  @@unique([leagueId, competitionId])
+  @@index([competitionId])
 }
 
 model DraftStaff {
@@ -902,32 +967,47 @@ model DraftStaff {
 }
 
 model DraftPlayer {
-  id           String          @id @default(cuid())
-  leagueId     String
-  league       DraftLeague     @relation(fields: [leagueId], references: [id], onDelete: Cascade)
-  name         String
-  position     String
-  overall      Int             @default(70)
-  realTeam     String?
-  nationality  String?
-  photoUrl     String?
-  price        Int             @default(100)
-  rosterId     String?
-  roster       DraftRoster?    @relation(fields: [rosterId], references: [id])
-  starter      Boolean         @default(false)
-  slot         String?
-  appearances  Int             @default(0)
-  goals        Int             @default(0)
-  assists      Int             @default(0)
-  rating       Float?
-  createdAt    DateTime        @default(now())
-  picks        DraftPick[]
-  offers       TransferOffer[]
+  id              String          @id @default(cuid())
+  leagueId        String
+  league          DraftLeague     @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+  // Cópia da base global feita no import. O vínculo é só rastreio: a base pode
+  // mudar depois sem reescrever liga em andamento.
+  catalogPlayerId String?
+  catalogPlayer   CatalogPlayer?  @relation(fields: [catalogPlayerId], references: [id], onDelete: SetNull)
+  name            String
+  position        String
+  overall         Int             @default(70)
+  realTeam        String?
+  nationality     String?
+  birthDate       DateTime?
+  photoUrl        String?
+  price           Int             @default(100)
+  pace            Int?
+  shooting        Int?
+  passing         Int?
+  dribbling       Int?
+  defending       Int?
+  physical        Int?
+  rosterId        String?
+  roster          DraftRoster?    @relation(fields: [rosterId], references: [id])
+  starter         Boolean         @default(false)
+  slot            String?
+  appearances     Int             @default(0)
+  goals           Int             @default(0)
+  assists         Int             @default(0)
+  rating          Float?
+  lastRating      Float?
+  // Forma recente, de -5 a 5, movida pela nota de cada partida.
+  form            Int             @default(0)
+  createdAt       DateTime        @default(now())
+  picks           DraftPick[]
+  offers          TransferOffer[]
 
   @@unique([leagueId, name])
   @@index([leagueId, rosterId])
   @@index([leagueId, position])
   @@index([leagueId, overall])
+  @@index([catalogPlayerId])
 }
 
 model DraftRoster {
@@ -940,6 +1020,10 @@ model DraftRoster {
   tag            String?
   logoUrl        String?
   formation      String          @default("4-3-3")
+  mentality      TacticMentality @default(BALANCED)
+  pressing       TacticIntensity @default(MEDIUM)
+  tempo          TacticIntensity @default(MEDIUM)
+  tacticsAt      DateTime?
   draftOrder     Int             @default(0)
   played         Int             @default(0)
   wins           Int             @default(0)

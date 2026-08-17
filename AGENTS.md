@@ -30,6 +30,7 @@ src/
 ├── score-reader/           # Pluggable scoreboard reading from photos (admin-configured)
 ├── tournament/             # Brackets for any game (single/double elim, league, groups)
 ├── draft/                  # Draft leagues: pool, live draft, fixtures, transfer market
+├── football/               # Pure football math: attributes, match engine, development
 └── prisma/                 # PrismaService
 ```
 
@@ -84,6 +85,43 @@ Order of preference for filling it: a public API first (`FOOTBALL_DATA` via
 `FOOTBALL_DATA_TOKEN`, or `GENERIC` for any JSON URL), then manual entry, then
 image import through the AI stack. Syncing never deletes: players missing from the
 source are flagged inactive so rosters that already picked them keep working.
+
+Each player carries the six card attributes in the EA FC order (`pace`,
+`shooting`, `passing`, `dribbling`, `defending`, `physical`). Goalkeepers reuse the
+same six columns with the GK meanings, exactly like the card in the game, so the
+labels come from `attributes.ts` and never from a second set of columns. They are
+nullable: nobody has estimated yet.
+
+`football/` holds the pure football math shared by the catalog and the draft:
+the card attributes, the match engine and player development. No I/O, no Nest
+module, covered by `*.spec.ts` next to each file. Change the tests when you change
+the rules.
+
+`simulateMatch` turns two lineups plus tactics into a score and a rating per
+player. It is seeded by the match id, so a round replays to the same result and
+the job stays idempotent. Attack, midfield and defense come from the attributes of
+the players in each line, form shifts individual output, mentality and pressing
+trade attack for defense, and goals are drawn from a Poisson with the expected
+goals of each side. A lineup missing a whole line still plays, just worse.
+
+Two jobs keep a league alive. `DraftSimulationService` runs every five minutes: it
+plays matches whose kickoff has passed in leagues with `resultMode = SIMULATED`,
+and opens or closes the transfer window around the round. `WorldSimulationService`
+runs hourly but ticks each competition at most once a day, pairing its teams at
+random so players outside our leagues keep playing, taking ratings and evolving.
+A player picked into an active league is skipped there: he plays for his roster
+now, not for his real club.
+
+Development is deliberately slow: one attribute point at a time, only after four
+matches, growth for the young in form and decline for the veteran in a bad run.
+Without a birth date nobody declines by age, since the age is unknown.
+
+`AttributeAiService` fills them by asking the `analysis` provider to rate players
+it knows, in batches of twelve, and returns a confidence plus a one-line
+justification so an admin can judge before keeping it. Editing an attribute by
+hand clears `attributesModel`/`attributesNote`, since the number stopped being the
+model's guess. `realTeam` on a pool player is only there to identify who the guy
+is, it has no bearing on which roster he ends up in.
 
 ## Code Standards
 

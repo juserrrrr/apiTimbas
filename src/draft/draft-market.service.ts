@@ -185,6 +185,117 @@ export class DraftMarketService {
     });
   }
 
+  /// Contratação fora do pool: a liga declara de quais competições da base ela
+  /// aceita gente, e só de lá dá para trazer. Sem competição liberada a liga vive
+  /// só do que foi importado no começo.
+  async listBaseMarket(leagueId: string, search: string | undefined, competitionId: string | undefined) {
+    const league = await this.access.requireLeague(leagueId);
+    const sources = await this.prisma.draftLeagueSource.findMany({
+      where: { leagueId },
+      include: { competition: { select: { id: true, name: true, country: true } } },
+    });
+    const allowed = sources
+      .map((source) => source.competitionId)
+      .filter((id) => !competitionId || id === competitionId);
+    if (allowed.length === 0) return { competitions: sources.map((source) => source.competition), players: [] };
+
+    const alreadyIn = await this.prisma.draftPlayer.findMany({
+      where: { leagueId },
+      select: { catalogPlayerId: true, name: true },
+    });
+    const takenIds = alreadyIn.map((player) => player.catalogPlayerId).filter((id): id is string => id !== null);
+    const takenNames = new Set(alreadyIn.map((player) => player.name.toLowerCase()));
+
+    const players = await this.prisma.catalogPlayer.findMany({
+      where: {
+        active: true,
+        team: { competitionId: { in: allowed } },
+        ...(takenIds.length > 0 ? { id: { notIn: takenIds } } : {}),
+        ...(search ? { name: { contains: search, mode: 'insensitive' } } : {}),
+      },
+      orderBy: [{ overall: 'desc' }, { name: 'asc' }],
+      take: 120,
+      include: { team: { select: { name: true, competition: { select: { id: true, name: true } } } } },
+    });
+
+    return {
+      competitions: sources.map((source) => source.competition),
+      players: players
+        .filter((player) => !takenNames.has(player.name.toLowerCase()))
+        .map((player) => ({ ...player, leagueName: league.name })),
+    };
+  }
+
+  /// Traz um jogador da base para dentro da liga já no elenco de quem pagou. A
+  /// cópia é nova, então o histórico dele na liga começa do zero.
+  async signFromBase(leagueId: string, catalogPlayerId: string, actor: Actor) {
+    const league = await this.requireOpenMarket(leagueId);
+    const roster = await this.access.requireRoster(leagueId, actor);
+
+    const source = await this.prisma.catalogPlayer.findUnique({
+      where: { id: catalogPlayerId },
+      include: { team: { select: { name: true, competitionId: true } } },
+    });
+    if (!source || !source.active) throw new NotFoundException('Jogador não encontrado na base.');
+
+    const allowed = await this.prisma.draftLeagueSource.findFirst({
+      where: { leagueId, competitionId: source.team.competitionId },
+    });
+    if (!allowed) {
+      throw new BadRequestException('Esta liga não aceita contratações dessa competição.');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const squadSize = await tx.draftPlayer.count({ where: { rosterId: roster.id } });
+      if (squadSize >= league.rosterSize) {
+        throw new BadRequestException('Seu elenco está cheio. Venda ou libere alguém antes de contratar.');
+      }
+
+      const duplicated = await tx.draftPlayer.findFirst({
+        where: { leagueId, OR: [{ catalogPlayerId }, { name: source.name }] },
+      });
+      if (duplicated) throw new BadRequestException('Esse jogador já está nesta liga.');
+
+      if (source.price > 0) {
+        await this.wallet.debit(
+          {
+            userId: actor.id,
+            amount: source.price,
+            type: WalletTxType.DRAFT_PURCHASE,
+            description: `Contratação de ${source.name} na ${league.name}`,
+            referenceType: 'catalogPlayer',
+            referenceId: catalogPlayerId,
+          },
+          tx,
+        );
+      }
+
+      const signed = await tx.draftPlayer.create({
+        data: {
+          leagueId,
+          catalogPlayerId,
+          rosterId: roster.id,
+          name: source.name,
+          position: source.position,
+          overall: source.overall,
+          realTeam: source.team.name,
+          nationality: source.nationality,
+          birthDate: source.birthDate,
+          photoUrl: source.photoUrl,
+          price: source.price,
+          pace: source.pace,
+          shooting: source.shooting,
+          passing: source.passing,
+          dribbling: source.dribbling,
+          defending: source.defending,
+          physical: source.physical,
+        },
+      });
+
+      return { signed: true, price: source.price, player: signed };
+    });
+  }
+
   async listOffers(leagueId: string, actor: Actor) {
     const access = await this.access.of(leagueId, actor);
     const offers = await this.prisma.transferOffer.findMany({

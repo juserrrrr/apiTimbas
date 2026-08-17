@@ -8,6 +8,9 @@ import {
 } from '@prisma/client';
 import { Actor } from '../common/actor.service';
 import { WalletService } from '../economy/wallet.service';
+import { overallFromAttributes } from '../football/attributes';
+import { applyChange, attributeChange, nextForm, nextRatingAvg } from '../football/development';
+import { PlayerPerformance, SimulatedMatch } from '../football/match-simulation';
 import { PrismaService } from '../prisma/prisma.service';
 import { ScoreReaderService } from '../score-reader/score-reader.service';
 import { DraftAccessService } from './draft-access.service';
@@ -212,7 +215,20 @@ export class DraftFixtureService {
     );
   }
 
-  private async settle(matchId: string, homeScore: number, awayScore: number, reportedByDiscordId: string) {
+  /// Fecha a partida com o resultado que o motor calculou. O caminho é o mesmo do
+  /// placar lançado à mão, o que muda é que aqui cada jogador ganha nota, gol,
+  /// assistência e forma em vez de só somar presença.
+  async settleSimulated(matchId: string, result: SimulatedMatch) {
+    return this.settle(matchId, result.homeScore, result.awayScore, 'simulacao', result.performances);
+  }
+
+  private async settle(
+    matchId: string,
+    homeScore: number,
+    awayScore: number,
+    reportedByDiscordId: string,
+    performances?: PlayerPerformance[],
+  ) {
     const match = await this.prisma.draftMatch.findUniqueOrThrow({
       where: { id: matchId },
       include: { league: true, homeRoster: true, awayRoster: true },
@@ -235,7 +251,8 @@ export class DraftFixtureService {
         await this.applyRosterStats(tx, match.league, match.awayRosterId, awayScore, homeScore);
         await this.creditRound(tx, match.league, match.homeRoster.userId, homeScore, awayScore, matchId);
         await this.creditRound(tx, match.league, match.awayRoster.userId, awayScore, homeScore, matchId);
-        await this.bumpAppearances(tx, match.homeRosterId, match.awayRosterId);
+        if (performances) await this.applyPerformances(tx, performances);
+        else await this.bumpAppearances(tx, match.homeRosterId, match.awayRosterId);
         await this.advanceRound(tx, match.league.id);
 
         return updated;
@@ -289,6 +306,45 @@ export class DraftFixtureService {
       },
       tx,
     );
+  }
+
+  /// Nota da partida virando história do jogador: média, forma e, de vez em
+  /// quando, um ponto de atributo para cima ou para baixo.
+  private async applyPerformances(tx: Prisma.TransactionClient, performances: PlayerPerformance[]) {
+    const now = new Date();
+
+    for (const performance of performances) {
+      const player = await tx.draftPlayer.findUnique({ where: { id: performance.playerId } });
+      if (!player) continue;
+
+      const ratingAvg = nextRatingAvg(player.rating, player.appearances, performance.rating);
+      const change = attributeChange(
+        {
+          position: player.position,
+          birthDate: player.birthDate,
+          form: player.form,
+          ratingAvg,
+          matchesPlayed: player.appearances + 1,
+          attributes: player,
+        },
+        (performance.rating * 137) % 1,
+        now,
+      );
+      const attributes = change ? applyChange(player, change) : null;
+
+      await tx.draftPlayer.update({
+        where: { id: player.id },
+        data: {
+          appearances: { increment: 1 },
+          goals: { increment: performance.goals },
+          assists: { increment: performance.assists },
+          rating: ratingAvg,
+          lastRating: performance.rating,
+          form: nextForm(player.form, performance.rating),
+          ...(attributes ? { ...attributes, overall: overallFromAttributes(player.position, attributes) } : {}),
+        },
+      });
+    }
   }
 
   private async bumpAppearances(tx: Prisma.TransactionClient, homeRosterId: string, awayRosterId: string) {

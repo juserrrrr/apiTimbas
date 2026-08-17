@@ -1,6 +1,8 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { CatalogSource, DraftLeagueStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { AttributeAiService } from './attribute-ai.service';
+import { ATTRIBUTE_KEYS } from '../football/attributes';
 import { parsePlayerLines, parseTeamLines } from './text-parser';
 import {
   BulkTeamsDto,
@@ -15,7 +17,10 @@ import {
 
 @Injectable()
 export class PlayerCatalogService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly attributeAi: AttributeAiService,
+  ) {}
 
   async listCompetitions() {
     const competitions = await this.prisma.catalogCompetition.findMany({
@@ -139,10 +144,115 @@ export class PlayerCatalogService {
     return { created, updated };
   }
 
+  /// Estima os atributos de quem ainda não tem, ou de todo o elenco quando o
+  /// admin pede refazer. A escrita é jogador por jogador porque o modelo pode
+  /// devolver a lista incompleta e o resto precisa ser salvo do mesmo jeito.
+  async estimateTeamAttributes(teamId: string, onlyMissing: boolean) {
+    const team = await this.requireTeam(teamId);
+    const competition = await this.prisma.catalogCompetition.findUnique({
+      where: { id: team.competitionId },
+      select: { name: true },
+    });
+
+    const players = await this.prisma.catalogPlayer.findMany({
+      where: {
+        teamId,
+        active: true,
+        ...(onlyMissing ? { pace: null } : {}),
+      },
+      orderBy: { name: 'asc' },
+    });
+    if (players.length === 0) {
+      throw new BadRequestException(
+        onlyMissing ? 'Todos os jogadores deste time já têm atributos.' : 'Este time não tem jogadores ativos.',
+      );
+    }
+
+    const estimation = await this.attributeAi.estimate(
+      players.map((player) => ({
+        name: player.name,
+        position: player.position,
+        realTeam: team.name,
+        nationality: player.nationality,
+        birthDate: player.birthDate,
+        competition: competition?.name ?? null,
+      })),
+    );
+
+    const byName = new Map(players.map((player) => [player.name, player]));
+    const now = new Date();
+    let updated = 0;
+
+    for (const row of estimation.players) {
+      const player = byName.get(row.name);
+      if (!player) continue;
+      await this.prisma.catalogPlayer.update({
+        where: { id: player.id },
+        data: {
+          ...row.attributes,
+          overall: row.overall,
+          attributesModel: estimation.model,
+          attributesNote: row.note || null,
+          attributesAt: now,
+        },
+      });
+      updated++;
+    }
+
+    return {
+      updated,
+      requested: players.length,
+      model: estimation.model,
+      missing: players.filter((player) => !estimation.players.some((row) => row.name === player.name)).length,
+    };
+  }
+
+  async estimatePlayerAttributes(playerId: string) {
+    const player = await this.prisma.catalogPlayer.findUnique({
+      where: { id: playerId },
+      include: { team: { include: { competition: { select: { name: true } } } } },
+    });
+    if (!player) throw new NotFoundException('Jogador não encontrado no catálogo.');
+
+    const estimation = await this.attributeAi.estimate([
+      {
+        name: player.name,
+        position: player.position,
+        realTeam: player.team.name,
+        nationality: player.nationality,
+        birthDate: player.birthDate,
+        competition: player.team.competition.name,
+      },
+    ]);
+
+    const row = estimation.players[0];
+    if (!row) throw new BadRequestException('A IA não conseguiu estimar este jogador. Tente de novo.');
+
+    return this.prisma.catalogPlayer.update({
+      where: { id: playerId },
+      data: {
+        ...row.attributes,
+        overall: row.overall,
+        attributesModel: estimation.model,
+        attributesNote: row.note || null,
+        attributesAt: new Date(),
+      },
+    });
+  }
+
   async updatePlayer(playerId: string, dto: UpdatePlayerDto) {
     const player = await this.prisma.catalogPlayer.findUnique({ where: { id: playerId } });
     if (!player) throw new NotFoundException('Jogador não encontrado no catálogo.');
-    return this.prisma.catalogPlayer.update({ where: { id: playerId }, data: dto });
+
+    // Atributo mexido na mão deixa de ser estimativa da IA, então a autoria sai.
+    const manualAttributes = ATTRIBUTE_KEYS.some((key) => dto[key] !== undefined);
+    return this.prisma.catalogPlayer.update({
+      where: { id: playerId },
+      data: {
+        ...dto,
+        ...(manualAttributes ? { attributesModel: null, attributesNote: null, attributesAt: new Date() } : {}),
+      },
+    });
   }
 
   async removePlayer(playerId: string) {
@@ -190,13 +300,21 @@ export class PlayerCatalogService {
       })
       .map((player) => ({
         leagueId: dto.leagueId,
+        catalogPlayerId: player.id,
         name: player.name,
         position: player.position,
         overall: player.overall,
         realTeam: player.team.name,
         nationality: player.nationality,
+        birthDate: player.birthDate,
         photoUrl: player.photoUrl,
         price: player.price,
+        pace: player.pace,
+        shooting: player.shooting,
+        passing: player.passing,
+        dribbling: player.dribbling,
+        defending: player.defending,
+        physical: player.physical,
       }));
 
     const result = await this.prisma.draftPlayer.createMany({ data: rows, skipDuplicates: true });

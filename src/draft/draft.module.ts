@@ -8,12 +8,20 @@ import { DraftController } from './draft.controller';
 import { DraftFixtureService } from './draft-fixture.service';
 import { DraftMarketService } from './draft-market.service';
 import { DraftPickService } from './draft-pick.service';
+import { DraftSimulationService } from './draft-simulation.service';
 import { DraftService } from './draft.service';
 
 @Module({
   imports: [PrismaModule, AuthModule, EconomyModule, ScoreReaderModule],
   controllers: [DraftController],
-  providers: [DraftService, DraftPickService, DraftMarketService, DraftFixtureService, DraftAccessService],
+  providers: [
+    DraftService,
+    DraftPickService,
+    DraftMarketService,
+    DraftFixtureService,
+    DraftSimulationService,
+    DraftAccessService,
+  ],
   exports: [DraftPickService],
 })
 export class DraftModule {}

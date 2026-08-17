@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { CompetitionRole, DraftLeagueStatus, Prisma } from '@prisma/client';
 import { Actor } from '../common/actor.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -11,6 +11,7 @@ import {
   JoinDraftDto,
   ListDraftLeaguesDto,
   SetLineupDto,
+  SetTacticsDto,
   UpdateDraftLeagueDto,
 } from './dto/draft.dto';
 
@@ -22,14 +23,18 @@ export class DraftService {
   ) {}
 
   async create(dto: CreateDraftLeagueDto, actor: Actor) {
-    const { name, ...settings } = dto;
+    const { name, sourceCompetitionIds, ...settings } = dto;
     return this.prisma.draftLeague.create({
       data: {
         ...Object.fromEntries(Object.entries(settings).filter(([, value]) => value !== undefined)),
         name,
         createdByDiscordId: actor.discordId,
         staff: { create: { userId: actor.id, role: CompetitionRole.OWNER } },
+        ...(sourceCompetitionIds?.length
+          ? { sources: { create: sourceCompetitionIds.map((competitionId) => ({ competitionId })) } }
+          : {}),
       },
+      include: { sources: true },
     });
   }
 
@@ -52,6 +57,7 @@ export class DraftService {
       where: { id: leagueId },
       include: {
         staff: { include: { user: { select: { id: true, name: true, avatar: true } } } },
+        sources: { include: { competition: { select: { id: true, name: true, country: true } } } },
         rosters: {
           orderBy: [{ points: 'desc' }, { draftOrder: 'asc' }],
           include: {
@@ -75,7 +81,7 @@ export class DraftService {
   async update(leagueId: string, dto: UpdateDraftLeagueDto, actor: Actor) {
     await this.access.requireManage(leagueId, actor);
     const league = await this.access.requireLeague(leagueId);
-    const { name, status, ...settings } = dto;
+    const { name, status, sourceCompetitionIds, ...settings } = dto;
 
     const locked = league.status !== DraftLeagueStatus.SETUP;
     const editable = Object.fromEntries(
@@ -84,9 +90,47 @@ export class DraftService {
       ),
     );
 
+    if (sourceCompetitionIds) {
+      await this.prisma.$transaction([
+        this.prisma.draftLeagueSource.deleteMany({
+          where: { leagueId, competitionId: { notIn: sourceCompetitionIds } },
+        }),
+        ...sourceCompetitionIds.map((competitionId) =>
+          this.prisma.draftLeagueSource.upsert({
+            where: { leagueId_competitionId: { leagueId, competitionId } },
+            update: {},
+            create: { leagueId, competitionId },
+          }),
+        ),
+      ]);
+    }
+
     return this.prisma.draftLeague.update({
       where: { id: leagueId },
       data: { ...editable, ...(name ? { name } : {}), ...(status ? { status } : {}) },
+      include: { sources: true },
+    });
+  }
+
+  /// Tática é do treinador do elenco, e o moderador pode ajustar pelo elenco de
+  /// alguém que não apareceu.
+  async setTactics(leagueId: string, dto: SetTacticsDto, actor: Actor) {
+    const access = await this.access.of(leagueId, actor);
+    const rosterId = dto.rosterId && access.canModerate ? dto.rosterId : access.rosterId;
+    if (!rosterId) throw new ForbiddenException('Você não tem elenco nesta liga.');
+
+    const roster = await this.prisma.draftRoster.findFirst({ where: { id: rosterId, leagueId } });
+    if (!roster) throw new NotFoundException('Elenco não encontrado nesta liga.');
+
+    return this.prisma.draftRoster.update({
+      where: { id: roster.id },
+      data: {
+        ...(dto.formation ? { formation: dto.formation } : {}),
+        ...(dto.mentality ? { mentality: dto.mentality } : {}),
+        ...(dto.pressing ? { pressing: dto.pressing } : {}),
+        ...(dto.tempo ? { tempo: dto.tempo } : {}),
+        tacticsAt: new Date(),
+      },
     });
   }
 

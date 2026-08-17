@@ -18,6 +18,9 @@ import {
   CompetitionRole,
   DraftLeagueStatus,
   DraftOrderType,
+  DraftResultMode,
+  TacticIntensity,
+  TacticMentality,
   TransferOfferKind,
 } from '@prisma/client';
 
@@ -111,8 +114,31 @@ export class CreateDraftLeagueDto {
   coinsLoss?: number;
 
   @IsOptional()
+  @IsEnum(DraftResultMode)
+  resultMode?: DraftResultMode;
+
+  @IsOptional()
   @IsBoolean()
   transferWindowOpen?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  marketAutoManaged?: boolean;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(10080)
+  marketClosesMinutesBefore?: number;
+
+  /// Competições da base de onde esta liga aceita jogador. Lista vazia deixa a
+  /// liga fechada no que já foi importado.
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(20)
+  @IsString({ each: true })
+  sourceCompetitionIds?: string[];
 
   @IsOptional()
   @Type(() => Date)
@@ -245,6 +271,47 @@ export class SetLineupDto {
   @ValidateNested({ each: true })
   @Type(() => LineupSlotDto)
   starters: LineupSlotDto[];
+}
+
+export class SetTacticsDto {
+  @IsOptional()
+  @IsString()
+  rosterId?: string;
+
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(16)
+  formation?: string;
+
+  @IsOptional()
+  @IsEnum(TacticMentality)
+  mentality?: TacticMentality;
+
+  @IsOptional()
+  @IsEnum(TacticIntensity)
+  pressing?: TacticIntensity;
+
+  @IsOptional()
+  @IsEnum(TacticIntensity)
+  tempo?: TacticIntensity;
+}
+
+export class SignFromBaseDto {
+  @IsString()
+  catalogPlayerId: string;
+}
+
+export class BaseMarketQueryDto {
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(60)
+  search?: string;
+
+  @IsOptional()
+  @IsString()
+  competitionId?: string;
 }
 
 export class CreateOfferDto {
