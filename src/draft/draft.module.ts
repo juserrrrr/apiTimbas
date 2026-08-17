@@ -23,6 +23,6 @@ import { DraftService } from './draft.service';
     DraftBudgetService,
     DraftAccessService,
   ],
-  exports: [DraftPickService],
+  exports: [DraftPickService, DraftFixtureService, DraftSimulationService],
 })
 export class DraftModule {}

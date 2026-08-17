@@ -1,6 +1,6 @@
 import { Type } from 'class-transformer';
 import { IsBoolean, IsEnum, IsIn, IsInt, IsOptional, Max, Min } from 'class-validator';
-import { TournamentFormat } from '@prisma/client';
+import { DraftResultMode, TournamentFormat } from '@prisma/client';
 
 export const TOURNAMENT_STAGES = ['REGISTRATION', 'STARTED', 'PARTIAL', 'FINISHED'] as const;
 export const DRAFT_STAGES = ['SETUP', 'DRAFTING', 'ACTIVE', 'PLAYED'] as const;
@@ -60,6 +60,21 @@ export class BuildDemoDraftDto {
   @Min(1)
   @Max(11)
   rosterSize?: number;
+
+  @IsOptional()
+  @IsEnum(DraftResultMode)
+  resultMode?: DraftResultMode;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(10000000)
+  startingBudget?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  paySalaries?: boolean;
 
   @IsIn(DRAFT_STAGES)
   stage: (typeof DRAFT_STAGES)[number];

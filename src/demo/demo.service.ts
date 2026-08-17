@@ -1,13 +1,16 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import {
   DraftLeagueStatus,
+  DraftResultMode,
   Role,
   TournamentFormat,
   TournamentMatchStatus,
   TournamentStatus,
 } from '@prisma/client';
 import { Actor } from '../common/actor.service';
+import { DraftFixtureService } from '../draft/draft-fixture.service';
 import { DraftPickService } from '../draft/draft-pick.service';
+import { DraftSimulationService } from '../draft/draft-simulation.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { TournamentResultService } from '../tournament/tournament-result.service';
 import { TournamentService } from '../tournament/tournament.service';
@@ -30,6 +33,8 @@ export class DemoService {
     private readonly tournaments: TournamentService,
     private readonly results: TournamentResultService,
     private readonly picks: DraftPickService,
+    private readonly fixtures: DraftFixtureService,
+    private readonly simulation: DraftSimulationService,
   ) {}
 
   async buildTournament(dto: BuildDemoTournamentDto, actor: Actor) {
@@ -99,9 +104,12 @@ export class DemoService {
         description: 'Liga de demonstração criada pelo painel de administração. Pode apagar à vontade.',
         rosterSize,
         pickSeconds: 3600,
-        coinsWin: 0,
-        coinsDraw: 0,
-        coinsLoss: 0,
+        resultMode: dto.resultMode ?? DraftResultMode.REPORTED,
+        startingBudget: dto.startingBudget ?? 1000,
+        paySalaries: dto.paySalaries ?? true,
+        coinsWin: 60,
+        coinsDraw: 25,
+        coinsLoss: 10,
         createdByDiscordId: actor.discordId,
         staff: { create: { userId: actor.id, role: 'OWNER' } },
       },
@@ -115,6 +123,13 @@ export class DemoService {
         overall: 62 + ((index * 7) % 32),
         realTeam: DEMO_TEAM_NAMES[index % DEMO_TEAM_NAMES.length],
         price: 80 + ((index * 13) % 320),
+        salary: Math.max(1, Math.round((80 + ((index * 13) % 320)) / 10)),
+        pace: 55 + ((index * 5) % 40),
+        shooting: 55 + ((index * 7) % 40),
+        passing: 55 + ((index * 11) % 40),
+        dribbling: 55 + ((index * 3) % 40),
+        defending: 45 + ((index * 13) % 45),
+        physical: 55 + ((index * 17) % 40),
       })),
     });
 
@@ -127,6 +142,7 @@ export class DemoService {
           name: DEMO_TEAM_NAMES[index],
           tag: DEMO_TEAM_NAMES[index].slice(0, 3).toUpperCase(),
           draftOrder: index + 1,
+          budget: league.startingBudget,
         },
       });
     }
@@ -145,7 +161,7 @@ export class DemoService {
       return this.draftSummary(league.id, 'Elencos completos e rodadas agendadas.');
     }
 
-    const played = await this.simulateDraftRounds(league.id);
+    const played = await this.simulateDraftRounds(league.id, actor);
     return this.draftSummary(league.id, `${played} rodadas simuladas.`);
   }
 
@@ -255,26 +271,28 @@ export class DemoService {
     });
   }
 
-  private async simulateDraftRounds(leagueId: string): Promise<number> {
-    const matches = await this.prisma.draftMatch.findMany({ where: { leagueId }, orderBy: { round: 'asc' } });
+  /// Passa pelo caminho real de cada modo: assim o demo exercita premiação,
+  /// salário, nota do jogador e o motor de simulação, em vez de escrever placar
+  /// na mão e mascarar bug.
+  private async simulateDraftRounds(leagueId: string, actor: Actor): Promise<number> {
     const league = await this.prisma.draftLeague.findUniqueOrThrow({ where: { id: leagueId } });
-
-    for (const match of matches) {
-      const home = Math.floor(Math.random() * 5);
-      const away = Math.floor(Math.random() * 5);
-      await this.prisma.draftMatch.update({
-        where: { id: match.id },
-        data: { homeScore: home, awayScore: away, status: 'FINISHED', playedAt: new Date(), reportedByDiscordId: 'demo' },
-      });
-      await this.applyDemoRosterStats(match.homeRosterId, home, away, league.pointsWin, league.pointsDraw);
-      await this.applyDemoRosterStats(match.awayRosterId, away, home, league.pointsWin, league.pointsDraw);
-    }
-
-    await this.prisma.draftLeague.update({
-      where: { id: leagueId },
-      data: { status: DraftLeagueStatus.FINISHED, finishedAt: new Date() },
+    const matches = await this.prisma.draftMatch.findMany({
+      where: { leagueId },
+      orderBy: [{ round: 'asc' }, { scheduledAt: 'asc' }],
     });
-    return matches.length;
+
+    let played = 0;
+    for (const match of matches) {
+      if (league.resultMode === DraftResultMode.SIMULATED) {
+        await this.simulation.playOne(leagueId, match.id);
+      } else {
+        const home = Math.floor(Math.random() * 5);
+        const away = Math.floor(Math.random() * 5);
+        await this.fixtures.report(leagueId, match.id, { homeScore: home, awayScore: away }, actor);
+      }
+      played++;
+    }
+    return played;
   }
 
   private async applyDemoRosterStats(
@@ -318,11 +336,39 @@ export class DemoService {
     return users;
   }
 
+  /// O resumo é o debug da tela de admin: além do link, ele conta o que o
+  /// gerador realmente produziu, para dar para conferir sem abrir o banco.
   private async tournamentSummary(id: string, message: string) {
     const tournament = await this.prisma.tournament.findUniqueOrThrow({
       where: { id },
-      select: { id: true, name: true, format: true, status: true, _count: { select: { teams: true, matches: true } } },
+      select: {
+        id: true,
+        name: true,
+        format: true,
+        status: true,
+        groupCount: true,
+        advancePerGroup: true,
+        thirdPlace: true,
+        _count: { select: { teams: true, matches: true } },
+      },
     });
+
+    const [byPhase, groups, finished, open, champion] = await Promise.all([
+      this.prisma.tournamentMatch.groupBy({
+        by: ['phase'],
+        where: { tournamentId: id },
+        _count: { _all: true },
+      }),
+      this.prisma.tournamentGroup.findMany({
+        where: { tournamentId: id },
+        orderBy: { order: 'asc' },
+        select: { name: true, _count: { select: { teams: true, matches: true } } },
+      }),
+      this.prisma.tournamentMatch.count({ where: { tournamentId: id, status: 'FINISHED' } }),
+      this.prisma.tournamentMatch.count({ where: { tournamentId: id, status: { in: ['PENDING', 'READY'] } } }),
+      this.prisma.tournament.findUnique({ where: { id }, select: { championTeamId: true } }),
+    ]);
+
     return {
       message,
       id: tournament.id,
@@ -332,14 +378,58 @@ export class DemoService {
       teams: tournament._count.teams,
       matches: tournament._count.matches,
       url: `/dashboard/tournaments/${tournament.id}`,
+      debug: {
+        partidasPorFase: Object.fromEntries(byPhase.map((row) => [row.phase, row._count._all])),
+        grupos: groups.map((group) => `${group.name}: ${group._count.teams} times, ${group._count.matches} jogos`),
+        classificadosPorGrupo: tournament.advancePerGroup,
+        disputaDeTerceiro: tournament.thirdPlace,
+        encerradas: finished,
+        emAberto: open,
+        temCampeao: Boolean(champion?.championTeamId),
+      },
     };
   }
 
   private async draftSummary(id: string, message: string) {
     const league = await this.prisma.draftLeague.findUniqueOrThrow({
       where: { id },
-      select: { id: true, name: true, status: true, _count: { select: { rosters: true, players: true, matches: true } } },
+      select: {
+        id: true,
+        name: true,
+        status: true,
+        resultMode: true,
+        startingBudget: true,
+        paySalaries: true,
+        totalRounds: true,
+        currentRound: true,
+        transferWindowOpen: true,
+        _count: { select: { rosters: true, players: true, matches: true } },
+      },
     });
+
+    const [rosters, playedMatches, topScorer, entries, wages] = await Promise.all([
+      this.prisma.draftRoster.findMany({
+        where: { leagueId: id },
+        orderBy: { points: 'desc' },
+        select: { name: true, points: true, budget: true, earned: true, spent: true },
+      }),
+      this.prisma.draftMatch.count({ where: { leagueId: id, status: 'FINISHED' } }),
+      this.prisma.draftPlayer.findFirst({
+        where: { leagueId: id, goals: { gt: 0 } },
+        orderBy: [{ goals: 'desc' }, { rating: 'desc' }],
+        select: { name: true, goals: true, assists: true, rating: true },
+      }),
+      this.prisma.draftBudgetEntry.groupBy({
+        by: ['type'],
+        where: { leagueId: id },
+        _sum: { amount: true },
+      }),
+      this.prisma.draftPlayer.aggregate({
+        where: { leagueId: id, rosterId: { not: null } },
+        _sum: { salary: true },
+      }),
+    ]);
+
     return {
       message,
       id: league.id,
@@ -349,6 +439,22 @@ export class DemoService {
       players: league._count.players,
       matches: league._count.matches,
       url: `/dashboard/draft/${league.id}`,
+      debug: {
+        modoDeResultado: league.resultMode,
+        caixaInicial: league.startingBudget,
+        cobraSalario: league.paySalaries,
+        rodadas: `${league.currentRound}/${league.totalRounds}`,
+        partidasEncerradas: playedMatches,
+        mercadoAberto: league.transferWindowOpen,
+        folhaTotalPorRodada: wages._sum.salary ?? 0,
+        dinheiroPorTipo: Object.fromEntries(entries.map((row) => [row.type, row._sum.amount ?? 0])),
+        caixaDosElencos: rosters.map(
+          (roster) => `${roster.name}: ${roster.budget} (entrou ${roster.earned}, saiu ${roster.spent}), ${roster.points} pts`,
+        ),
+        artilheiro: topScorer
+          ? `${topScorer.name}, ${topScorer.goals} gol(s), ${topScorer.assists} assist., nota ${topScorer.rating ?? '-'}`
+          : 'ninguém marcou ainda',
+      },
     };
   }
 }
