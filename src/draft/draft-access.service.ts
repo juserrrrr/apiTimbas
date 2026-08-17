@@ -50,8 +50,8 @@ export class DraftAccessService {
   }
 
   async requireRoster(leagueId: string, actor: Actor) {
-    const roster = await this.prisma.draftRoster.findUnique({
-      where: { leagueId_userId: { leagueId, userId: actor.id } },
+    const roster = await this.prisma.draftRoster.findFirst({
+      where: { leagueId, userId: actor.id },
     });
     if (!roster) throw new ForbiddenException('Você não tem elenco nesta liga.');
     return roster;

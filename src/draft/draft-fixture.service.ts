@@ -76,6 +76,11 @@ export class DraftFixtureService {
     });
   }
 
+  /// Fecha a rodada sem ninguém lançar, que é o caso do time vago.
+  async settleWalkover(matchId: string, homeScore: number, awayScore: number) {
+    return this.settle(matchId, homeScore, awayScore, 'vaga');
+  }
+
   async report(leagueId: string, matchId: string, dto: ReportDraftResultDto, actor: Actor) {
     const match = await this.prisma.draftMatch.findFirst({
       where: { id: matchId, leagueId },

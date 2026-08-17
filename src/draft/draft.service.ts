@@ -196,10 +196,26 @@ export class DraftService {
       throw new BadRequestException('Esta liga já saiu da fase de inscrições.');
     }
 
-    const existing = await this.prisma.draftRoster.findUnique({
-      where: { leagueId_userId: { leagueId, userId: actor.id } },
-    });
+    const existing = await this.prisma.draftRoster.findFirst({ where: { leagueId, userId: actor.id } });
     if (existing) throw new BadRequestException('Você já tem um elenco nesta liga.');
+
+    // Tem vaga aberta? A pessoa assume o time que já existe, com elenco, caixa e
+    // histórico dele, em vez de criar mais um.
+    const vacant = await this.prisma.draftRoster.findFirst({
+      where: { leagueId, userId: null },
+      orderBy: { draftOrder: 'asc' },
+    });
+    if (vacant) {
+      return this.prisma.draftRoster.update({
+        where: { id: vacant.id },
+        data: { userId: actor.id, name: dto.name, tag: dto.tag, logoUrl: dto.logoUrl },
+        include: { user: { select: { id: true, name: true, avatar: true } } },
+      });
+    }
+
+    if (league.status !== DraftLeagueStatus.SETUP) {
+      throw new BadRequestException('A liga já começou e não tem vaga aberta.');
+    }
 
     const count = await this.prisma.draftRoster.count({ where: { leagueId } });
     return this.prisma.draftRoster.create({
@@ -215,6 +231,35 @@ export class DraftService {
       },
       include: { user: { select: { id: true, name: true, avatar: true } } },
     });
+  }
+
+  /// Vagas abertas para a liga não depender de todo mundo aparecer. Enquanto
+  /// ninguém assume, o time joga com o elenco que o draft automático montou e
+  /// perde por W.O. nas rodadas do modo real.
+  async addVacantRosters(leagueId: string, count: number, actor: Actor) {
+    await this.access.requireManage(leagueId, actor);
+    const league = await this.access.requireLeague(leagueId);
+    if (league.status !== DraftLeagueStatus.SETUP) {
+      throw new BadRequestException('Vagas só entram antes do draft começar.');
+    }
+
+    const current = await this.prisma.draftRoster.count({ where: { leagueId } });
+    const created = [];
+    for (let index = 0; index < count; index++) {
+      created.push(
+        await this.prisma.draftRoster.create({
+          data: {
+            leagueId,
+            name: `Vaga ${current + index + 1}`,
+            tag: `V${current + index + 1}`,
+            formation: league.formation,
+            draftOrder: current + index + 1,
+            budget: league.startingBudget,
+          },
+        }),
+      );
+    }
+    return { created: created.length, total: current + created.length };
   }
 
   async leave(leagueId: string, actor: Actor) {

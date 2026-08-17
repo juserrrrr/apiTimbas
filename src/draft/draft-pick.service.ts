@@ -77,9 +77,11 @@ export class DraftPickService {
     return this.commitPick(league, onTheClock.id, playerId, false);
   }
 
+  /// Time vago escolhe na hora, sem esperar o cronômetro: senão a vaga trava o
+  /// draft de quem apareceu.
   async autoPickExpired() {
     const leagues = await this.prisma.draftLeague.findMany({
-      where: { status: DraftLeagueStatus.DRAFTING, pickDeadline: { lt: new Date() } },
+      where: { status: DraftLeagueStatus.DRAFTING },
     });
 
     for (const league of leagues) {
@@ -87,6 +89,9 @@ export class DraftPickService {
         const rosters = await this.orderedRosters(league.id);
         const onTheClock = this.onTheClock(league, rosters);
         if (!onTheClock) continue;
+
+        const expired = (league.pickDeadline?.getTime() ?? Infinity) < Date.now();
+        if (!expired && onTheClock.userId !== null) continue;
 
         const best = await this.prisma.draftPlayer.findFirst({
           where: { leagueId: league.id, rosterId: null },
@@ -188,11 +193,11 @@ export class DraftPickService {
     return this.prisma.draftRoster.findMany({
       where: { leagueId },
       orderBy: { draftOrder: 'asc' },
-      select: { id: true, name: true, draftOrder: true },
+      select: { id: true, name: true, draftOrder: true, userId: true },
     });
   }
 
-  private onTheClock(league: DraftLeague, rosters: Array<{ id: string; name: string }>) {
+  private onTheClock(league: DraftLeague, rosters: Array<{ id: string; name: string; userId?: number | null }>) {
     if (rosters.length === 0) return null;
     if (league.currentPickNumber >= rosters.length * league.rosterSize) return null;
     const current = pickCoordinate(league.currentPickNumber, rosters.length, league.orderType);

@@ -27,7 +27,42 @@ export class DraftSimulationService {
   @Cron(CronExpression.EVERY_5_MINUTES)
   async tick() {
     await this.syncMarketWindows();
+    await this.resolveVacantMatches();
     await this.playDueMatches();
+  }
+
+  /// No modo real alguém precisa jogar, e vaga aberta não joga: a rodada dela sai
+  /// como W.O. de 3 a 0 para quem tem dono. Vaga contra vaga fica 0 a 0.
+  async resolveVacantMatches() {
+    const due = await this.prisma.draftMatch.findMany({
+      where: {
+        status: { not: DraftMatchStatus.FINISHED },
+        scheduledAt: { lte: new Date() },
+        league: { status: DraftLeagueStatus.ACTIVE, resultMode: DraftResultMode.REPORTED },
+        OR: [{ homeRoster: { userId: null } }, { awayRoster: { userId: null } }],
+      },
+      include: {
+        homeRoster: { select: { userId: true, name: true } },
+        awayRoster: { select: { userId: true, name: true } },
+      },
+      take: 40,
+    });
+
+    for (const match of due) {
+      const homeVacant = match.homeRoster.userId === null;
+      const awayVacant = match.awayRoster.userId === null;
+      const homeScore = homeVacant ? 0 : awayVacant ? 3 : 0;
+      const awayScore = awayVacant ? 0 : homeVacant ? 3 : 0;
+
+      try {
+        await this.fixtures.settleWalkover(match.id, homeScore, awayScore);
+        this.logger.log(
+          `W.O. na rodada ${match.round}: ${match.homeRoster.name} ${homeScore} a ${awayScore} ${match.awayRoster.name}.`,
+        );
+      } catch (error) {
+        this.logger.warn(`Falha no W.O. da partida ${match.id}: ${(error as Error).message}`);
+      }
+    }
   }
 
   async playDueMatches() {

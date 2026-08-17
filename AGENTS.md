@@ -40,6 +40,12 @@ src/
 other. They share `score-reader/` and the `MatchProof` table (two nullable FKs, one
 per domain).
 
+A roster can have no owner: `DraftRoster.userId` is nullable, and a vacant team
+lets the league start without waiting for everyone. The vacant team picks
+instantly in the draft instead of burning the clock, loses 3 to 0 by walkover in
+REPORTED rounds, plays normally in SIMULATED ones, and the next person who joins
+takes it over with its squad, cash and history intact.
+
 A squad is a real squad: `rosterSize` defaults to 25, the same as EA FC, with 11
 starters picked by the formation and the rest on the bench and in reserve. Money is
 in reais on a football scale, not coins: `football/market-value.ts` prices a player

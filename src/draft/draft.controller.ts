@@ -29,6 +29,7 @@ import { DraftPickService } from './draft-pick.service';
 import { DraftSimulationService } from './draft-simulation.service';
 import { DraftService } from './draft.service';
 import {
+  AddVacantRostersDto,
   BaseMarketQueryDto,
   CreateAuctionDto,
   CreateDraftLeagueDto,
@@ -99,6 +100,11 @@ export class DraftController {
   @Delete(':id/join')
   async leave(@Req() req: AuthedRequest, @Param('id') id: string) {
     return this.draft.leave(id, await this.me(req));
+  }
+
+  @Post(':id/rosters/vacant')
+  async addVacantRosters(@Req() req: AuthedRequest, @Param('id') id: string, @Body() dto: AddVacantRostersDto) {
+    return this.draft.addVacantRosters(id, dto.count ?? 1, await this.me(req));
   }
 
   @Get(':id/players')

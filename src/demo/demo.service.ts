@@ -165,14 +165,23 @@ export class DemoService {
     });
 
     // O primeiro elenco é de quem apertou o botão: sem isso não dá para abrir a
-    // aba "Meu elenco" e ver a liga do lado de dentro.
-    const managers = [actor, ...(await this.ensureDemoUsers(rosterCount - 1))];
-    for (const [index, manager] of managers.entries()) {
+    // aba "Meu elenco" e ver a liga do lado de dentro. Os últimos podem ficar
+    // vagos, para dar para ver a liga rodando sem gente suficiente.
+    const vacant = Math.min(dto.vacantRosters ?? 0, rosterCount - 1);
+    const withOwner = rosterCount - vacant;
+    const managers = [actor, ...(await this.ensureDemoUsers(withOwner - 1))];
+
+    for (let index = 0; index < rosterCount; index++) {
+      const manager = managers[index];
       await this.prisma.draftRoster.create({
         data: {
           leagueId: league.id,
-          userId: manager.id,
-          name: index === 0 ? `${DEMO_TEAM_NAMES[index]} (seu)` : DEMO_TEAM_NAMES[index],
+          userId: manager?.id ?? null,
+          name: manager
+            ? index === 0
+              ? `${DEMO_TEAM_NAMES[index]} (seu)`
+              : DEMO_TEAM_NAMES[index]
+            : `${DEMO_TEAM_NAMES[index]} (vaga)`,
           tag: DEMO_TEAM_NAMES[index].slice(0, 3).toUpperCase(),
           draftOrder: index + 1,
           budget: league.startingBudget,
@@ -509,7 +518,7 @@ export class DemoService {
       },
     });
 
-    const [rosters, playedMatches, topScorer, entries, wages, openAuctions] = await Promise.all([
+    const [rosters, playedMatches, topScorer, entries, wages, openAuctions, vacantCount] = await Promise.all([
       this.prisma.draftRoster.findMany({
         where: { leagueId: id },
         orderBy: { points: 'desc' },
@@ -531,6 +540,7 @@ export class DemoService {
         _sum: { salary: true },
       }),
       this.prisma.draftAuction.count({ where: { leagueId: id, status: 'OPEN' } }),
+      this.prisma.draftRoster.count({ where: { leagueId: id, userId: null } }),
     ]);
 
     return {
@@ -559,6 +569,7 @@ export class DemoService {
           (roster) => `${roster.name}: ${roster.budget} (entrou ${roster.earned}, saiu ${roster.spent}), ${roster.points} pts`,
         ),
         seuElenco: rosters[0]?.name ?? 'nenhum',
+        timesVagos: vacantCount,
         artilheiro: topScorer
           ? `${topScorer.name}, ${topScorer.goals} gol(s), ${topScorer.assists} assist., nota ${topScorer.rating ?? '-'}`
           : 'ninguém marcou ainda',

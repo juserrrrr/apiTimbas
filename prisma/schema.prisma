@@ -1130,8 +1130,10 @@ model DraftRoster {
   id              String             @id @default(cuid())
   leagueId        String
   league          DraftLeague        @relation(fields: [leagueId], references: [id], onDelete: Cascade)
-  userId          Int
-  user            User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // Time sem dono é vaga aberta: a liga começa mesmo sem gente, esse time perde
+  // por W.O. e alguém pode assumir depois.
+  userId          Int?
+  user            User?              @relation(fields: [userId], references: [id], onDelete: Cascade)
   name            String
   tag             String?
   logoUrl         String?

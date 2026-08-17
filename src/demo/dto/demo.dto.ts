@@ -51,7 +51,7 @@ export class BuildDemoDraftDto {
   @Type(() => Number)
   @IsInt()
   @Min(2)
-  @Max(12)
+  @Max(20)
   rosterCount?: number;
 
   @IsOptional()
@@ -75,6 +75,14 @@ export class BuildDemoDraftDto {
   @IsOptional()
   @IsBoolean()
   paySalaries?: boolean;
+
+  /// Times sem dono, para ver a liga rodando sem depender de gente.
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(19)
+  vacantRosters?: number;
 
   @IsOptional()
   @IsBoolean()

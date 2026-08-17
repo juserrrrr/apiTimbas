@@ -200,6 +200,15 @@ export class ListDraftLeaguesDto {
   status?: DraftLeagueStatus;
 }
 
+export class AddVacantRostersDto {
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(20)
+  count?: number;
+}
+
 export class JoinDraftDto {
   @Transform(trim)
   @IsString()
