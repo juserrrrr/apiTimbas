@@ -25,8 +25,43 @@ src/
 ├── leaderboard/            # Win/loss ranking per server
 ├── riot/                   # Riot Games API integration + tournament API
 ├── discordServer/          # Discord server registration
+├── common/                 # ActorService (discordId → User), global module
+├── economy/                # Coin wallet: credit/debit/transfer, statement, ranking
+├── score-reader/           # Pluggable scoreboard reading from photos (admin-configured)
+├── tournament/             # Brackets for any game (single/double elim, league, groups)
+├── draft/                  # Draft leagues: pool, live draft, fixtures, transfer market
 └── prisma/                 # PrismaService
 ```
+
+### Competition modules
+`tournament/` and `draft/` are **separate products** and must not import from each
+other. They share only platform infrastructure: `economy/` (one coin balance per
+user), `score-reader/`, and the `MatchProof` table (two nullable FKs, one per domain).
+
+Neither is scoped to a Discord server — competitions are platform-wide. Only
+match/ranking features use `serverId`.
+
+Permissions inside a competition are per-competition (`CompetitionRole`), separate
+from the platform `Role`:
+- **OWNER** — edits rules, deletes, starts the bracket/draft, manages staff
+- **MODERATOR** — approves/rejects proofs, reports results, schedules, declares W.O.
+- A global `ADMIN` passes both checks.
+
+`bracket.builder.ts` and `draft-order.ts` are pure functions with no I/O — the
+bracket shapes and pick order are covered by `*.spec.ts` next to them. Change the
+tests when you change the pairing rules.
+
+### Score reader
+Never hardcode an AI provider. `ScoreReaderConfig` (single row, id=1) is edited by
+admins at `PATCH /admin/score-reader` and holds provider, base URL, model and
+encrypted API keys. Two modes:
+- `VISION` — image is sent to an OpenAI-compatible chat endpoint
+- `OCR_TEXT` — an OCR service extracts text, then a text-only model parses it
+
+When disabled or on any failure, `read()` returns an unavailable reading and the
+proof falls back to manual approval. It must never block a result from being filed.
+API keys are AES-256-GCM encrypted (`secret.crypto.ts`, keyed by `SETTINGS_SECRET`
+or `JWT_SECRET`) and never returned by the API — only `hasApiKey: boolean`.
 
 ## Code Standards
 
@@ -85,6 +120,8 @@ DATABASE_URL, JWT_SECRET, DISCORD_TOKEN, DISCORD_CLIENT_ID, DISCORD_CLIENT_SECRE
 DISCORD_GUILD_ID, DISCORD_REDIRECT_URI, BOT_SECRET, WEB_URL,
 ADMIN_DISCORD_ID, ADMIN_NAME, ADMIN_EMAIL, ADMIN_PASSWORD
 ```
+Optional: `SETTINGS_SECRET` (falls back to `JWT_SECRET`) encrypts the score reader
+API keys. Rotating it makes previously stored keys unreadable — they must be re-entered.
 
 ## Agents Available
 Use these subagents for specialized tasks:
