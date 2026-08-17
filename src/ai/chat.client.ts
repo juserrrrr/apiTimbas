@@ -57,7 +57,7 @@ export class ChatClient {
             ? this.retryDelayFrom(error)
             : Math.min(8_000, 2 ** attempt * 1_000 + Math.floor(Math.random() * 500));
 
-        if (!transient || attempt === MAX_RETRIES || delayMs > MAX_RETRY_DELAY_MS) throw error;
+        if (!transient || attempt === MAX_RETRIES || delayMs > MAX_RETRY_DELAY_MS) throw new AiCallError(error);
         if (status === 429) this.blockedUntil = Date.now() + delayMs;
 
         this.logger.warn(`[AI] ${status ?? code ?? 'rede'}; nova tentativa em ${Math.ceil(delayMs / 1000)}s`);
@@ -152,6 +152,20 @@ export class ChatClient {
     ];
     const seconds = Number(Array.isArray(header) ? header[0] : header);
     return Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : 60_000;
+  }
+}
+
+/// O erro do axios carrega a requisição inteira, e nela vai o header
+/// Authorization com a chave do provedor. Nada disso pode sair daqui: quem
+/// receber esta exceção só vê status e mensagem, então nem o log do Nest nem
+/// uma resposta de erro conseguem vazar a chave.
+export class AiCallError extends Error {
+  readonly status?: number;
+
+  constructor(cause: unknown) {
+    super(describeAiError(cause));
+    this.name = 'AiCallError';
+    this.status = (cause as { response?: { status?: number } })?.response?.status;
   }
 }
 

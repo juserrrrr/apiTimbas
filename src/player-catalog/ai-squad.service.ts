@@ -96,14 +96,25 @@ export class AiSquadService {
     const provider = await this.requireProvider();
     const date = resolveDate(referenceDate);
 
-    const answer = await this.chat.complete({
-      provider,
-      system: SYSTEM_PROMPT,
-      prompt: buildCompetitionPrompt(competition, date),
-      json: true,
-      temperature: 0,
-      maxTokens: 2048,
-    });
+    let answer: string;
+    try {
+      answer = await this.chat.complete({
+        provider,
+        system: SYSTEM_PROMPT,
+        prompt: buildCompetitionPrompt(competition, date),
+        json: true,
+        temperature: 0,
+        maxTokens: 2048,
+      });
+    } catch (error) {
+      const message = describeAiError(error);
+      this.logger.warn(
+        `Falha ao listar os clubes de ${competition}: ${message}`,
+      );
+      throw new BadRequestException(
+        `Não foi possível listar os clubes de ${competition}: ${message}`,
+      );
+    }
 
     const parsed = parseAiCompetition(answer);
     if (!parsed || parsed.teams.length === 0) {

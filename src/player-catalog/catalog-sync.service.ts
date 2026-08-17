@@ -44,6 +44,10 @@ const MIN_AI_CONFIDENCE = 40;
 /// Cada clube é uma chamada de modelo. Mais que isso numa requisição só e o
 /// navegador desiste antes da resposta.
 const MAX_AI_TEAMS_PER_SYNC = 12;
+/// Preencher elenco é mais lento que listar clube, então o lote é bem menor: a
+/// tela repete a chamada até acabar e vai mostrando quanto falta.
+const DEFAULT_AI_FILL_BATCH = 3;
+const MAX_AI_FILL_BATCH = 6;
 const WIKIPEDIA_HEADERS = {
   'User-Agent': 'Timbas/1.0 (https://github.com/juserrrrr/apiTimbas)',
   'Api-User-Agent': 'Timbas/1.0 (https://github.com/juserrrrr/apiTimbas)',
@@ -205,14 +209,13 @@ export class CatalogSyncService {
     return { ...result, failures };
   }
 
-  /// A liga inteira de uma vez: a IA diz quais clubes disputam a competição, os
-  /// times entram como pastas vazias e os elencos vêm depois, doze por chamada,
-  /// porque vinte clubes numa requisição só não voltam a tempo.
+  /// A IA diz quais clubes disputam a competição e eles entram como pastas
+  /// vazias. Os elencos ficam para `fillCompetition`, em chamadas separadas:
+  /// vinte clubes numa requisição só passam de dez minutos e o navegador corta.
   async createAiCompetition(input: {
     name: string;
     code?: string;
     referenceDate?: string;
-    withSquads?: boolean;
   }) {
     const found = await this.aiSquad.fetchCompetitionTeams(
       input.name,
@@ -259,19 +262,6 @@ export class CatalogSyncService {
       created++;
     }
 
-    const squads = input.withSquads
-      ? await this.syncAiSquads(
-          {
-            teams: found.teams
-              .slice(0, MAX_AI_TEAMS_PER_SYNC)
-              .map((team) => team.name),
-            referenceDate: input.referenceDate,
-            competition: found.competition,
-          },
-          competition.id,
-        )
-      : null;
-
     return {
       competition,
       teams: found.teams,
@@ -280,11 +270,73 @@ export class CatalogSyncService {
       beyondKnowledge: found.beyondKnowledge,
       notes: found.notes,
       model: found.model,
-      players: squads?.players ?? 0,
-      pending: Math.max(
-        0,
-        found.teams.length - (squads ? MAX_AI_TEAMS_PER_SYNC : 0),
-      ),
+    };
+  }
+
+  /// Um time só, uma chamada de modelo: é o botão de preencher da linha do time.
+  async fillTeamWithAi(teamId: string, referenceDate?: string) {
+    const team = await this.prisma.catalogTeam.findUniqueOrThrow({
+      where: { id: teamId },
+      include: { competition: { select: { id: true, name: true } } },
+    });
+
+    const result = await this.syncAiSquads(
+      {
+        teams: [team.name],
+        referenceDate,
+        competition: team.competition.name,
+      },
+      team.competition.id,
+    );
+
+    return { ...result, team: team.name };
+  }
+
+  /// Preenche os times vazios de uma competição em lotes curtos, para cada
+  /// requisição caber no tempo do navegador. Quem chama repete enquanto sobrar
+  /// gente em `remaining`.
+  async fillCompetition(
+    competitionId: string,
+    input: { referenceDate?: string; limit?: number },
+  ) {
+    const competition = await this.prisma.catalogCompetition.findUniqueOrThrow({
+      where: { id: competitionId },
+    });
+    const limit = Math.min(
+      Math.max(input.limit ?? DEFAULT_AI_FILL_BATCH, 1),
+      MAX_AI_FILL_BATCH,
+    );
+
+    const empty = await this.prisma.catalogTeam.findMany({
+      where: { competitionId, players: { none: { active: true } } },
+      orderBy: { name: 'asc' },
+      select: { name: true },
+    });
+    if (empty.length === 0) {
+      return {
+        teams: 0,
+        players: 0,
+        failures: [],
+        squads: [],
+        filled: [],
+        remaining: 0,
+      };
+    }
+
+    const batch = empty.slice(0, limit).map((team) => team.name);
+    const result = await this.syncAiSquads(
+      {
+        teams: batch,
+        referenceDate: input.referenceDate,
+        competition: competition.name,
+      },
+      competitionId,
+    );
+
+    return {
+      ...result,
+      filled: batch,
+      remaining: Math.max(0, empty.length - batch.length),
     };
   }
 

@@ -20,6 +20,7 @@ import { PlayerCatalogService } from './player-catalog.service';
 import { SquadVisionService } from './squad-vision.service';
 import {
   AiCompetitionDto,
+  AiFillDto,
   AiSquadDto,
   BulkPlayersDto,
   BulkTeamsDto,
@@ -121,10 +122,21 @@ export class PlayerCatalogController {
     return this.sync.syncAiSquads(dto);
   }
 
-  /// A IA monta a competição inteira: clubes primeiro, elencos em seguida.
+  /// A IA monta a competição: só os clubes, porque os elencos vêm depois em
+  /// chamadas curtas que cabem no tempo do navegador.
   @Post('ai/competition')
   createAiCompetition(@Body() dto: AiCompetitionDto) {
     return this.sync.createAiCompetition(dto);
+  }
+
+  @Post('competitions/:id/ai-fill')
+  fillCompetition(@Param('id') id: string, @Body() dto: AiFillDto) {
+    return this.sync.fillCompetition(id, dto);
+  }
+
+  @Post('teams/:teamId/ai-squad')
+  fillTeam(@Param('teamId') teamId: string, @Body() dto: AiFillDto) {
+    return this.sync.fillTeamWithAi(teamId, dto.referenceDate);
   }
 
   @Get('competitions/:id/teams')

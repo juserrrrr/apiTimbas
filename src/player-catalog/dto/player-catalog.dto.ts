@@ -357,10 +357,24 @@ export class AiCompetitionDto {
     message: 'referenceDate deve estar no formato AAAA-MM-DD',
   })
   referenceDate?: string;
+}
+
+/// Preencher elencos pela IA, um time ou um lote curto de times vazios.
+export class AiFillDto {
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, {
+    message: 'referenceDate deve estar no formato AAAA-MM-DD',
+  })
+  referenceDate?: string;
 
   @IsOptional()
-  @IsBoolean()
-  withSquads?: boolean;
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(6)
+  limit?: number;
 }
 
 export class ParseTextDto {
