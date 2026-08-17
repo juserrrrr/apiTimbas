@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { AccessModule } from '../access/access.module';
 import { AiModule } from '../ai/ai.module';
 import { ScoreReaderModule } from '../score-reader/score-reader.module';
 import { AuthModule } from '../auth/auth.module';
@@ -11,7 +12,7 @@ import { SquadVisionService } from './squad-vision.service';
 import { WorldSimulationService } from './world-simulation.service';
 
 @Module({
-  imports: [PrismaModule, AuthModule, AiModule, ScoreReaderModule],
+  imports: [PrismaModule, AuthModule, AiModule, ScoreReaderModule, AccessModule],
   controllers: [PlayerCatalogController],
   providers: [
     PlayerCatalogService,

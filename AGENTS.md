@@ -25,6 +25,7 @@ src/
 ├── leaderboard/            # Win/loss ranking per server
 ├── riot/                   # Riot Games API integration + tournament API
 ├── discordServer/          # Discord server registration
+├── access/                 # Platform permissions, dynamic groups, entry approval
 ├── common/                 # ActorService (discordId → User), global module
 ├── economy/                # Coin wallet: credit/debit/transfer, statement, ranking
 ├── score-reader/           # Pluggable scoreboard reading from photos (admin-configured)
@@ -57,6 +58,23 @@ deadline extension as pure functions with a spec.
 
 Neither is scoped to a Discord server, competitions are platform-wide. Only
 match/ranking features use `serverId`.
+
+### Access and permissions
+`access/` owns who gets in and who can do what on the platform. `Role.ADMIN` is the
+fixed super admin and always has every permission; everything else comes from
+`PermissionGroup`, which an admin builds in the panel by ticking keys from
+`permissions.ts`. That file is the only source of valid keys, and a group can never
+store one that is not there.
+
+Guard admin endpoints with `@RequirePermissions('key')` and `PermissionGuard`, not
+with `@Roles(Role.ADMIN)`, so a dynamic group can be given the same power. The
+panel decides its own menu from `GET /admin/access/me`, and entering the panel
+needs at least one permission, not the ADMIN role.
+
+`PlatformSettings.requireApproval` closes the door: with it on, a new Discord login
+lands as `UserStatus.PENDING` and gets no token until someone with `users.approve`
+releases it. Existing users stay APPROVED, so turning it on never locks the team
+out.
 
 Permissions inside a competition are per-competition (`CompetitionRole`), separate
 from the platform `Role`:

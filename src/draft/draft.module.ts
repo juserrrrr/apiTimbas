@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { AccessModule } from '../access/access.module';
 import { AuthModule } from '../auth/auth.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { ScoreReaderModule } from '../score-reader/score-reader.module';
@@ -13,7 +14,7 @@ import { DraftSimulationService } from './draft-simulation.service';
 import { DraftService } from './draft.service';
 
 @Module({
-  imports: [PrismaModule, AuthModule, ScoreReaderModule],
+  imports: [PrismaModule, AuthModule, ScoreReaderModule, AccessModule],
   controllers: [DraftController],
   providers: [
     DraftService,

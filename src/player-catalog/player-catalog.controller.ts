@@ -1,8 +1,6 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '../auth/guards/auth.guard';
-import { RoleGuard } from '../auth/guards/role.guard';
-import { Roles } from '../decorators/roles.decorator';
-import { Role } from '../enums/role.enum';
+import { PermissionGuard, RequirePermissions } from '../access/permission.guard';
 import { CatalogSyncService } from './catalog-sync.service';
 import { PlayerCatalogService } from './player-catalog.service';
 import { SquadVisionService } from './squad-vision.service';
@@ -21,8 +19,8 @@ import {
   UpdateTeamDto,
 } from './dto/player-catalog.dto';
 
-@UseGuards(AuthGuard, RoleGuard)
-@Roles(Role.ADMIN)
+@UseGuards(AuthGuard, PermissionGuard)
+@RequirePermissions('catalog.manage')
 @Controller('admin/catalog')
 export class PlayerCatalogController {
   constructor(

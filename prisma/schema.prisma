@@ -116,26 +116,74 @@ enum Role {
   PLAYER
 }
 
+/// Porta de entrada da plataforma. PENDING só existe quando a aprovação está
+/// ligada nas configurações; sem isso todo mundo entra aprovado.
+enum UserStatus {
+  PENDING
+  APPROVED
+  BLOCKED
+}
+
 model User {
-  id              Int                    @id @default(autoincrement())
-  discordId       String                 @unique
-  name            String
-  email           String?                @unique
-  password        String?
-  role            Role                   @default(PLAYER)
-  avatar          String?
-  lastLoginIp     String?
-  lastLoginAt     DateTime?
-  dateOfBirth     DateTime?
-  dateCreated     DateTime               @default(now())
-  dateUpdated     DateTime               @updatedAt
-  TeamsLeague     UserTeamLeague[]
-  leagueAccounts  LeagueAccount[]
-  tournamentTeams TournamentTeamMember[]
-  tournamentStaff TournamentStaff[]
-  wallet          Wallet?
-  draftRosters    DraftRoster[]
-  draftStaff      DraftStaff[]
+  id               Int                    @id @default(autoincrement())
+  discordId        String                 @unique
+  name             String
+  email            String?                @unique
+  password         String?
+  role             Role                   @default(PLAYER)
+  avatar           String?
+  lastLoginIp      String?
+  lastLoginAt      DateTime?
+  dateOfBirth      DateTime?
+  dateCreated      DateTime               @default(now())
+  dateUpdated      DateTime               @updatedAt
+  TeamsLeague      UserTeamLeague[]
+  leagueAccounts   LeagueAccount[]
+  tournamentTeams  TournamentTeamMember[]
+  tournamentStaff  TournamentStaff[]
+  wallet           Wallet?
+  draftRosters     DraftRoster[]
+  draftStaff       DraftStaff[]
+  status           UserStatus             @default(APPROVED)
+  statusNote       String?
+  reviewedByUserId Int?
+  reviewedAt       DateTime?
+  groups           UserGroupMember[]
+
+  @@index([status])
+}
+
+/// Cargo dinâmico: o admin monta o grupo e marca as permissões pelo painel. ADMIN
+/// da plataforma não depende de grupo nenhum, ele já tem tudo.
+model PermissionGroup {
+  id          String            @id @default(cuid())
+  name        String            @unique
+  description String?
+  permissions String[]
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  members     UserGroupMember[]
+}
+
+model UserGroupMember {
+  id        String          @id @default(cuid())
+  userId    Int
+  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  groupId   String
+  group     PermissionGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  createdAt DateTime        @default(now())
+
+  @@unique([userId, groupId])
+  @@index([groupId])
+}
+
+/// Linha única (id=1) com as chaves da porta de entrada.
+model PlatformSettings {
+  id                 Int      @id @default(1)
+  requireApproval    Boolean  @default(false)
+  approvalMessage    String?
+  updatedByDiscordId String?
+  updatedAt          DateTime @updatedAt
 }
 
 model LeagueAccount {

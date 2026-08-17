@@ -21,6 +21,7 @@ import { EconomyModule } from './economy/economy.module';
 import { ScoreReaderModule } from './score-reader/score-reader.module';
 import { TournamentModule } from './tournament/tournament.module';
 import { DraftModule } from './draft/draft.module';
+import { AccessModule } from './access/access.module';
 import { DemoModule } from './demo/demo.module';
 import { PlayerCatalogModule } from './player-catalog/player-catalog.module';
 
@@ -61,6 +62,7 @@ import { PlayerCatalogModule } from './player-catalog/player-catalog.module';
     TournamentModule,
     DraftModule,
     DemoModule,
+    AccessModule,
     PlayerCatalogModule,
   ],
   controllers: [],

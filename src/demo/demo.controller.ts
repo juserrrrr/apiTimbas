@@ -1,17 +1,15 @@
 import { Body, Controller, Delete, Get, Post, Req, UseGuards } from '@nestjs/common';
 import { Request } from 'express';
 import { AuthGuard } from '../auth/guards/auth.guard';
-import { RoleGuard } from '../auth/guards/role.guard';
+import { PermissionGuard, RequirePermissions } from '../access/permission.guard';
 import { ActorService } from '../common/actor.service';
-import { Roles } from '../decorators/roles.decorator';
-import { Role } from '../enums/role.enum';
 import { DemoService } from './demo.service';
 import { BuildDemoDraftDto, BuildDemoTournamentDto } from './dto/demo.dto';
 
 type AuthedRequest = Request & { tokenPayload?: { discordId?: string } };
 
-@UseGuards(AuthGuard, RoleGuard)
-@Roles(Role.ADMIN)
+@UseGuards(AuthGuard, PermissionGuard)
+@RequirePermissions('demo.manage')
 @Controller('admin/demo')
 export class DemoController {
   constructor(

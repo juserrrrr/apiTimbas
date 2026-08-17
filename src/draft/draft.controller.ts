@@ -15,6 +15,7 @@ import {
 } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { AuthGuard } from '../auth/guards/auth.guard';
+import { PermissionGuard, RequirePermissions } from '../access/permission.guard';
 import { RoleGuard } from '../auth/guards/role.guard';
 import { ActorService } from '../common/actor.service';
 import { Roles } from '../decorators/roles.decorator';
@@ -49,7 +50,7 @@ import {
 
 type AuthedRequest = Request & { tokenPayload?: { discordId?: string } };
 
-@UseGuards(AuthGuard, RoleGuard)
+@UseGuards(AuthGuard, RoleGuard, PermissionGuard)
 @Controller('draft')
 export class DraftController {
   constructor(
@@ -70,7 +71,7 @@ export class DraftController {
   }
 
   @Post()
-  @Roles(Role.ADMIN)
+  @RequirePermissions('draft.create')
   async create(@Req() req: AuthedRequest, @Body() dto: CreateDraftLeagueDto) {
     return this.draft.create(dto, await this.me(req));
   }

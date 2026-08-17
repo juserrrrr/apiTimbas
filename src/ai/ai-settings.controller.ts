@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Patch, Post, Req, UseGuards } from '@nestjs/common';
 import { Request } from 'express';
 import { AuthGuard } from '../auth/guards/auth.guard';
+import { PermissionGuard, RequirePermissions } from '../access/permission.guard';
 import { RoleGuard } from '../auth/guards/role.guard';
 import { ActorService } from '../common/actor.service';
 import { Roles } from '../decorators/roles.decorator';
@@ -11,8 +12,8 @@ import { UpdateAiSettingsDto } from './dto/ai-settings.dto';
 
 type AuthedRequest = Request & { tokenPayload?: { discordId?: string } };
 
-@UseGuards(AuthGuard, RoleGuard)
-@Roles(Role.ADMIN)
+@UseGuards(AuthGuard, RoleGuard, PermissionGuard)
+@RequirePermissions('ai.manage')
 @Controller('admin/ai')
 export class AiSettingsController {
   constructor(

@@ -13,6 +13,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { UserService } from '../user/user.service';
 import { CreateBotDto } from './dto/create-bot.dto';
 import { Role } from '../enums/role.enum';
+import { UserStatus } from '@prisma/client';
 
 @Injectable()
 export class AuthService {
@@ -232,11 +233,14 @@ export class AuthService {
     const incomingAvatar: string | null = discordUser.avatar ?? null;
 
     if (!user) {
+      // Com aprovação ligada, quem chega fica na fila em vez de entrar direto.
+      const settings = await this.prisma.platformSettings.findUnique({ where: { id: 1 } });
       user = await this.prisma.user.create({
         data: {
           discordId: discordUser.id,
           name: discordUser.username,
           role: Role.PLAYER,
+          status: settings?.requireApproval ? UserStatus.PENDING : UserStatus.APPROVED,
           avatar: incomingAvatar,
           lastLoginAt: new Date(),
           ...(lastLoginIp && { lastLoginIp }),
@@ -257,6 +261,8 @@ export class AuthService {
       }
     }
 
+    this.assertCanEnter(user.status, user.statusNote);
+
     return this.createToken(
       user.id.toString(),
       user.name,
@@ -264,6 +270,18 @@ export class AuthService {
       user.role,
       user.discordId,
       user.avatar ?? undefined,
+    );
+  }
+
+  /// A porta é a mesma para todo mundo: quem está na fila ou bloqueado não recebe
+  /// token, e a mensagem diz o porquê.
+  private assertCanEnter(status: UserStatus, note: string | null) {
+    if (status === UserStatus.APPROVED) return;
+    if (status === UserStatus.BLOCKED) {
+      throw new ForbiddenException(note ?? 'Seu acesso foi bloqueado pela organização do Timbas.');
+    }
+    throw new ForbiddenException(
+      note ?? 'Sua entrada está aguardando aprovação da organização do Timbas. Chame alguém no Discord.',
     );
   }
 
