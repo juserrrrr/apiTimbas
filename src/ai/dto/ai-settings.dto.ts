@@ -1,9 +1,11 @@
 import { Transform, Type } from 'class-transformer';
-import { IsBoolean, IsEnum, IsInt, IsOptional, IsString, IsUrl, Max, MaxLength, Min } from 'class-validator';
+import { IsBoolean, IsEnum, IsInt, IsOptional, IsString, Matches, Max, MaxLength, Min } from 'class-validator';
 import { AiProvider, ScoreReadMode } from '@prisma/client';
 
 const emptyToNull = ({ value }: { value: unknown }) =>
   typeof value === 'string' && value.trim() === '' ? null : value;
+
+const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
 
 export class UpdateAiSettingsDto {
   @IsOptional()
@@ -45,16 +47,11 @@ export class UpdateAiSettingsDto {
   scoreReadMode?: ScoreReadMode;
 
   @IsOptional()
-  @Transform(emptyToNull)
-  @IsUrl({ require_tld: false, protocols: ['http', 'https'] })
-  @MaxLength(300)
-  ocrBaseUrl?: string | null;
-
-  @IsOptional()
-  @Transform(emptyToNull)
+  @Transform(trim)
   @IsString()
+  @Matches(/^[a-z]{3}(\+[a-z]{3})*$/, { message: 'Use códigos de 3 letras, por exemplo por ou por+eng' })
   @MaxLength(40)
-  ocrEngine?: string | null;
+  ocrLanguage?: string;
 
   @IsOptional()
   @Type(() => Number)

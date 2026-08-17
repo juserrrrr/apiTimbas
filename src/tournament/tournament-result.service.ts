@@ -94,7 +94,7 @@ export class TournamentResultService {
             awayScore: match.awayTeamId === winnerTeamId ? 1 : 0,
             playedAt: new Date(),
             reportedByDiscordId,
-            label: reason ? `${match.label ?? 'Partida'} — W.O.: ${reason}` : match.label,
+            label: reason ? `${match.label ?? 'Partida'} (W.O.: ${reason})` : match.label,
           },
         });
 
@@ -133,7 +133,7 @@ export class TournamentResultService {
     }
     if (homeScore !== awayScore) return;
     if (isKnockout(match.phase)) {
-      throw new BadRequestException('Mata-mata não aceita empate — informe o placar da decisão nos pênaltis.');
+      throw new BadRequestException('Mata-mata não aceita empate. Informe o placar da decisão nos pênaltis.');
     }
     if (!tournament.allowDraws) {
       throw new BadRequestException('Este campeonato não aceita empates.');
@@ -209,7 +209,7 @@ export class TournamentResultService {
           userId,
           amount,
           type,
-          description: `${label} — ${tournament.name}`,
+          description: `${label} em ${tournament.name}`,
           referenceType: 'tournamentMatch',
           referenceId,
         },

@@ -18,8 +18,7 @@ export interface UpdateAiSettingsInput {
   scoreReaderProvider?: AiProvider;
   scoreReaderModel?: string | null;
   scoreReadMode?: ScoreReadMode;
-  ocrBaseUrl?: string | null;
-  ocrEngine?: string | null;
+  ocrLanguage?: string;
   timeoutMs?: number;
   maxImageBytes?: number;
 }
@@ -57,16 +56,10 @@ export class AiSettingsService {
       needsVision,
     );
 
-    const ocrMissing = settings.scoreReadMode === ScoreReadMode.OCR_TEXT && !settings.ocrBaseUrl;
     return {
       ...feature,
-      unavailableReason: ocrMissing
-        ? 'Modo OCR selecionado, mas nenhum endpoint de OCR foi configurado.'
-        : feature.unavailableReason,
       mode: settings.scoreReadMode,
-      ocrBaseUrl: settings.ocrBaseUrl,
-      ocrEngine: settings.ocrEngine ?? 'generic',
-      ocrApiKey: this.registry.ocrApiKey(),
+      ocrLanguage: settings.ocrLanguage,
       timeoutMs: settings.timeoutMs,
       maxImageBytes: settings.maxImageBytes,
     };
@@ -78,7 +71,6 @@ export class AiSettingsService {
 
     return {
       providers: this.registry.catalog(),
-      ocrKeyConfigured: this.registry.ocrApiKey() !== null,
       analysis: {
         enabled: settings.analysisEnabled,
         provider: settings.analysisProvider,
@@ -94,8 +86,7 @@ export class AiSettingsService {
         model: settings.scoreReaderModel,
         effectiveModel: scoreReader.provider?.model ?? null,
         mode: settings.scoreReadMode,
-        ocrBaseUrl: settings.ocrBaseUrl,
-        ocrEngine: settings.ocrEngine,
+        ocrLanguage: settings.ocrLanguage,
         ready: scoreReader.provider !== null && !scoreReader.unavailableReason,
         unavailableReason: scoreReader.unavailableReason,
       },
@@ -150,7 +141,7 @@ export class AiSettingsService {
       return {
         enabled: true,
         provider: null,
-        unavailableReason: `${resolved.label} não lê imagens — use o modo OCR ou troque de provedor.`,
+        unavailableReason: `${resolved.label} não lê imagens. Use o modo OCR ou troque de provedor.`,
       };
     }
 

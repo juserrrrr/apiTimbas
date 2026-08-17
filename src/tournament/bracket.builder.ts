@@ -119,7 +119,7 @@ export function buildDoubleElimination(teamCount: number): MatchPlan[] {
         round,
         position,
         leg: 1,
-        label: `Chave dos vencedores — ${knockoutRoundLabel(round, winnerRounds)}`,
+        label: `Chave dos vencedores · ${knockoutRoundLabel(round, winnerRounds)}`,
       };
       if (round === 1) {
         plan.homeSeed = slots[position * 2];
@@ -164,7 +164,7 @@ export function buildDoubleElimination(teamCount: number): MatchPlan[] {
         round,
         position,
         leg: 1,
-        label: isLast ? 'Chave dos perdedores — Final' : `Chave dos perdedores — Rodada ${round}`,
+        label: isLast ? 'Chave dos perdedores · Final' : `Chave dos perdedores · Rodada ${round}`,
         winnerTo: isLast
           ? { phase: TournamentPhase.GRAND_FINAL, round: 1, position: 0, slot: MatchSlot.AWAY }
           : {

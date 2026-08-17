@@ -178,7 +178,7 @@ export class TournamentService {
       }
     }
     if (!MANAGED_STATUSES.includes(tournament.status)) {
-      throw new BadRequestException('O campeonato já começou — não dá para inscrever novos times.');
+      throw new BadRequestException('O campeonato já começou, não dá mais para inscrever times.');
     }
 
     const teamCount = await this.prisma.tournamentTeam.count({ where: { tournamentId: id } });
@@ -233,7 +233,7 @@ export class TournamentService {
       throw new ForbiddenException('Você não pode remover este time.');
     }
     if (!MANAGED_STATUSES.includes(tournament.status)) {
-      throw new BadRequestException('O campeonato já começou — use W.O. em vez de remover o time.');
+      throw new BadRequestException('O campeonato já começou. Use W.O. em vez de remover o time.');
     }
 
     await this.prisma.tournamentTeam.delete({ where: { id: teamId } });
@@ -469,7 +469,7 @@ export class TournamentService {
       ...plan,
       homeSeed: undefined,
       awaySeed: undefined,
-      label: `Mata-mata — ${knockoutRoundLabel(plan.round, knockoutRounds)}`,
+      label: `Mata-mata · ${knockoutRoundLabel(plan.round, knockoutRounds)}`,
     }));
 
     return [...plans, ...knockout];

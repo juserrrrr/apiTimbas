@@ -83,7 +83,7 @@ export class DemoService {
     return this.tournamentSummary(
       tournament.id,
       dto.stage === 'PARTIAL'
-        ? `${played} partidas simuladas — metade da chave preenchida.`
+        ? `${played} partidas simuladas, metade da chave preenchida.`
         : `${played} partidas simuladas até sair o campeão.`,
     );
   }

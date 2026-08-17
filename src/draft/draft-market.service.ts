@@ -34,7 +34,7 @@ export class DraftMarketService {
       return this.buyFreeAgent(league.id, league.name, roster.id, actor, player);
     }
 
-    if (!player.rosterId) throw new BadRequestException('Esse jogador está livre — use a compra direta.');
+    if (!player.rosterId) throw new BadRequestException('Esse jogador está livre. Use a compra direta.');
 
     const squadSize = await this.prisma.draftPlayer.count({ where: { rosterId: roster.id } });
     if (dto.kind === TransferOfferKind.BUY_FROM_ROSTER && squadSize >= league.rosterSize) {
@@ -99,7 +99,7 @@ export class DraftMarketService {
             offer.fromRoster.userId,
             offer.toRoster!.userId,
             offer.price,
-            `Transferência de ${current.name} — ${league.name}`,
+            `Transferência de ${current.name} na ${league.name}`,
             { type: 'draftTransfer', id: offer.id },
             tx,
           );
@@ -174,7 +174,7 @@ export class DraftMarketService {
             userId: actor.id,
             amount: refund,
             type: WalletTxType.DRAFT_SALE,
-            description: `Venda de ${player.name} — ${league.name}`,
+            description: `Venda de ${player.name} na ${league.name}`,
             referenceType: 'draftPlayer',
             referenceId: playerId,
           },
@@ -224,7 +224,7 @@ export class DraftMarketService {
             userId: actor.id,
             amount: player.price,
             type: WalletTxType.DRAFT_PURCHASE,
-            description: `Contratação de ${player.name} — ${leagueName}`,
+            description: `Contratação de ${player.name} na ${leagueName}`,
             referenceType: 'draftPlayer',
             referenceId: player.id,
           },

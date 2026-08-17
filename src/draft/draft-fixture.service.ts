@@ -283,7 +283,7 @@ export class DraftFixtureService {
         userId,
         amount,
         type: scored > conceded ? WalletTxType.MATCH_WIN : scored === conceded ? WalletTxType.MATCH_DRAW : WalletTxType.MATCH_LOSS,
-        description: `${label} na rodada — ${league.name}`,
+        description: `${label} na rodada da ${league.name}`,
         referenceType: 'draftMatch',
         referenceId: matchId,
       },

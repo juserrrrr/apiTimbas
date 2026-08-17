@@ -667,8 +667,7 @@ model AiSettings {
   scoreReaderProvider   AiProvider    @default(OPENAI)
   scoreReaderModel      String?
   scoreReadMode         ScoreReadMode @default(VISION)
-  ocrBaseUrl            String?
-  ocrEngine             String?
+  ocrLanguage           String        @default("por")
   timeoutMs             Int           @default(45000)
   maxImageBytes         Int           @default(4194304)
   lastCheckedAt         DateTime?
@@ -676,6 +675,68 @@ model AiSettings {
   lastCheckMessage      String?
   updatedByDiscordId    String?
   updatedAt             DateTime      @updatedAt
+}
+
+enum CatalogSource {
+  MANUAL
+  FOOTBALL_DATA
+  GENERIC
+}
+
+model CatalogCompetition {
+  id         String        @id @default(cuid())
+  code       String        @unique
+  name       String
+  country    String?
+  source     CatalogSource @default(MANUAL)
+  sourcePath String?
+  lastSyncAt DateTime?
+  lastSyncOk Boolean?
+  lastSyncMessage String?
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+  teams      CatalogTeam[]
+}
+
+model CatalogTeam {
+  id            String             @id @default(cuid())
+  competitionId String
+  competition   CatalogCompetition @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+  externalId    String?
+  name          String
+  shortName     String?
+  crestUrl      String?
+  source        CatalogSource      @default(MANUAL)
+  syncedAt      DateTime?
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+  players       CatalogPlayer[]
+
+  @@unique([competitionId, name])
+  @@index([competitionId])
+}
+
+model CatalogPlayer {
+  id          String        @id @default(cuid())
+  teamId      String
+  team        CatalogTeam   @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  externalId  String?
+  name        String
+  position    String
+  overall     Int           @default(70)
+  nationality String?
+  birthDate   DateTime?
+  photoUrl    String?
+  price       Int           @default(100)
+  active      Boolean       @default(true)
+  source      CatalogSource @default(MANUAL)
+  syncedAt    DateTime?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@unique([teamId, name])
+  @@index([teamId, position])
+  @@index([name])
 }
 
 model MatchProof {

@@ -22,6 +22,7 @@ import { ScoreReaderModule } from './score-reader/score-reader.module';
 import { TournamentModule } from './tournament/tournament.module';
 import { DraftModule } from './draft/draft.module';
 import { DemoModule } from './demo/demo.module';
+import { PlayerCatalogModule } from './player-catalog/player-catalog.module';
 
 @Module({
   imports: [
@@ -60,6 +61,7 @@ import { DemoModule } from './demo/demo.module';
     TournamentModule,
     DraftModule,
     DemoModule,
+    PlayerCatalogModule,
   ],
   controllers: [],
   providers: [{ provide: APP_GUARD, useClass: AppThrottlerGuard }],

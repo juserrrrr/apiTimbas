@@ -66,11 +66,6 @@ export class AiProviderRegistry {
     return this.apiKeyOf(provider) !== null;
   }
 
-  ocrApiKey(): string | null {
-    const key = process.env.OCR_API_KEY;
-    return key && key.trim() ? key.trim() : null;
-  }
-
   resolve(provider: AiProvider, model?: string | null, fallbackModel?: string | null): ResolvedProvider | null {
     const apiKey = this.apiKeyOf(provider);
     if (!apiKey) return null;

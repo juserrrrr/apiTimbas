@@ -33,6 +33,6 @@ export const UNAVAILABLE_READING: ScoreReading = {
   homeScore: null,
   awayScore: null,
   confidence: 0,
-  notes: 'Leitura automática desativada — a prova precisa de aprovação manual.',
+  notes: 'Leitura automática desativada. A prova precisa de aprovação manual.',
   raw: null,
 };

@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ScoreReadMode } from '@prisma/client';
 import { AiSettingsService } from '../ai/ai-settings.service';
 import { ChatClient, describeAiError } from '../ai/chat.client';
-import { extractText } from './ocr.client';
+import { LocalOcrService } from './local-ocr.service';
 import { DetectedScoreboard, ScoreReadRequest, ScoreReading, UNAVAILABLE_READING } from './score-reader.types';
 import { SCOREBOARD_SYSTEM_PROMPT, buildScoreboardPrompt, parseScoreboard } from './scoreboard.prompt';
 
@@ -15,6 +15,7 @@ export class ScoreReaderService {
   constructor(
     private readonly settings: AiSettingsService,
     private readonly chat: ChatClient,
+    private readonly ocr: LocalOcrService,
   ) {}
 
   async read(request: ScoreReadRequest): Promise<ScoreReading> {
@@ -28,7 +29,7 @@ export class ScoreReaderService {
     if (bytes > config.maxImageBytes) {
       return {
         ...UNAVAILABLE_READING,
-        notes: `Imagem de ${Math.round(bytes / 1024)}KB acima do limite de leitura automática — aprovação manual necessária.`,
+        notes: `Imagem de ${Math.round(bytes / 1024)}KB acima do limite da leitura automática, então a prova vai para aprovação manual.`,
       };
     }
 
@@ -98,14 +99,7 @@ export class ScoreReaderService {
     config: Awaited<ReturnType<AiSettingsService['scoreReader']>>,
     request: ScoreReadRequest,
   ): Promise<DetectedScoreboard | null> {
-    const extractedText = await extractText({
-      baseUrl: config.ocrBaseUrl!,
-      apiKey: config.ocrApiKey,
-      engine: config.ocrEngine,
-      timeoutMs: config.timeoutMs,
-      imageBase64: request.imageBase64,
-      mimeType: request.mimeType,
-    });
+    const extractedText = await this.ocr.read(request.imageBase64, request.mimeType, config.ocrLanguage);
 
     if (!extractedText) {
       return {
