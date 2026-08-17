@@ -48,6 +48,11 @@ logged in `DraftBudgetEntry`, which dies with the league. Voluntary spending is
 blocked without cash; salary is an obligation, so it goes through and leaves the
 roster in the red, which blocks signings until it recovers.
 
+In `REPORTED` mode nobody simulates the match, so goals only exist if someone
+types them: `report` takes an optional list of scorers, checked against the two
+squads and against the score, and that is what fills the league's top scorers.
+`SIMULATED` fills the same columns from the engine.
+
 Auctions are open bids. The leader's money leaves the budget on the bid and is
 refunded when someone outbids, so nobody wins an auction without the cash. A bid
 inside the anti-snipe window pushes the deadline, and closing happens at the

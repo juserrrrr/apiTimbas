@@ -427,6 +427,25 @@ export class ReviewDraftProofDto {
   note?: string;
 }
 
+export class ScorerDto {
+  @IsString()
+  playerId: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(20)
+  goals?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(20)
+  assists?: number;
+}
+
 export class ReportDraftResultDto {
   @Type(() => Number)
   @IsInt()
@@ -449,4 +468,13 @@ export class ReportDraftResultDto {
   @IsString()
   @MaxLength(40)
   mimeType?: string;
+
+  /// Quem marcou e quem deu assistência. É o que alimenta a artilharia no modo
+  /// real, onde o servidor não joga a partida e não sabe sozinho.
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(40)
+  @ValidateNested({ each: true })
+  @Type(() => ScorerDto)
+  scorers?: ScorerDto[];
 }

@@ -14,7 +14,7 @@ import { PlayerPerformance, SimulatedMatch } from '../football/match-simulation'
 import { PrismaService } from '../prisma/prisma.service';
 import { ScoreReaderService } from '../score-reader/score-reader.service';
 import { DraftAccessService } from './draft-access.service';
-import { ReportDraftResultDto } from './dto/draft.dto';
+import { ReportDraftResultDto, ScorerDto } from './dto/draft.dto';
 
 const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 const MAX_IMAGE_BYTES = 3 * 1024 * 1024;
@@ -55,6 +55,27 @@ export class DraftFixtureService {
     });
   }
 
+  /// Artilharia da liga: gol primeiro, assistência como desempate, e só quem
+  /// entrou em campo aparece.
+  async scorers(leagueId: string) {
+    return this.prisma.draftPlayer.findMany({
+      where: { leagueId, OR: [{ goals: { gt: 0 } }, { assists: { gt: 0 } }] },
+      orderBy: [{ goals: 'desc' }, { assists: 'desc' }, { name: 'asc' }],
+      take: 60,
+      select: {
+        id: true,
+        name: true,
+        position: true,
+        goals: true,
+        assists: true,
+        appearances: true,
+        rating: true,
+        photoUrl: true,
+        roster: { select: { id: true, name: true, tag: true, logoUrl: true } },
+      },
+    });
+  }
+
   async report(leagueId: string, matchId: string, dto: ReportDraftResultDto, actor: Actor) {
     const match = await this.prisma.draftMatch.findFirst({
       where: { id: matchId, leagueId },
@@ -75,11 +96,13 @@ export class DraftFixtureService {
       throw new ForbiddenException('Só quem joga a partida ou a organização pode lançar o resultado.');
     }
 
+    const scorers = await this.checkScorers(match, dto);
+
     if (!dto.imageBase64) {
       if (!access.canModerate) {
         throw new BadRequestException('Envie a foto do placar para validar o resultado.');
       }
-      const settled = await this.settle(matchId, dto.homeScore, dto.awayScore, actor.discordId);
+      const settled = await this.settle(matchId, dto.homeScore, dto.awayScore, actor.discordId, undefined, scorers);
       return { match: settled, proof: null, autoApproved: true };
     }
 
@@ -125,7 +148,7 @@ export class DraftFixtureService {
       access.canModerate || (reading.available && agrees && reading.confidence >= AUTO_APPROVE_MIN_CONFIDENCE);
     if (!autoApprove) return { match: null, proof, autoApproved: false };
 
-    const settled = await this.approveProof(proof.id, actor.discordId);
+    const settled = await this.approveProof(proof.id, actor.discordId, undefined, scorers);
     return { match: settled, proof, autoApproved: true };
   }
 
@@ -197,7 +220,12 @@ export class DraftFixtureService {
     return proof;
   }
 
-  private async approveProof(proofId: string, reviewedByDiscordId: string, note?: string) {
+  private async approveProof(
+    proofId: string,
+    reviewedByDiscordId: string,
+    note?: string,
+    scorers?: ScorerDto[],
+  ) {
     const proof = await this.prisma.matchProof.update({
       where: { id: proofId },
       data: {
@@ -212,6 +240,8 @@ export class DraftFixtureService {
       proof.claimedHomeScore,
       proof.claimedAwayScore,
       proof.submittedByDiscordId,
+      undefined,
+      scorers,
     );
   }
 
@@ -222,12 +252,45 @@ export class DraftFixtureService {
     return this.settle(matchId, result.homeScore, result.awayScore, 'simulacao', result.performances);
   }
 
+  /// Confere os autores contra o placar e contra o elenco: gol de quem não jogava
+  /// ali, ou soma diferente do placar, é erro de digitação e volta para quem
+  /// lançou.
+  private async checkScorers(
+    match: { id: string; homeRosterId: string; awayRosterId: string },
+    dto: ReportDraftResultDto,
+  ): Promise<ScorerDto[] | undefined> {
+    const scorers = (dto.scorers ?? []).filter((entry) => (entry.goals ?? 0) > 0 || (entry.assists ?? 0) > 0);
+    if (scorers.length === 0) return undefined;
+
+    const players = await this.prisma.draftPlayer.findMany({
+      where: { id: { in: scorers.map((entry) => entry.playerId) } },
+      select: { id: true, name: true, rosterId: true },
+    });
+    const byId = new Map(players.map((player) => [player.id, player]));
+
+    let homeGoals = 0;
+    let awayGoals = 0;
+    for (const entry of scorers) {
+      const player = byId.get(entry.playerId);
+      if (!player) throw new BadRequestException('Algum jogador da lista de gols não existe.');
+      if (player.rosterId === match.homeRosterId) homeGoals += entry.goals ?? 0;
+      else if (player.rosterId === match.awayRosterId) awayGoals += entry.goals ?? 0;
+      else throw new BadRequestException(`${player.name} não joga por nenhum dos dois elencos.`);
+    }
+
+    if (homeGoals > dto.homeScore || awayGoals > dto.awayScore) {
+      throw new BadRequestException('A soma dos gols dos autores passou do placar informado.');
+    }
+    return scorers;
+  }
+
   private async settle(
     matchId: string,
     homeScore: number,
     awayScore: number,
     reportedByDiscordId: string,
     performances?: PlayerPerformance[],
+    scorers?: ScorerDto[],
   ) {
     const match = await this.prisma.draftMatch.findUniqueOrThrow({
       where: { id: matchId },
@@ -254,7 +317,10 @@ export class DraftFixtureService {
         await this.paySalaries(tx, match.league, match.homeRosterId, match.round);
         await this.paySalaries(tx, match.league, match.awayRosterId, match.round);
         if (performances) await this.applyPerformances(tx, performances);
-        else await this.bumpAppearances(tx, match.homeRosterId, match.awayRosterId);
+        else {
+          await this.bumpAppearances(tx, match.homeRosterId, match.awayRosterId);
+          await this.applyScorers(tx, scorers);
+        }
         await this.advanceRound(tx, match.league.id);
 
         return updated;
@@ -367,6 +433,18 @@ export class DraftFixtureService {
           lastRating: performance.rating,
           form: nextForm(player.form, performance.rating),
           ...(attributes ? { ...attributes, overall: overallFromAttributes(player.position, attributes) } : {}),
+        },
+      });
+    }
+  }
+
+  private async applyScorers(tx: Prisma.TransactionClient, scorers?: ScorerDto[]) {
+    for (const entry of scorers ?? []) {
+      await tx.draftPlayer.update({
+        where: { id: entry.playerId },
+        data: {
+          goals: { increment: entry.goals ?? 0 },
+          assists: { increment: entry.assists ?? 0 },
         },
       });
     }

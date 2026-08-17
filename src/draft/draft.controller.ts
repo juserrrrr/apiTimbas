@@ -244,6 +244,11 @@ export class DraftController {
     return this.simulation.playOne(id, matchId);
   }
 
+  @Get(':id/scorers')
+  scorers(@Param('id') id: string) {
+    return this.fixtures.scorers(id);
+  }
+
   @Get(':id/matches')
   matches(@Param('id') id: string, @Query('round') round?: string) {
     return this.fixtures.listMatches(id, round ? Number(round) : undefined);
