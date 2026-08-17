@@ -27,7 +27,8 @@ export interface ChatRequest {
 const MAX_RETRIES = 2;
 const MAX_RETRY_DELAY_MS = 65_000;
 
-export type UnsupportedParam = 'max_tokens' | 'temperature';
+export const UNSUPPORTED_PARAMS = ['max_tokens', 'temperature'] as const;
+export type UnsupportedParam = (typeof UNSUPPORTED_PARAMS)[number];
 
 @Injectable()
 export class ChatClient {
@@ -124,16 +125,21 @@ export class ChatClient {
   /// provedor dizer: ele recusa uma vez, guardamos a manha daquele modelo e a
   /// chamada é refeita. Da segunda vez em diante já sai certa.
   private async callOpenAi(request: ChatRequest, model: string, timeoutMs: number): Promise<string> {
-    try {
-      return await this.postOpenAi(request, model, timeoutMs);
-    } catch (error) {
-      const param = unsupportedParamFrom(error);
-      if (!param || this.quirksOf(model).has(param)) throw error;
+    /// Uma volta por parâmetro conhecido: o modelo que recusa os dois aprende os
+    /// dois nesta mesma chamada, em vez de falhar uma vez para cada.
+    for (let attempt = 0; attempt <= UNSUPPORTED_PARAMS.length; attempt++) {
+      try {
+        return await this.postOpenAi(request, model, timeoutMs);
+      } catch (error) {
+        const param = unsupportedParamFrom(error);
+        if (!param || this.quirksOf(model).has(param)) throw error;
 
-      this.quirksOf(model).add(param);
-      this.logger.warn(`[AI] ${model} não aceita ${param}; refazendo a chamada sem ele`);
-      return this.postOpenAi(request, model, timeoutMs);
+        this.quirksOf(model).add(param);
+        this.logger.warn(`[AI] ${model} não aceita ${param}; refazendo a chamada sem ele`);
+      }
     }
+
+    throw new Error(`Chamada de IA falhou: ${model} recusou o corpo montado`);
   }
 
   private quirksOf(model: string): Set<UnsupportedParam> {
