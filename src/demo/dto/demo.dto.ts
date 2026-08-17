@@ -58,7 +58,7 @@ export class BuildDemoDraftDto {
   @Type(() => Number)
   @IsInt()
   @Min(1)
-  @Max(11)
+  @Max(26)
   rosterSize?: number;
 
   @IsOptional()
@@ -69,7 +69,7 @@ export class BuildDemoDraftDto {
   @Type(() => Number)
   @IsInt()
   @Min(0)
-  @Max(10000000)
+  @Max(20000000000)
   startingBudget?: number;
 
   @IsOptional()
