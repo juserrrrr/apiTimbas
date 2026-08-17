@@ -8,6 +8,7 @@ import {
   TournamentStatus,
 } from '@prisma/client';
 import { Actor } from '../common/actor.service';
+import { marketValueFor, salaryFor } from '../football/market-value';
 import { DraftFixtureService } from '../draft/draft-fixture.service';
 import { DraftPickService } from '../draft/draft-pick.service';
 import { DraftSimulationService } from '../draft/draft-simulation.service';
@@ -123,7 +124,7 @@ export class DemoService {
 
   private async buildDraftLeagueInner(dto: BuildDemoDraftDto, actor: Actor) {
     const rosterCount = dto.rosterCount ?? 4;
-    const rosterSize = dto.rosterSize ?? 5;
+    const rosterSize = dto.rosterSize ?? 11;
     const poolSize = Math.max(rosterCount * rosterSize + 10, 30);
 
     const league = await this.prisma.draftLeague.create({
@@ -152,8 +153,8 @@ export class DemoService {
         position: DEMO_POSITIONS[index % DEMO_POSITIONS.length],
         overall: 62 + ((index * 7) % 32),
         realTeam: DEMO_TEAM_NAMES[index % DEMO_TEAM_NAMES.length],
-        price: 80 + ((index * 13) % 320),
-        salary: Math.max(1, Math.round((80 + ((index * 13) % 320)) / 10)),
+        price: marketValueFor(62 + ((index * 7) % 32)),
+        salary: salaryFor(marketValueFor(62 + ((index * 7) % 32))),
         pace: 55 + ((index * 5) % 40),
         shooting: 55 + ((index * 7) % 40),
         passing: 55 + ((index * 11) % 40),
@@ -163,13 +164,15 @@ export class DemoService {
       })),
     });
 
-    const managers = await this.ensureDemoUsers(rosterCount);
+    // O primeiro elenco é de quem apertou o botão: sem isso não dá para abrir a
+    // aba "Meu elenco" e ver a liga do lado de dentro.
+    const managers = [actor, ...(await this.ensureDemoUsers(rosterCount - 1))];
     for (const [index, manager] of managers.entries()) {
       await this.prisma.draftRoster.create({
         data: {
           leagueId: league.id,
           userId: manager.id,
-          name: DEMO_TEAM_NAMES[index],
+          name: index === 0 ? `${DEMO_TEAM_NAMES[index]} (seu)` : DEMO_TEAM_NAMES[index],
           tag: DEMO_TEAM_NAMES[index].slice(0, 3).toUpperCase(),
           draftOrder: index + 1,
           budget: league.startingBudget,
@@ -555,6 +558,7 @@ export class DemoService {
         caixaDosElencos: rosters.map(
           (roster) => `${roster.name}: ${roster.budget} (entrou ${roster.earned}, saiu ${roster.spent}), ${roster.points} pts`,
         ),
+        seuElenco: rosters[0]?.name ?? 'nenhum',
         artilheiro: topScorer
           ? `${topScorer.name}, ${topScorer.goals} gol(s), ${topScorer.assists} assist., nota ${topScorer.rating ?? '-'}`
           : 'ninguém marcou ainda',

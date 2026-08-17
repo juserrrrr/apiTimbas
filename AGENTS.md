@@ -40,6 +40,12 @@ src/
 other. They share `score-reader/` and the `MatchProof` table (two nullable FKs, one
 per domain).
 
+A squad is a real squad: `rosterSize` defaults to 25, the same as EA FC, with 11
+starters picked by the formation and the rest on the bench and in reserve. Money is
+in reais on a football scale, not coins: `football/market-value.ts` prices a player
+from his overall on an exponential curve, so 70 overall costs around R$ 3.6 mi and
+90 costs around R$ 106 mi, and the salary per round is half a percent of that.
+
 Money is not shared. `economy/` is the account wallet, one balance per user, and
 only `tournament/` pays into it. A draft league runs on its own cash: `DraftRoster.
 budget`, seeded from `DraftLeague.startingBudget` when the draft starts, spent on

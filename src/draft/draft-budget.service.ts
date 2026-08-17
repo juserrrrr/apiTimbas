@@ -143,8 +143,3 @@ export class DraftBudgetService {
     });
   }
 }
-
-/// Salário padrão de um jogador: um décimo do preço, com piso de 1.
-export function salaryFor(price: number): number {
-  return Math.max(1, Math.round(price / 10));
-}

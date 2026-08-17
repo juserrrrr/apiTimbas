@@ -3,6 +3,7 @@ import { CatalogSource, DraftLeagueStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AttributeAiService } from './attribute-ai.service';
 import { ATTRIBUTE_KEYS } from '../football/attributes';
+import { marketValueFor, salaryFor } from '../football/market-value';
 import { parsePlayerLines, parseTeamLines } from './text-parser';
 import {
   BulkTeamsDto,
@@ -79,7 +80,12 @@ export class PlayerCatalogService {
       }
       const team = await this.defaultTeam(null);
       await this.prisma.catalogPlayer.create({
-        data: { ...player, teamId: team.id, source: CatalogSource.MANUAL },
+        data: {
+          ...player,
+          teamId: team.id,
+          price: player.price ?? marketValueFor(player.overall ?? 70),
+          source: CatalogSource.MANUAL,
+        },
       });
       created++;
     }
@@ -101,7 +107,7 @@ export class PlayerCatalogService {
         name: dto.name,
         position: dto.position,
         overall: dto.overall ?? 70,
-        price: dto.price ?? 100,
+        price: dto.price ?? marketValueFor(dto.overall ?? 70),
         nationality: dto.nationality,
         source: CatalogSource.MANUAL,
       },
@@ -325,6 +331,7 @@ export class PlayerCatalogService {
         data: {
           ...row.attributes,
           overall: row.overall,
+          price: marketValueFor(row.overall),
           attributesModel: estimation.model,
           attributesNote: row.note || null,
           attributesAt: now,
@@ -447,7 +454,7 @@ export class PlayerCatalogService {
         birthDate: player.birthDate,
         photoUrl: player.photoUrl,
         price: player.price,
-        salary: Math.max(1, Math.round(player.price / 10)),
+        salary: salaryFor(player.price),
         pace: player.pace,
         shooting: player.shooting,
         passing: player.passing,

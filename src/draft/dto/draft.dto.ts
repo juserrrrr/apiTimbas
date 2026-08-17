@@ -96,7 +96,7 @@ export class CreateDraftLeagueDto {
   @Type(() => Number)
   @IsInt()
   @Min(0)
-  @Max(10000000)
+  @Max(20000000000)
   startingBudget?: number;
 
   @IsOptional()
@@ -132,21 +132,21 @@ export class CreateDraftLeagueDto {
   @Type(() => Number)
   @IsInt()
   @Min(0)
-  @Max(100000)
+  @Max(1000000000)
   coinsWin?: number;
 
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(0)
-  @Max(100000)
+  @Max(1000000000)
   coinsDraw?: number;
 
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(0)
-  @Max(100000)
+  @Max(1000000000)
   coinsLoss?: number;
 
   @IsOptional()
@@ -260,7 +260,7 @@ export class DraftPlayerInputDto {
   @Type(() => Number)
   @IsInt()
   @Min(0)
-  @Max(1000000)
+  @Max(2000000000)
   price?: number;
 }
 
@@ -341,7 +341,7 @@ export class CreateAuctionDto {
   @Type(() => Number)
   @IsInt()
   @Min(1)
-  @Max(10000000)
+  @Max(2000000000)
   startingBid?: number;
 
   @IsOptional()
@@ -356,7 +356,7 @@ export class PlaceBidDto {
   @Type(() => Number)
   @IsInt()
   @Min(1)
-  @Max(10000000)
+  @Max(2000000000)
   amount: number;
 }
 
@@ -392,7 +392,7 @@ export class CreateOfferDto {
   @Type(() => Number)
   @IsInt()
   @Min(0)
-  @Max(1000000)
+  @Max(2000000000)
   price?: number;
 
   @IsOptional()

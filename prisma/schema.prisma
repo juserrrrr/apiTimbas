@@ -810,7 +810,7 @@ model CatalogPlayer {
   nationality     String?
   birthDate       DateTime?
   photoUrl        String?
-  price           Int           @default(100)
+  price           Int           @default(500000)
   active          Boolean       @default(true)
   source          CatalogSource @default(MANUAL)
   syncedAt        DateTime?
@@ -997,7 +997,7 @@ model DraftLeague {
   description                String?
   status                     DraftLeagueStatus   @default(SETUP)
   orderType                  DraftOrderType      @default(SNAKE)
-  rosterSize                 Int                 @default(11)
+  rosterSize                 Int                 @default(25)
   formation                  String              @default("4-3-3")
   pickSeconds                Int                 @default(120)
   matchDays                  Int[]               @default([0, 3])
@@ -1010,7 +1010,7 @@ model DraftLeague {
   pointsDraw                 Int                 @default(1)
   // O dinheiro é da liga, não da conta: cada elenco começa com este caixa, que
   // nasce de novo a cada draft. Premiação de rodada e salário mexem nele.
-  startingBudget             Int                 @default(1000)
+  startingBudget             Int                 @default(200000000)
   paySalaries                Boolean             @default(true)
   // Leilão: lance aberto, prazo em horas, incremento mínimo em porcentagem do
   // lance atual e prorrogação quando alguém dá lance no fim, para não virar
@@ -1019,9 +1019,9 @@ model DraftLeague {
   auctionHours               Int                 @default(24)
   auctionMinIncrementPercent Int                 @default(5)
   auctionAntiSnipeMinutes    Int                 @default(5)
-  coinsWin                   Int                 @default(60)
-  coinsDraw                  Int                 @default(25)
-  coinsLoss                  Int                 @default(10)
+  coinsWin                   Int                 @default(3000000)
+  coinsDraw                  Int                 @default(1000000)
+  coinsLoss                  Int                 @default(400000)
   resultMode                 DraftResultMode     @default(REPORTED)
   transferWindowOpen         Boolean             @default(true)
   // O mercado fecha esse tanto de minutos antes do horário da rodada e reabre
@@ -1094,7 +1094,7 @@ model DraftPlayer {
   nationality     String?
   birthDate       DateTime?
   photoUrl        String?
-  price           Int             @default(100)
+  price           Int             @default(500000)
   pace            Int?
   shooting        Int?
   passing         Int?

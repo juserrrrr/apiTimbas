@@ -7,7 +7,8 @@ import {
   TransferOfferStatus,
 } from '@prisma/client';
 import { Actor } from '../common/actor.service';
-import { DraftBudgetService, salaryFor } from './draft-budget.service';
+import { DraftBudgetService } from './draft-budget.service';
+import { salaryFor } from '../football/market-value';
 import { PrismaService } from '../prisma/prisma.service';
 import { DraftAccessService } from './draft-access.service';
 import { CreateOfferDto } from './dto/draft.dto';
