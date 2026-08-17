@@ -7,9 +7,9 @@ export interface AiProviderDefinition {
   envKey: string;
   baseUrl: string;
   defaultModel: string;
-  /// Modelos que o painel oferece no select. O campo continua livre: isto é
-  /// atalho, não trava. Só entram modelos comuns, porque os de raciocínio não
-  /// aceitam o corpo que o ChatClient monta.
+  /// Modelos que o painel oferece no select, do mais novo para o mais barato.
+  /// O campo continua livre, porque provedor lança modelo toda semana e esta
+  /// lista envelhece: ela é atalho, não trava.
   models: string[];
   supportsVision: boolean;
   wire: 'gemini' | 'openai';
@@ -27,8 +27,15 @@ export const AI_PROVIDERS: Record<AiProvider, AiProviderDefinition> = {
     label: 'Google Gemini',
     envKey: 'GEMINI_API_KEY',
     baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
-    defaultModel: 'gemini-2.5-flash',
-    models: ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.5-pro'],
+    defaultModel: 'gemini-3.7-flash',
+    models: [
+      'gemini-3.7-flash',
+      'gemini-3.6-flash',
+      'gemini-3.5-flash',
+      'gemini-3.5-flash-lite',
+      'gemini-3.1-flash-lite',
+      'gemini-2.5-pro',
+    ],
     supportsVision: true,
     wire: 'gemini',
     docsUrl: 'https://aistudio.google.com/apikey',
@@ -49,8 +56,8 @@ export const AI_PROVIDERS: Record<AiProvider, AiProviderDefinition> = {
     label: 'OpenAI',
     envKey: 'OPENAI_API_KEY',
     baseUrl: 'https://api.openai.com/v1',
-    defaultModel: 'gpt-4o-mini',
-    models: ['gpt-4o-mini', 'gpt-4o', 'gpt-4.1-mini', 'gpt-4.1'],
+    defaultModel: 'gpt-5.6-luna',
+    models: ['gpt-5.6', 'gpt-5.6-terra', 'gpt-5.6-luna'],
     supportsVision: true,
     wire: 'openai',
     docsUrl: 'https://platform.openai.com/api-keys',

@@ -27,10 +27,14 @@ export interface ChatRequest {
 const MAX_RETRIES = 2;
 const MAX_RETRY_DELAY_MS = 65_000;
 
+export type UnsupportedParam = 'max_tokens' | 'temperature';
+
 @Injectable()
 export class ChatClient {
   private readonly logger = new Logger(ChatClient.name);
   private blockedUntil = 0;
+  /// O que cada modelo já recusou, para não errar de novo na próxima chamada.
+  private readonly quirks = new Map<string, Set<UnsupportedParam>>();
 
   async complete(request: ChatRequest): Promise<string> {
     try {
@@ -115,7 +119,32 @@ export class ChatClient {
       .join('');
   }
 
+  /// Modelo de raciocínio recusa `max_tokens` e `temperature`, e cada casa lança
+  /// modelo novo do jeito dela. Em vez de adivinhar pelo nome, deixamos o
+  /// provedor dizer: ele recusa uma vez, guardamos a manha daquele modelo e a
+  /// chamada é refeita. Da segunda vez em diante já sai certa.
   private async callOpenAi(request: ChatRequest, model: string, timeoutMs: number): Promise<string> {
+    try {
+      return await this.postOpenAi(request, model, timeoutMs);
+    } catch (error) {
+      const param = unsupportedParamFrom(error);
+      if (!param || this.quirksOf(model).has(param)) throw error;
+
+      this.quirksOf(model).add(param);
+      this.logger.warn(`[AI] ${model} não aceita ${param}; refazendo a chamada sem ele`);
+      return this.postOpenAi(request, model, timeoutMs);
+    }
+  }
+
+  private quirksOf(model: string): Set<UnsupportedParam> {
+    const known = this.quirks.get(model);
+    if (known) return known;
+    const fresh = new Set<UnsupportedParam>();
+    this.quirks.set(model, fresh);
+    return fresh;
+  }
+
+  private async postOpenAi(request: ChatRequest, model: string, timeoutMs: number): Promise<string> {
     const content: Array<Record<string, unknown>> = [{ type: 'text', text: request.prompt }];
     if (request.image) {
       content.push({
@@ -123,6 +152,9 @@ export class ChatClient {
         image_url: { url: `data:${request.image.mimeType};base64,${request.image.base64}` },
       });
     }
+
+    const quirks = this.quirksOf(model);
+    const maxTokens = request.maxTokens ?? 2048;
 
     const response = await axios.post(
       `${request.provider.baseUrl}/chat/completions`,
@@ -132,8 +164,10 @@ export class ChatClient {
           ...(request.system ? [{ role: 'system', content: request.system }] : []),
           { role: 'user', content: request.image ? content : request.prompt },
         ],
-        temperature: request.temperature ?? 0.2,
-        max_tokens: request.maxTokens ?? 2048,
+        ...(quirks.has('temperature') ? {} : { temperature: request.temperature ?? 0.2 }),
+        ...(quirks.has('max_tokens')
+          ? { max_completion_tokens: maxTokens }
+          : { max_tokens: maxTokens }),
         ...(request.json ? { response_format: { type: 'json_object' } } : {}),
       },
       {
@@ -169,6 +203,18 @@ export class ChatClient {
     const seconds = Number(Array.isArray(header) ? header[0] : header);
     return Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : 60_000;
   }
+}
+
+/// Lê a recusa do provedor: qual parâmetro do corpo ele não aceita neste modelo.
+/// Só reage a 400, porque 401 e 429 falam de chave e de cota, não de formato.
+export function unsupportedParamFrom(error: unknown): UnsupportedParam | null {
+  const status = (error as { response?: { status?: number } })?.response?.status;
+  if (status !== 400) return null;
+
+  const message = describeAiError(error).toLowerCase();
+  if (message.includes('max_completion_tokens')) return 'max_tokens';
+  if (message.includes('temperature')) return 'temperature';
+  return null;
 }
 
 /// O erro do axios carrega a requisição inteira, e nela vai o header
