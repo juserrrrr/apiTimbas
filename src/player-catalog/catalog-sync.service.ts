@@ -24,6 +24,10 @@ export interface SyncedTeam {
 const FOOTBALL_DATA_BASE = 'https://api.football-data.org/v4';
 const WIKIPEDIA_API = 'https://en.wikipedia.org/w/api.php';
 const WIKIPEDIA_CODE = 'WIKIPEDIA';
+const WIKIPEDIA_HEADERS = {
+  'User-Agent': 'Timbas/1.0 (https://github.com/juserrrrr/apiTimbas)',
+  'Api-User-Agent': 'Timbas/1.0 (https://github.com/juserrrrr/apiTimbas)',
+};
 
 @Injectable()
 export class CatalogSyncService {
@@ -110,17 +114,15 @@ export class CatalogSyncService {
       },
     });
 
-    const fetched = await Promise.allSettled(
-      teams.map((name) => this.fetchWikipediaTeam(name)),
-    );
-    const squads = fetched.flatMap((result) =>
-      result.status === 'fulfilled' ? [result.value] : [],
-    );
-    const failures = fetched.flatMap((result, index) =>
-      result.status === 'rejected'
-        ? [`${teams[index]}: ${describeSyncError(result.reason)}`]
-        : [],
-    );
+    const squads: SyncedTeam[] = [];
+    const failures: string[] = [];
+    for (const name of teams) {
+      try {
+        squads.push(await this.fetchWikipediaTeam(name));
+      } catch (error) {
+        failures.push(`${name}: ${describeWikipediaError(error)}`);
+      }
+    }
     if (squads.length === 0) {
       const message =
         failures.join(' | ') || 'Nenhum elenco foi encontrado na Wikipedia.';
@@ -200,14 +202,17 @@ export class CatalogSyncService {
   private async fetchWikipediaTeam(name: string): Promise<SyncedTeam> {
     const direct = await this.wikipediaPage(name).catch(() => null);
     const titles = await this.wikipediaSearch(name);
-    const candidates = [
-      direct,
-      ...(await Promise.all(
-        titles.map((title) => this.wikipediaPage(title).catch(() => null)),
-      )),
-    ].filter(
-      (page): page is { title: string; wikitext: string } => page !== null,
-    );
+    const candidates: Array<{ title: string; wikitext: string }> = direct
+      ? [direct]
+      : [];
+    for (const title of titles) {
+      const page = await this.wikipediaPage(title).catch(() => null);
+      if (
+        page &&
+        !candidates.some((candidate) => candidate.title === page.title)
+      )
+        candidates.push(page);
+    }
 
     for (const page of candidates) {
       const players = parseSquadWikitext(page.wikitext).map((player) => ({
@@ -246,6 +251,7 @@ export class CatalogSyncService {
         rvslots: 'main',
         titles: name,
       },
+      headers: WIKIPEDIA_HEADERS,
       timeout: 30000,
     });
     const page = response.data?.query?.pages?.[0];
@@ -267,6 +273,7 @@ export class CatalogSyncService {
         srsearch: `${name} football club`,
         srlimit: 5,
       },
+      headers: WIKIPEDIA_HEADERS,
       timeout: 30000,
     });
     const titles = response.data?.query?.search;
@@ -403,4 +410,14 @@ function describeSyncError(error: unknown): string {
   return String(
     message ?? (error as Error)?.message ?? 'Erro desconhecido',
   ).slice(0, 240);
+}
+
+function describeWikipediaError(error: unknown): string {
+  const status = (error as { response?: { status?: number } })?.response
+    ?.status;
+  if (status === 403)
+    return 'a Wikipedia recusou a consulta (403). Tente novamente em alguns minutos.';
+  if (status === 429)
+    return 'a Wikipedia limitou as consultas (429). Tente novamente em alguns minutos.';
+  return String((error as Error)?.message ?? 'Erro desconhecido').slice(0, 240);
 }
