@@ -38,6 +38,17 @@ export class DemoService {
   ) {}
 
   async buildTournament(dto: BuildDemoTournamentDto, actor: Actor) {
+    try {
+      return await this.buildTournamentInner(dto, actor);
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      this.logger.error(`Falha ao gerar campeonato de demonstração (${dto.stage}): ${detail}`, (error as Error)?.stack);
+      if (error instanceof BadRequestException) throw error;
+      throw new BadRequestException(`Falha ao gerar o campeonato no estágio ${dto.stage}: ${detail}`);
+    }
+  }
+
+  private async buildTournamentInner(dto: BuildDemoTournamentDto, actor: Actor) {
     const teamCount = dto.teamCount ?? 8;
     if (teamCount > DEMO_TEAM_NAMES.length) {
       throw new BadRequestException(`Máximo de ${DEMO_TEAM_NAMES.length} times de demonstração.`);
@@ -98,6 +109,19 @@ export class DemoService {
   }
 
   async buildDraftLeague(dto: BuildDemoDraftDto, actor: Actor) {
+    try {
+      return await this.buildDraftLeagueInner(dto, actor);
+    } catch (error) {
+      // O laboratório existe para achar defeito: o erro cru vai para o log com a
+      // pilha, e a tela recebe a causa em vez de "erro interno".
+      const detail = error instanceof Error ? error.message : String(error);
+      this.logger.error(`Falha ao gerar liga de demonstração (${dto.stage}): ${detail}`, (error as Error)?.stack);
+      if (error instanceof BadRequestException) throw error;
+      throw new BadRequestException(`Falha ao gerar a liga no estágio ${dto.stage}: ${detail}`);
+    }
+  }
+
+  private async buildDraftLeagueInner(dto: BuildDemoDraftDto, actor: Actor) {
     const rosterCount = dto.rosterCount ?? 4;
     const rosterSize = dto.rosterSize ?? 5;
     const poolSize = Math.max(rosterCount * rosterSize + 10, 30);
