@@ -1,6 +1,6 @@
 import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
-import { DraftLeague, DraftLeagueStatus, DraftMatchStatus, Prisma } from '@prisma/client';
+import { DraftLeague, DraftLeagueStatus, DraftMatchStatus, DraftStartMode, Prisma } from '@prisma/client';
 import { Actor } from '../common/actor.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { DraftAccessService } from './draft-access.service';
@@ -17,12 +17,117 @@ export class DraftPickService {
     private readonly budget: DraftBudgetService,
   ) {}
 
-  async startDraft(leagueId: string, actor: Actor, shuffle: boolean) {
+  /// Sala de espera do draft ao vivo: cada dono marca presença e, quando o último
+  /// marca, o draft abre sozinho. Vaga aberta não precisa marcar, porque não tem
+  /// ninguém para chegar.
+  async setReady(leagueId: string, ready: boolean, actor: Actor) {
+    const league = await this.access.requireLeague(leagueId);
+    if (league.status !== DraftLeagueStatus.SETUP) {
+      throw new BadRequestException('O draft desta liga já começou.');
+    }
+    const roster = await this.access.requireRoster(leagueId, actor);
+
+    await this.prisma.draftRoster.update({
+      where: { id: roster.id },
+      data: { readyAt: ready ? new Date() : null },
+    });
+
+    const room = await this.waitingRoom(leagueId);
+    if (league.startMode === DraftStartMode.LIVE && room.everyoneReady && room.canOpen) {
+      await this.openDraft(league, true);
+      return { ...(await this.waitingRoom(leagueId)), started: true };
+    }
+    return { ...room, started: false };
+  }
+
+  /// Quem já está pronto, quem falta e se o pool aguenta. É o que a sala mostra.
+  async waitingRoom(leagueId: string) {
+    const league = await this.access.requireLeague(leagueId);
+    const [rosters, freeAgents] = await Promise.all([
+      this.prisma.draftRoster.findMany({
+        where: { leagueId },
+        orderBy: { draftOrder: 'asc' },
+        select: {
+          id: true,
+          name: true,
+          userId: true,
+          readyAt: true,
+          user: { select: { id: true, name: true, avatar: true } },
+        },
+      }),
+      this.prisma.draftPlayer.count({ where: { leagueId, rosterId: null } }),
+    ]);
+
+    const owned = rosters.filter((roster) => roster.userId !== null);
+    const needed = rosters.length * league.rosterSize;
+    const timeArrived = !league.draftStartsAt || league.draftStartsAt.getTime() <= Date.now();
+
+    return {
+      startMode: league.startMode,
+      draftStartsAt: league.draftStartsAt,
+      rosters,
+      readyCount: owned.filter((roster) => roster.readyAt !== null).length,
+      ownedCount: owned.length,
+      vacantCount: rosters.length - owned.length,
+      everyoneReady: owned.length > 0 && owned.every((roster) => roster.readyAt !== null),
+      poolNeeded: needed,
+      poolAvailable: freeAgents,
+      canOpen: rosters.length >= 2 && freeAgents >= needed && timeArrived,
+      waitingForTime: !timeArrived,
+    };
+  }
+
+  /// Na hora marcada, se todo mundo já deu pronto, o draft abre sem ninguém
+  /// precisar clicar de novo.
+  @Cron(CronExpression.EVERY_MINUTE)
+  async openScheduledDrafts() {
+    const leagues = await this.prisma.draftLeague.findMany({
+      where: {
+        status: DraftLeagueStatus.SETUP,
+        startMode: DraftStartMode.LIVE,
+        draftStartsAt: { not: null, lte: new Date() },
+      },
+    });
+
+    for (const league of leagues) {
+      try {
+        const room = await this.waitingRoom(league.id);
+        if (!room.everyoneReady || !room.canOpen) continue;
+        await this.openDraft(league, true);
+        this.logger.log(`Draft da ${league.name} abriu na hora marcada, com todos prontos.`);
+      } catch (error) {
+        this.logger.warn(`Falha ao abrir o draft da liga ${league.id}: ${(error as Error).message}`);
+      }
+    }
+  }
+
+  async startDraft(leagueId: string, actor: Actor, shuffle: boolean, force = false) {
     await this.access.requireManage(leagueId, actor);
     const league = await this.access.requireLeague(leagueId);
     if (league.status !== DraftLeagueStatus.SETUP) {
       throw new BadRequestException('Esta liga já passou da fase de montagem.');
     }
+
+    // No ao vivo, quem não deu pronto ainda pode estar chegando: só o dono da liga
+    // atropela isso, e conscientemente.
+    if (league.startMode === DraftStartMode.LIVE && !force) {
+      const room = await this.waitingRoom(leagueId);
+      const missing = room.rosters.filter((roster) => roster.userId !== null && roster.readyAt === null);
+      if (missing.length > 0) {
+        throw new BadRequestException(
+          `Faltam ${missing.length} time(s) dar pronto: ${missing.map((roster) => roster.name).join(', ')}.`,
+        );
+      }
+      if (room.waitingForTime) {
+        throw new BadRequestException('O draft está marcado para mais tarde. Comece na mão se quiser adiantar.');
+      }
+    }
+
+    return this.openDraft(league, shuffle);
+  }
+
+  private async openDraft(league: DraftLeague, shuffle: boolean) {
+    const leagueId = league.id;
 
     const [rosters, freeAgents] = await Promise.all([
       this.prisma.draftRoster.findMany({ where: { leagueId }, orderBy: { createdAt: 'asc' } }),
@@ -41,7 +146,10 @@ export class DraftPickService {
 
     return this.prisma.$transaction(async (tx) => {
       for (const [index, roster] of ordered.entries()) {
-        await tx.draftRoster.update({ where: { id: roster.id }, data: { draftOrder: index + 1 } });
+        await tx.draftRoster.update({
+          where: { id: roster.id },
+          data: { draftOrder: index + 1, readyAt: null },
+        });
       }
       // Dinheiro é da temporada: começar o draft zera e reparte o caixa de novo.
       await this.budget.seed(leagueId, league.startingBudget, tx);

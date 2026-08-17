@@ -193,7 +193,7 @@ export class DemoService {
       return this.draftSummary(league.id, 'Elencos inscritos e pool carregado, draft ainda não começou.');
     }
 
-    await this.picks.startDraft(league.id, actor, false);
+    await this.picks.startDraft(league.id, actor, false, true);
     if (dto.stage === 'DRAFTING') {
       return this.draftSummary(league.id, 'Draft aberto com o cronômetro rodando.');
     }

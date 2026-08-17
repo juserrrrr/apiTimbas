@@ -40,6 +40,13 @@ src/
 other. They share `score-reader/` and the `MatchProof` table (two nullable FKs, one
 per domain).
 
+`startMode` decides how the draft opens. `LIVE` is the default: every owner marks
+ready in the waiting room and the draft opens the instant the last one does, since
+picking together is half the point. A scheduled `draftStartsAt` holds it back until
+that time, a minute cron opens it when both conditions are met, and the league owner
+can always force it. `ASYNC` is the old behaviour, the owner opens it and the clock
+picks for whoever is missing. Vacant teams never need to mark ready.
+
 A roster can have no owner: `DraftRoster.userId` is nullable, and a vacant team
 lets the league start without waiting for everyone. The vacant team picks
 instantly in the draft instead of burning the clock, loses 3 to 0 by walkover in

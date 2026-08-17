@@ -930,6 +930,14 @@ enum DraftOrderType {
   LINEAR
 }
 
+/// LIVE: todo mundo marca presença e o draft só abre quando os donos estão
+/// prontos, porque escolher junto é metade da graça.
+/// ASYNC: o dono abre quando quiser e quem não aparecer é escolhido pelo relógio.
+enum DraftStartMode {
+  LIVE
+  ASYNC
+}
+
 /// REPORTED: o placar vem de quem jogou, com prova por foto.
 /// SIMULATED: o job da rodada joga a partida com atributos, forma e tática.
 enum DraftResultMode {
@@ -997,6 +1005,8 @@ model DraftLeague {
   description                String?
   status                     DraftLeagueStatus   @default(SETUP)
   orderType                  DraftOrderType      @default(SNAKE)
+  startMode                  DraftStartMode      @default(LIVE)
+  draftStartsAt              DateTime?
   rosterSize                 Int                 @default(25)
   formation                  String              @default("4-3-3")
   pickSeconds                Int                 @default(120)
@@ -1142,6 +1152,7 @@ model DraftRoster {
   pressing        TacticIntensity    @default(MEDIUM)
   tempo           TacticIntensity    @default(MEDIUM)
   tacticsAt       DateTime?
+  readyAt         DateTime?
   budget          Int                @default(0)
   earned          Int                @default(0)
   spent           Int                @default(0)

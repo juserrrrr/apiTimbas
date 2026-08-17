@@ -44,6 +44,7 @@ import {
   RespondOfferDto,
   ReviewDraftProofDto,
   SetLineupDto,
+  SetReadyDto,
   SetTacticsDto,
   SignFromBaseDto,
   UpdateDraftLeagueDto,
@@ -151,8 +152,23 @@ export class DraftController {
   }
 
   @Post(':id/start')
-  async start(@Req() req: AuthedRequest, @Param('id') id: string, @Query('shuffle') shuffle?: string) {
-    return this.picks.startDraft(id, await this.me(req), shuffle !== 'false');
+  async start(
+    @Req() req: AuthedRequest,
+    @Param('id') id: string,
+    @Query('shuffle') shuffle?: string,
+    @Query('force') force?: string,
+  ) {
+    return this.picks.startDraft(id, await this.me(req), shuffle !== 'false', force === 'true');
+  }
+
+  @Get(':id/waiting-room')
+  waitingRoom(@Param('id') id: string) {
+    return this.picks.waitingRoom(id);
+  }
+
+  @Post(':id/ready')
+  async setReady(@Req() req: AuthedRequest, @Param('id') id: string, @Body() dto: SetReadyDto) {
+    return this.picks.setReady(id, dto.ready, await this.me(req));
   }
 
   @Post(':id/pick')

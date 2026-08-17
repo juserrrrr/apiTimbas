@@ -18,6 +18,7 @@ import {
   CompetitionRole,
   DraftLeagueStatus,
   DraftOrderType,
+  DraftStartMode,
   DraftResultMode,
   TacticIntensity,
   TacticMentality,
@@ -42,6 +43,14 @@ export class CreateDraftLeagueDto {
   @IsOptional()
   @IsEnum(DraftOrderType)
   orderType?: DraftOrderType;
+
+  @IsOptional()
+  @IsEnum(DraftStartMode)
+  startMode?: DraftStartMode;
+
+  @IsOptional()
+  @Type(() => Date)
+  draftStartsAt?: Date;
 
   @IsOptional()
   @Type(() => Number)
@@ -198,6 +207,11 @@ export class ListDraftLeaguesDto {
   @IsOptional()
   @IsEnum(DraftLeagueStatus)
   status?: DraftLeagueStatus;
+}
+
+export class SetReadyDto {
+  @IsBoolean()
+  ready: boolean;
 }
 
 export class AddVacantRostersDto {
