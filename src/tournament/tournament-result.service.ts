@@ -125,7 +125,10 @@ export class TournamentResultService {
     }
     return this.prisma.tournamentMatch.update({
       where: { id: matchId },
-      data: { status: match.homeTeamId && match.awayTeamId ? TournamentMatchStatus.READY : TournamentMatchStatus.PENDING },
+      data: {
+        status: match.homeTeamId && match.awayTeamId ? TournamentMatchStatus.READY : TournamentMatchStatus.PENDING,
+        readyAt: match.readyAt ?? new Date(),
+      },
     });
   }
 

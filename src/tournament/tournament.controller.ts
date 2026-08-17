@@ -19,6 +19,11 @@ import { ActorService } from '../common/actor.service';
 import { MatchProofService } from './match-proof.service';
 import {
   AddTeamDto,
+  ClaimResultDto,
+  MatchMessageDto,
+  ProposeScheduleDto,
+  RespondClaimDto,
+  RespondScheduleDto,
   CreateTournamentDto,
   ListTournamentsDto,
   ReportResultDto,
@@ -32,6 +37,7 @@ import {
 } from './dto/tournament.dto';
 import { TournamentAccessService } from './tournament-access.service';
 import { TournamentResultService } from './tournament-result.service';
+import { TournamentMatchService } from './tournament-match.service';
 import { TournamentService } from './tournament.service';
 
 type AuthedRequest = Request & { tokenPayload?: { discordId?: string; role?: string } };
@@ -43,6 +49,7 @@ export class TournamentController {
     private readonly tournaments: TournamentService,
     private readonly results: TournamentResultService,
     private readonly proofs: MatchProofService,
+    private readonly matches: TournamentMatchService,
     private readonly access: TournamentAccessService,
     private readonly actor: ActorService,
   ) {}
@@ -156,6 +163,61 @@ export class TournamentController {
     const actor = await this.me(req);
     await this.access.requireModerate(id, actor);
     return this.results.walkover(id, matchId, dto.winnerTeamId, dto.reason, actor.discordId);
+  }
+
+  @Get(':id/matches/:matchId/chat')
+  async matchChat(@Req() req: AuthedRequest, @Param('id') id: string, @Param('matchId') matchId: string) {
+    return this.matches.view(id, matchId, await this.me(req));
+  }
+
+  @Post(':id/matches/:matchId/chat')
+  async postMatchMessage(
+    @Req() req: AuthedRequest,
+    @Param('id') id: string,
+    @Param('matchId') matchId: string,
+    @Body() dto: MatchMessageDto,
+  ) {
+    return this.matches.postMessage(id, matchId, dto, await this.me(req));
+  }
+
+  @Post(':id/matches/:matchId/propose')
+  async proposeSchedule(
+    @Req() req: AuthedRequest,
+    @Param('id') id: string,
+    @Param('matchId') matchId: string,
+    @Body() dto: ProposeScheduleDto,
+  ) {
+    return this.matches.proposeSchedule(id, matchId, dto, await this.me(req));
+  }
+
+  @Post(':id/matches/:matchId/propose/respond')
+  async respondSchedule(
+    @Req() req: AuthedRequest,
+    @Param('id') id: string,
+    @Param('matchId') matchId: string,
+    @Body() dto: RespondScheduleDto,
+  ) {
+    return this.matches.respondSchedule(id, matchId, dto, await this.me(req));
+  }
+
+  @Post(':id/matches/:matchId/claim')
+  async claimResult(
+    @Req() req: AuthedRequest,
+    @Param('id') id: string,
+    @Param('matchId') matchId: string,
+    @Body() dto: ClaimResultDto,
+  ) {
+    return this.matches.claimResult(id, matchId, dto, await this.me(req));
+  }
+
+  @Post(':id/matches/:matchId/claim/respond')
+  async respondClaim(
+    @Req() req: AuthedRequest,
+    @Param('id') id: string,
+    @Param('matchId') matchId: string,
+    @Body() dto: RespondClaimDto,
+  ) {
+    return this.matches.respondClaim(id, matchId, dto, await this.me(req));
   }
 
   @Get(':id/proofs/pending')

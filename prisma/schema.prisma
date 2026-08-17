@@ -125,30 +125,31 @@ enum UserStatus {
 }
 
 model User {
-  id               Int                    @id @default(autoincrement())
-  discordId        String                 @unique
-  name             String
-  email            String?                @unique
-  password         String?
-  role             Role                   @default(PLAYER)
-  avatar           String?
-  lastLoginIp      String?
-  lastLoginAt      DateTime?
-  dateOfBirth      DateTime?
-  dateCreated      DateTime               @default(now())
-  dateUpdated      DateTime               @updatedAt
-  TeamsLeague      UserTeamLeague[]
-  leagueAccounts   LeagueAccount[]
-  tournamentTeams  TournamentTeamMember[]
-  tournamentStaff  TournamentStaff[]
-  wallet           Wallet?
-  draftRosters     DraftRoster[]
-  draftStaff       DraftStaff[]
-  status           UserStatus             @default(APPROVED)
-  statusNote       String?
-  reviewedByUserId Int?
-  reviewedAt       DateTime?
-  groups           UserGroupMember[]
+  id                     Int                      @id @default(autoincrement())
+  discordId              String                   @unique
+  name                   String
+  email                  String?                  @unique
+  password               String?
+  role                   Role                     @default(PLAYER)
+  avatar                 String?
+  lastLoginIp            String?
+  lastLoginAt            DateTime?
+  dateOfBirth            DateTime?
+  dateCreated            DateTime                 @default(now())
+  dateUpdated            DateTime                 @updatedAt
+  TeamsLeague            UserTeamLeague[]
+  leagueAccounts         LeagueAccount[]
+  tournamentTeams        TournamentTeamMember[]
+  tournamentStaff        TournamentStaff[]
+  wallet                 Wallet?
+  draftRosters           DraftRoster[]
+  draftStaff             DraftStaff[]
+  status                 UserStatus               @default(APPROVED)
+  statusNote             String?
+  reviewedByUserId       Int?
+  reviewedAt             DateTime?
+  groups                 UserGroupMember[]
+  TournamentMatchMessage TournamentMatchMessage[]
 
   @@index([status])
 }
@@ -552,6 +553,10 @@ model Tournament {
   coinsChampion            Int               @default(500)
   coinsRunnerUp            Int               @default(200)
   requireProof             Boolean           @default(true)
+  // Confirmação do adversário: um time informa o placar e o outro confirma. Sem
+  // resposta até o prazo, quem não apareceu perde por W.O.
+  requireOpponentConfirm   Boolean           @default(true)
+  woAfterHours             Int               @default(72)
   autoApproveProof         Boolean           @default(true)
   autoApproveMinConfidence Int               @default(80)
   registrationEndsAt       DateTime?
@@ -645,38 +650,46 @@ model TournamentGroup {
 }
 
 model TournamentMatch {
-  id                  String                @id @default(cuid())
-  tournamentId        String
-  tournament          Tournament            @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
-  groupId             String?
-  group               TournamentGroup?      @relation(fields: [groupId], references: [id])
-  phase               TournamentPhase       @default(WINNERS)
-  round               Int                   @default(1)
-  position            Int                   @default(0)
-  leg                 Int                   @default(1)
-  label               String?
-  homeTeamId          String?
-  homeTeam            TournamentTeam?       @relation("TournamentHome", fields: [homeTeamId], references: [id])
-  awayTeamId          String?
-  awayTeam            TournamentTeam?       @relation("TournamentAway", fields: [awayTeamId], references: [id])
-  homeScore           Int?
-  awayScore           Int?
-  winnerTeamId        String?
-  status              TournamentMatchStatus @default(PENDING)
-  scheduledAt         DateTime?
-  playedAt            DateTime?
-  reportedByDiscordId String?
-  nextMatchId         String?
-  nextMatch           TournamentMatch?      @relation("BracketAdvance", fields: [nextMatchId], references: [id])
-  nextMatchSlot       MatchSlot?
-  loserNextMatchId    String?
-  loserNextMatch      TournamentMatch?      @relation("BracketDrop", fields: [loserNextMatchId], references: [id])
-  loserNextMatchSlot  MatchSlot?
-  createdAt           DateTime              @default(now())
-  updatedAt           DateTime              @updatedAt
-  feedsInto           TournamentMatch[]     @relation("BracketAdvance")
-  dropsInto           TournamentMatch[]     @relation("BracketDrop")
-  proofs              MatchProof[]
+  id                       String                   @id @default(cuid())
+  tournamentId             String
+  tournament               Tournament               @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  groupId                  String?
+  group                    TournamentGroup?         @relation(fields: [groupId], references: [id])
+  phase                    TournamentPhase          @default(WINNERS)
+  round                    Int                      @default(1)
+  position                 Int                      @default(0)
+  leg                      Int                      @default(1)
+  label                    String?
+  homeTeamId               String?
+  homeTeam                 TournamentTeam?          @relation("TournamentHome", fields: [homeTeamId], references: [id])
+  awayTeamId               String?
+  awayTeam                 TournamentTeam?          @relation("TournamentAway", fields: [awayTeamId], references: [id])
+  homeScore                Int?
+  awayScore                Int?
+  winnerTeamId             String?
+  status                   TournamentMatchStatus    @default(PENDING)
+  readyAt                  DateTime?
+  scheduledAt              DateTime?
+  scheduleProposedAt       DateTime?
+  scheduleProposedByTeamId String?
+  claimedHomeScore         Int?
+  claimedAwayScore         Int?
+  claimedByTeamId          String?
+  claimedAt                DateTime?
+  playedAt                 DateTime?
+  reportedByDiscordId      String?
+  nextMatchId              String?
+  nextMatch                TournamentMatch?         @relation("BracketAdvance", fields: [nextMatchId], references: [id])
+  nextMatchSlot            MatchSlot?
+  loserNextMatchId         String?
+  loserNextMatch           TournamentMatch?         @relation("BracketDrop", fields: [loserNextMatchId], references: [id])
+  loserNextMatchSlot       MatchSlot?
+  createdAt                DateTime                 @default(now())
+  updatedAt                DateTime                 @updatedAt
+  feedsInto                TournamentMatch[]        @relation("BracketAdvance")
+  dropsInto                TournamentMatch[]        @relation("BracketDrop")
+  proofs                   MatchProof[]
+  messages                 TournamentMatchMessage[]
 
   @@unique([tournamentId, phase, round, position, leg])
   @@index([tournamentId, status])
@@ -684,6 +697,23 @@ model TournamentMatch {
   @@index([homeTeamId])
   @@index([awayTeamId])
   @@index([scheduledAt])
+}
+
+/// Conversa da partida: os dois times combinam horário e resolvem pendência aqui.
+/// Mensagem de sistema registra proposta, placar informado e W.O., para a decisão
+/// ficar com histórico.
+model TournamentMatchMessage {
+  id        String          @id @default(cuid())
+  matchId   String
+  match     TournamentMatch @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  userId    Int?
+  user      User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
+  teamId    String?
+  body      String
+  system    Boolean         @default(false)
+  createdAt DateTime        @default(now())
+
+  @@index([matchId, createdAt])
 }
 
 // ─── Prova de resultado por foto ──────────────────────────────────────────────

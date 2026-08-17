@@ -23,9 +23,10 @@ export async function placeTeam(
   });
 
   if (target.homeTeamId && target.awayTeamId && target.status === TournamentMatchStatus.PENDING) {
+    // readyAt é o marco do prazo de W.O.: conta de quando a partida ficou jogável.
     await tx.tournamentMatch.update({
       where: { id: target.id },
-      data: { status: TournamentMatchStatus.READY },
+      data: { status: TournamentMatchStatus.READY, readyAt: new Date() },
     });
   }
   return target;

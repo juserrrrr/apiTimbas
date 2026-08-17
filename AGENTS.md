@@ -82,6 +82,20 @@ from the platform `Role`:
 - **MODERATOR**: approves/rejects proofs, reports results, schedules, declares W.O.
 - A global `ADMIN` passes both checks.
 
+### Match room
+A tournament match is a room the two teams share: chat, schedule proposal, claimed
+score and the opponent's confirmation, in `tournament-match.service.ts`. A team
+claims the score, the other confirms and it settles, or disputes and the
+organization decides. `Tournament.requireOpponentConfirm` turns the confirmation
+step off; `woAfterHours` is the clock.
+
+The clock starts at `TournamentMatch.readyAt`, set the moment the match becomes
+playable. When it runs out, the hourly job looks at who engaged, meaning proposed a
+time, claimed a score or talked in the chat: one side engaged wins by walkover, no
+side engaged gives it to the better seed so the bracket keeps moving, and both
+sides engaged goes to DISPUTED, since that is a human call. Every step writes a
+system message, so the decision always has a trail.
+
 `bracket.builder.ts` and `draft-order.ts` are pure functions with no I/O, the
 bracket shapes and pick order are covered by `*.spec.ts` next to them. Change the
 tests when you change the pairing rules.

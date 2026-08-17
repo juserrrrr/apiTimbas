@@ -435,6 +435,7 @@ export class TournamentService {
               awayTeamId,
               status:
                 homeTeamId && awayTeamId ? TournamentMatchStatus.READY : TournamentMatchStatus.PENDING,
+              readyAt: homeTeamId && awayTeamId ? new Date() : null,
             },
           });
           created.set(planKey(plan), match.id);

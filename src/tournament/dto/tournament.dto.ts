@@ -154,6 +154,17 @@ export class CreateTournamentDto {
 
   @IsOptional()
   @IsBoolean()
+  requireOpponentConfirm?: boolean;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(720)
+  woAfterHours?: number;
+
+  @IsOptional()
+  @IsBoolean()
   autoApproveProof?: boolean;
 
   @IsOptional()
@@ -314,6 +325,43 @@ export class ReviewProofDto {
   @IsString()
   @MaxLength(240)
   note?: string;
+}
+
+export class MatchMessageDto {
+  @Transform(trim)
+  @IsString()
+  @MinLength(1)
+  @MaxLength(600)
+  body: string;
+}
+
+export class ProposeScheduleDto {
+  @Type(() => Date)
+  scheduledAt: Date;
+}
+
+export class RespondScheduleDto {
+  @IsBoolean()
+  accept: boolean;
+}
+
+export class ClaimResultDto {
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(99)
+  homeScore: number;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(99)
+  awayScore: number;
+}
+
+export class RespondClaimDto {
+  @IsBoolean()
+  agree: boolean;
 }
 
 export class ScheduleMatchDto {

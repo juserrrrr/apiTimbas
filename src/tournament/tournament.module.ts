@@ -8,6 +8,7 @@ import { RegistrationWindowScheduler } from './registration-window.scheduler';
 import { TournamentAccessService } from './tournament-access.service';
 import { TournamentController } from './tournament.controller';
 import { TournamentResultService } from './tournament-result.service';
+import { TournamentMatchService } from './tournament-match.service';
 import { TournamentService } from './tournament.service';
 
 @Module({
@@ -16,6 +17,7 @@ import { TournamentService } from './tournament.service';
   providers: [
     TournamentService,
     TournamentResultService,
+    TournamentMatchService,
     TournamentAccessService,
     MatchProofService,
     RegistrationWindowScheduler,

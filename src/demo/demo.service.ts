@@ -80,8 +80,12 @@ export class DemoService {
     }
 
     await this.tournaments.start(tournament.id, actor);
+    await this.seedMatchRoom(tournament.id);
     if (dto.stage === 'STARTED') {
-      return this.tournamentSummary(tournament.id, 'Chaveamento gerado e pronto para jogar.');
+      return this.tournamentSummary(
+        tournament.id,
+        'Chaveamento gerado, com uma partida já tendo conversa, proposta de horário e placar aguardando confirmação.',
+      );
     }
 
     const played = await this.simulate(tournament.id, dto.stage === 'PARTIAL');
@@ -197,6 +201,61 @@ export class DemoService {
       }),
     ]);
     return { tournaments, leagues };
+  }
+
+  /// Deixa a primeira partida com a sala cheia: conversa, proposta de horário e um
+  /// placar esperando o adversário confirmar. É o que a tela precisa para dar para
+  /// conferir o fluxo sem combinar nada com ninguém.
+  private async seedMatchRoom(tournamentId: string) {
+    const match = await this.prisma.tournamentMatch.findFirst({
+      where: { tournamentId, status: TournamentMatchStatus.READY, homeTeamId: { not: null }, awayTeamId: { not: null } },
+      orderBy: [{ round: 'asc' }, { position: 'asc' }],
+      include: { homeTeam: { select: { id: true, name: true } }, awayTeam: { select: { id: true, name: true } } },
+    });
+    if (!match) return;
+
+    const kickoff = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    await this.prisma.tournamentMatch.update({
+      where: { id: match.id },
+      data: {
+        scheduleProposedAt: kickoff,
+        scheduleProposedByTeamId: match.homeTeamId,
+        claimedHomeScore: 3,
+        claimedAwayScore: 1,
+        claimedByTeamId: match.homeTeamId,
+        claimedAt: new Date(),
+        status: TournamentMatchStatus.AWAITING_PROOF,
+      },
+    });
+
+    await this.prisma.tournamentMatchMessage.createMany({
+      data: [
+        {
+          matchId: match.id,
+          teamId: match.homeTeamId,
+          body: 'Fechado para amanhã à noite?',
+          system: false,
+        },
+        {
+          matchId: match.id,
+          teamId: match.awayTeamId,
+          body: 'Pode ser, confirmo mais tarde.',
+          system: false,
+        },
+        {
+          matchId: match.id,
+          teamId: match.homeTeamId,
+          body: `Propôs jogar em ${kickoff.toLocaleString('pt-BR')}.`,
+          system: true,
+        },
+        {
+          matchId: match.id,
+          teamId: match.homeTeamId,
+          body: 'Informou 3 a 1 e aguarda a confirmação do adversário.',
+          system: true,
+        },
+      ],
+    });
   }
 
   private async simulate(tournamentId: string, stopHalfway: boolean): Promise<number> {
@@ -351,11 +410,13 @@ export class DemoService {
         groupCount: true,
         advancePerGroup: true,
         thirdPlace: true,
+        woAfterHours: true,
+        requireOpponentConfirm: true,
         _count: { select: { teams: true, matches: true } },
       },
     });
 
-    const [byPhase, groups, finished, open, champion] = await Promise.all([
+    const [byPhase, groups, finished, open, champion, messages, proposals, claims] = await Promise.all([
       this.prisma.tournamentMatch.groupBy({
         by: ['phase'],
         where: { tournamentId: id },
@@ -369,6 +430,9 @@ export class DemoService {
       this.prisma.tournamentMatch.count({ where: { tournamentId: id, status: 'FINISHED' } }),
       this.prisma.tournamentMatch.count({ where: { tournamentId: id, status: { in: ['PENDING', 'READY'] } } }),
       this.prisma.tournament.findUnique({ where: { id }, select: { championTeamId: true } }),
+      this.prisma.tournamentMatchMessage.count({ where: { match: { tournamentId: id } } }),
+      this.prisma.tournamentMatch.count({ where: { tournamentId: id, scheduleProposedAt: { not: null } } }),
+      this.prisma.tournamentMatch.count({ where: { tournamentId: id, claimedByTeamId: { not: null } } }),
     ]);
 
     return {
@@ -387,6 +451,11 @@ export class DemoService {
         disputaDeTerceiro: tournament.thirdPlace,
         encerradas: finished,
         emAberto: open,
+        mensagensNaSala: messages,
+        propostasDeHorario: proposals,
+        placaresAguardandoConfirmacao: claims,
+        prazoParaWo: `${tournament.woAfterHours}h`,
+        confirmacaoDoAdversario: tournament.requireOpponentConfirm,
         temCampeao: Boolean(champion?.championTeamId),
       },
     };
