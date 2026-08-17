@@ -93,13 +93,14 @@ export class AiSquadService {
     competition: string,
     referenceDate?: string,
   ): Promise<AiCompetitionResult> {
-    const provider = await this.requireProvider();
+    const { provider, fallbackProvider } = await this.requireProvider();
     const date = resolveDate(referenceDate);
 
     let answer: string;
     try {
       answer = await this.chat.complete({
         provider,
+        fallbackProvider,
         system: SYSTEM_PROMPT,
         prompt: buildCompetitionPrompt(competition, date),
         json: true,
@@ -143,7 +144,7 @@ export class AiSquadService {
       throw new BadRequestException('Informe ao menos um time.');
     }
 
-    const provider = await this.requireProvider();
+    const { provider, fallbackProvider } = await this.requireProvider();
     const date = resolveDate(referenceDate);
     const squads: AiSquadResult[] = [];
     const failures: string[] = [];
@@ -152,6 +153,7 @@ export class AiSquadService {
       try {
         const answer = await this.chat.complete({
           provider,
+          fallbackProvider,
           system: SYSTEM_PROMPT,
           prompt: buildPrompt(team, date, competition),
           json: true,
@@ -191,14 +193,15 @@ export class AiSquadService {
   }
 
   private async requireProvider() {
-    const { provider, unavailableReason } = await this.settings.analysis();
+    const { provider, fallbackProvider, unavailableReason } =
+      await this.settings.analysis();
     if (!provider) {
       throw new BadRequestException(
         unavailableReason ??
           'IA indisponível. Configure o provedor no painel de administração.',
       );
     }
-    return provider;
+    return { provider, fallbackProvider };
   }
 }
 

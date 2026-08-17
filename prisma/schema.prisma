@@ -736,23 +736,26 @@ enum ScoreReadMode {
 }
 
 model AiSettings {
-  id                    Int           @id @default(1)
-  analysisEnabled       Boolean       @default(true)
-  analysisProvider      AiProvider    @default(GEMINI)
-  analysisModel         String?
-  analysisFallbackModel String?
-  scoreReaderEnabled    Boolean       @default(false)
-  scoreReaderProvider   AiProvider    @default(OPENAI)
-  scoreReaderModel      String?
-  scoreReadMode         ScoreReadMode @default(VISION)
-  ocrLanguage           String        @default("por")
-  timeoutMs             Int           @default(45000)
-  maxImageBytes         Int           @default(4194304)
-  lastCheckedAt         DateTime?
-  lastCheckOk           Boolean?
-  lastCheckMessage      String?
-  updatedByDiscordId    String?
-  updatedAt             DateTime      @updatedAt
+  id                       Int           @id @default(1)
+  analysisEnabled          Boolean       @default(true)
+  analysisProvider         AiProvider    @default(GEMINI)
+  analysisModel            String?
+  // Reserva é outro provedor, não outro modelo da mesma casa: chave recusada ou
+  // provedor fora do ar derruba todos os modelos dele junto.
+  analysisFallbackProvider AiProvider?
+  analysisFallbackModel    String?
+  scoreReaderEnabled       Boolean       @default(false)
+  scoreReaderProvider      AiProvider    @default(OPENAI)
+  scoreReaderModel         String?
+  scoreReadMode            ScoreReadMode @default(VISION)
+  ocrLanguage              String        @default("por")
+  timeoutMs                Int           @default(45000)
+  maxImageBytes            Int           @default(4194304)
+  lastCheckedAt            DateTime?
+  lastCheckOk              Boolean?
+  lastCheckMessage         String?
+  updatedByDiscordId       String?
+  updatedAt                DateTime      @updatedAt
 }
 
 enum CatalogSource {

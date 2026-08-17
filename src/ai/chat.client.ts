@@ -9,6 +9,10 @@ export interface ChatImage {
 
 export interface ChatRequest {
   provider: ResolvedProvider;
+  /// Provedor de outra empresa para tentar quando o primeiro falha de vez. Cair
+  /// para outro modelo da mesma casa não ajuda: chave recusada, cota estourada e
+  /// provedor fora do ar derrubam todos os modelos dela junto.
+  fallbackProvider?: ResolvedProvider | null;
   system?: string;
   prompt: string;
   image?: ChatImage;
@@ -29,19 +33,31 @@ export class ChatClient {
   private blockedUntil = 0;
 
   async complete(request: ChatRequest): Promise<string> {
+    try {
+      return await this.callProvider(request, request.provider);
+    } catch (error) {
+      const fallback = request.fallbackProvider;
+      if (!fallback || fallback.id === request.provider.id) throw error;
+
+      this.logger.warn(
+        `[AI] ${request.provider.label} falhou (${(error as Error).message}); tentando ${fallback.label}`,
+      );
+      return this.callProvider(request, fallback);
+    }
+  }
+
+  private async callProvider(request: ChatRequest, provider: ResolvedProvider): Promise<string> {
     const timeoutMs = request.timeoutMs ?? 60_000;
+    const model = provider.model;
+    const call = { ...request, provider };
 
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-      const useFallback = attempt === MAX_RETRIES && request.provider.fallbackModel !== request.provider.model;
-      const model = useFallback ? request.provider.fallbackModel : request.provider.model;
-      if (useFallback) this.logger.warn(`[AI] usando modelo reserva ${model}`);
-
       await this.waitForCooldown();
 
       try {
-        return request.provider.wire === 'gemini'
-          ? await this.callGemini(request, model, timeoutMs)
-          : await this.callOpenAi(request, model, timeoutMs);
+        return provider.wire === 'gemini'
+          ? await this.callGemini(call, model, timeoutMs)
+          : await this.callOpenAi(call, model, timeoutMs);
       } catch (error) {
         const status = (error as { response?: { status?: number } })?.response?.status;
         const code = (error as { code?: string })?.code;

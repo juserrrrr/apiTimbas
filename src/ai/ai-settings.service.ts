@@ -6,6 +6,9 @@ import { AiProviderRegistry, ResolvedProvider } from './ai-provider.registry';
 export interface AiFeatureConfig {
   enabled: boolean;
   provider: ResolvedProvider | null;
+  /// Provedor de outra empresa, usado quando o principal falha. Nulo quando o
+  /// admin não escolheu nenhum ou a chave dele não está nesta instância.
+  fallbackProvider: ResolvedProvider | null;
   unavailableReason: string | null;
 }
 
@@ -13,6 +16,7 @@ export interface UpdateAiSettingsInput {
   analysisEnabled?: boolean;
   analysisProvider?: AiProvider;
   analysisModel?: string | null;
+  analysisFallbackProvider?: AiProvider | null;
   analysisFallbackModel?: string | null;
   scoreReaderEnabled?: boolean;
   scoreReaderProvider?: AiProvider;
@@ -44,8 +48,10 @@ export class AiSettingsService {
       settings.analysisEnabled,
       settings.analysisProvider,
       settings.analysisModel,
-      settings.analysisFallbackModel,
       false,
+      settings.analysisFallbackProvider
+        ? this.registry.resolve(settings.analysisFallbackProvider, settings.analysisFallbackModel)
+        : null,
     );
   }
 
@@ -56,8 +62,8 @@ export class AiSettingsService {
       settings.scoreReaderEnabled,
       settings.scoreReaderProvider,
       settings.scoreReaderModel,
-      null,
       needsVision,
+      null,
     );
 
     return {
@@ -82,8 +88,12 @@ export class AiSettingsService {
         enabled: settings.analysisEnabled,
         provider: settings.analysisProvider,
         model: settings.analysisModel,
+        fallbackProvider: settings.analysisFallbackProvider,
         fallbackModel: settings.analysisFallbackModel,
         effectiveModel: analysis.provider?.model ?? null,
+        effectiveFallback: analysis.fallbackProvider
+          ? `${analysis.fallbackProvider.label} (${analysis.fallbackProvider.model})`
+          : null,
         ready: analysis.provider !== null,
         unavailableReason: analysis.unavailableReason,
       },
@@ -128,19 +138,30 @@ export class AiSettingsService {
     enabled: boolean,
     provider: AiProvider,
     model: string | null,
-    fallbackModel: string | null,
     needsVision: boolean,
+    fallbackProvider: ResolvedProvider | null,
   ): AiFeatureConfig {
+    /// Reserva do mesmo provedor não é reserva: se a chave foi recusada ou a
+    /// casa saiu do ar, todos os modelos dela caem juntos.
+    const fallback =
+      fallbackProvider && fallbackProvider.id !== provider ? fallbackProvider : null;
+
     if (!enabled) {
-      return { enabled: false, provider: null, unavailableReason: 'Desligado no painel de administração.' };
+      return {
+        enabled: false,
+        provider: null,
+        fallbackProvider: null,
+        unavailableReason: 'Desligado no painel de administração.',
+      };
     }
 
-    const resolved = this.registry.resolve(provider, model, fallbackModel);
+    const resolved = this.registry.resolve(provider, model);
     if (!resolved) {
       const envKey = this.registry.catalog().find((item) => item.id === provider)?.envKey;
       return {
         enabled: true,
         provider: null,
+        fallbackProvider: null,
         unavailableReason: `${provider} selecionado, mas ${envKey} não está definida nesta instância.`,
       };
     }
@@ -148,10 +169,11 @@ export class AiSettingsService {
       return {
         enabled: true,
         provider: null,
+        fallbackProvider: null,
         unavailableReason: `${resolved.label} não lê imagens. Use o modo OCR ou troque de provedor.`,
       };
     }
 
-    return { enabled: true, provider: resolved, unavailableReason: null };
+    return { enabled: true, provider: resolved, fallbackProvider: fallback, unavailableReason: null };
   }
 }

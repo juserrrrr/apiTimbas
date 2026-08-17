@@ -22,6 +22,12 @@ export class UpdateAiSettingsDto {
   @MaxLength(120)
   analysisModel?: string | null;
 
+  /// Nulo desliga a reserva: uma falha vira erro em vez de trocar de provedor.
+  @IsOptional()
+  @Transform(emptyToNull)
+  @IsEnum(AiProvider)
+  analysisFallbackProvider?: AiProvider | null;
+
   @IsOptional()
   @Transform(emptyToNull)
   @IsString()

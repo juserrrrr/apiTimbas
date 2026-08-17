@@ -40,6 +40,8 @@ export class AiSettingsController {
       return this.settings.recordCheck(false, analysis.unavailableReason ?? 'Análise indisponível.');
     }
 
+    /// De propósito sem provedor reserva: o teste tem que falhar quando o
+    /// escolhido está quebrado, senão a reserva esconde o problema.
     try {
       const answer = await this.chat.complete({
         provider: analysis.provider,

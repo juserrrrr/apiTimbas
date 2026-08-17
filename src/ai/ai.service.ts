@@ -230,7 +230,7 @@ export class AiService {
 
   async analyzeOpponents(players: FullPlayerData[], force = false, teamProfile?: TeamTacticalProfile): Promise<AiAnalysis> {
     const empty: AiAnalysis = { generatedByAi: false, bans: [], counterplays: [], predictedPicks: [], strategy: '' };
-    const { provider, unavailableReason } = await this.settings.analysis();
+    const { provider, fallbackProvider, unavailableReason } = await this.settings.analysis();
     if (!provider) {
       return { ...empty, strategy: unavailableReason ?? 'Análise de IA indisponível.' };
     }
@@ -401,6 +401,7 @@ Regras:
     try {
       const text = await this.chat.complete({
         provider,
+        fallbackProvider,
         system:
           'Voce e um coach de Clash. Separe fatos medidos de inferencias, nunca invente eventos, campeoes, jogadores ou certezas. Use amostra e confianca para calibrar cada recomendacao. Responda somente no schema JSON solicitado.',
         prompt,
@@ -427,7 +428,7 @@ Regras:
     const cached = this.profileAnalysisCache.get(cacheKey);
     if (cached && Date.now() <= cached.expiresAt) return cached.value;
 
-    const { provider, unavailableReason } = await this.settings.analysis();
+    const { provider, fallbackProvider, unavailableReason } = await this.settings.analysis();
     if (!provider) {
       return this.buildPlayerProfileFallback(player, `${unavailableReason} Leitura gerada por dados recentes.`);
     }
@@ -471,6 +472,7 @@ Responda APENAS JSON valido:
     try {
       const text = await this.chat.complete({
         provider,
+        fallbackProvider,
         prompt,
         json: true,
         jsonSchema: this.playerProfileAnalysisSchema(),
@@ -495,7 +497,7 @@ Responda APENAS JSON valido:
    */
   async generateMatchRecap(input: MatchRecapInput): Promise<string> {
     const fallback = this.buildRecapFallback(input);
-    const { provider } = await this.settings.analysis();
+    const { provider, fallbackProvider } = await this.settings.analysis();
     if (!provider) return fallback;
 
     const winnerNames = input.winnerSide === 'BLUE' ? input.blueTeam : input.redTeam;
@@ -516,7 +518,7 @@ Responda APENAS com o texto do resumo, sem aspas, sem markdown.`;
 
     try {
       const text = (
-        await this.chat.complete({ provider, prompt, temperature: 0.9, maxTokens: 256 })
+        await this.chat.complete({ provider, fallbackProvider, prompt, temperature: 0.9, maxTokens: 256 })
       ).trim();
       return text ? text.slice(0, 500) : fallback;
     } catch (err) {

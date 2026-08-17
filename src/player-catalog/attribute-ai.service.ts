@@ -40,7 +40,7 @@ export class AttributeAiService {
   ) {}
 
   async estimate(players: PlayerToEstimate[]): Promise<AttributeEstimation> {
-    const { provider, unavailableReason } = await this.settings.analysis();
+    const { provider, fallbackProvider, unavailableReason } = await this.settings.analysis();
     if (!provider) {
       throw new BadRequestException(
         unavailableReason ?? 'IA indisponível. Configure o provedor no painel de administração.',
@@ -53,6 +53,7 @@ export class AttributeAiService {
       try {
         const answer = await this.chat.complete({
           provider,
+          fallbackProvider,
           system: SYSTEM_PROMPT,
           prompt: buildPrompt(batch),
           json: true,
