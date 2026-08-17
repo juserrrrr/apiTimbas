@@ -1,4 +1,4 @@
-import { MatchSlot, TournamentPhase } from '@prisma/client';
+import { MatchSlot, TournamentFormat, TournamentPhase } from '@prisma/client';
 
 export interface MatchRef {
   phase: TournamentPhase;
@@ -265,6 +265,35 @@ export function compareStandings(a: StandingLike, b: StandingLike): number {
     b.scoreFor - a.scoreFor ||
     a.name.localeCompare(b.name)
   );
+}
+
+/// Toda a validação do plano do campeonato num lugar, para a API garantir o que a
+/// tela mostra. A tela filtra as opções, mas quem chama a API direto não passa.
+export function tournamentPlanIssue(
+  format: TournamentFormat,
+  plan: { teamCount: number; groupCount: number; advancePerGroup: number; legs: number; thirdPlace: boolean },
+): string | null {
+  if (plan.teamCount < 2) return 'Um campeonato precisa de ao menos 2 times.';
+  if (format === TournamentFormat.DOUBLE_ELIMINATION && plan.teamCount < 4) {
+    return 'Eliminação dupla precisa de ao menos 4 times.';
+  }
+
+  const isKnockout =
+    format === TournamentFormat.SINGLE_ELIMINATION || format === TournamentFormat.DOUBLE_ELIMINATION;
+  if (plan.legs > 1 && isKnockout) {
+    return 'Ida e volta só vale para pontos corridos e para a fase de grupos.';
+  }
+  if (plan.thirdPlace && format === TournamentFormat.ROUND_ROBIN) {
+    return 'Pontos corridos não tem disputa de terceiro lugar.';
+  }
+  if (plan.thirdPlace && plan.teamCount < 4) {
+    return 'Disputa de terceiro lugar precisa de ao menos 4 times.';
+  }
+
+  if (format === TournamentFormat.GROUPS_KNOCKOUT) {
+    return groupPlanIssue(plan.teamCount, plan.groupCount, plan.advancePerGroup);
+  }
+  return null;
 }
 
 /// Combinações de grupos que não decidem nada ou deixam a tabela incomparável:

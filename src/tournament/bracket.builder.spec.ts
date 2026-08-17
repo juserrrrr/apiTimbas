@@ -1,4 +1,4 @@
-import { TournamentPhase } from '@prisma/client';
+import { TournamentFormat, TournamentPhase } from '@prisma/client';
 import {
   bracketSizeFor,
   buildDoubleElimination,
@@ -9,6 +9,7 @@ import {
   groupPlanIssue,
   orderGroupQualifiers,
   seedSlots,
+  tournamentPlanIssue,
 } from './bracket.builder';
 
 describe('bracketSizeFor', () => {
@@ -126,6 +127,49 @@ describe('buildRoundRobin', () => {
       (plan) => plan.leg === 2 && plan.homeIndex === first.awayIndex && plan.awayIndex === first.homeIndex,
     );
     expect(second).toBeDefined();
+  });
+});
+
+describe('tournamentPlanIssue', () => {
+  const plan = { teamCount: 8, groupCount: 2, advancePerGroup: 2, legs: 1, thirdPlace: false };
+
+  it('aceita o plano coerente de cada formato', () => {
+    expect(tournamentPlanIssue(TournamentFormat.SINGLE_ELIMINATION, plan)).toBeNull();
+    expect(tournamentPlanIssue(TournamentFormat.DOUBLE_ELIMINATION, plan)).toBeNull();
+    expect(tournamentPlanIssue(TournamentFormat.ROUND_ROBIN, { ...plan, legs: 2 })).toBeNull();
+    expect(tournamentPlanIssue(TournamentFormat.GROUPS_KNOCKOUT, { ...plan, legs: 2 })).toBeNull();
+  });
+
+  it('recusa campeonato sem gente', () => {
+    expect(tournamentPlanIssue(TournamentFormat.SINGLE_ELIMINATION, { ...plan, teamCount: 1 })).toContain(
+      'ao menos 2 times',
+    );
+  });
+
+  it('recusa eliminação dupla com menos de 4', () => {
+    expect(tournamentPlanIssue(TournamentFormat.DOUBLE_ELIMINATION, { ...plan, teamCount: 3 })).toContain(
+      'ao menos 4 times',
+    );
+  });
+
+  it('recusa ida e volta em mata-mata, porque a chave ignora isso', () => {
+    expect(tournamentPlanIssue(TournamentFormat.SINGLE_ELIMINATION, { ...plan, legs: 2 })).toContain('Ida e volta');
+    expect(tournamentPlanIssue(TournamentFormat.DOUBLE_ELIMINATION, { ...plan, legs: 2 })).toContain('Ida e volta');
+  });
+
+  it('recusa disputa de terceiro onde ela não existe', () => {
+    expect(tournamentPlanIssue(TournamentFormat.ROUND_ROBIN, { ...plan, thirdPlace: true })).toContain(
+      'Pontos corridos',
+    );
+    expect(
+      tournamentPlanIssue(TournamentFormat.SINGLE_ELIMINATION, { ...plan, teamCount: 3, thirdPlace: true }),
+    ).toContain('ao menos 4 times');
+  });
+
+  it('leva a regra de grupos para o formato de grupos', () => {
+    expect(tournamentPlanIssue(TournamentFormat.GROUPS_KNOCKOUT, { ...plan, teamCount: 7 })).toContain(
+      'grupos do mesmo tamanho',
+    );
   });
 });
 

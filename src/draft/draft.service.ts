@@ -4,6 +4,7 @@ import { Actor } from '../common/actor.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { DraftAccessService } from './draft-access.service';
 import { salaryFor } from './draft-budget.service';
+import { isValidFormation, startersFor } from '../football/formation';
 import { pickCoordinate, upcomingPicks } from './draft-order';
 import {
   CreateDraftLeagueDto,
@@ -24,6 +25,14 @@ export class DraftService {
   ) {}
 
   async create(dto: CreateDraftLeagueDto, actor: Actor) {
+    this.assertLeaguePlan({
+      rosterSize: dto.rosterSize ?? 11,
+      formation: dto.formation ?? '4-3-3',
+      matchDays: dto.matchDays ?? [0, 3],
+      registrationEndsAt: dto.registrationEndsAt,
+      autoStartOnClose: dto.autoStartOnClose,
+    });
+
     const { name, sourceCompetitionIds, ...settings } = dto;
     return this.prisma.draftLeague.create({
       data: {
@@ -91,6 +100,14 @@ export class DraftService {
       ),
     );
 
+    this.assertLeaguePlan({
+      rosterSize: (editable.rosterSize as number) ?? league.rosterSize,
+      formation: (editable.formation as string) ?? league.formation,
+      matchDays: (editable.matchDays as number[]) ?? league.matchDays,
+      registrationEndsAt: dto.registrationEndsAt,
+      autoStartOnClose: dto.autoStartOnClose ?? league.autoStartOnClose,
+    });
+
     if (sourceCompetitionIds) {
       await this.prisma.$transaction([
         this.prisma.draftLeagueSource.deleteMany({
@@ -133,6 +150,37 @@ export class DraftService {
         tacticsAt: new Date(),
       },
     });
+  }
+
+  /// A tela filtra as opções, mas quem chama a API direto não passa: formação
+  /// existe, cabe no elenco, a rodada tem dia e o fim das inscrições é no futuro.
+  private assertLeaguePlan(plan: {
+    rosterSize: number;
+    formation: string;
+    matchDays: number[];
+    registrationEndsAt?: Date;
+    autoStartOnClose?: boolean;
+  }) {
+    if (!isValidFormation(plan.formation)) {
+      throw new BadRequestException(`Formação inválida: ${plan.formation}. Use algo como 4-3-3.`);
+    }
+    if (plan.matchDays.length === 0) {
+      throw new BadRequestException('Escolha ao menos um dia de rodada.');
+    }
+    if (new Set(plan.matchDays).size !== plan.matchDays.length) {
+      throw new BadRequestException('O mesmo dia de rodada apareceu duas vezes.');
+    }
+    if (startersFor(plan.formation) > plan.rosterSize) {
+      throw new BadRequestException(
+        `A formação ${plan.formation} pede ${startersFor(plan.formation)} titulares e o elenco tem ${plan.rosterSize} vagas.`,
+      );
+    }
+    if (plan.registrationEndsAt && plan.registrationEndsAt.getTime() <= Date.now()) {
+      throw new BadRequestException('O fim das inscrições precisa ser no futuro.');
+    }
+    if (plan.autoStartOnClose && !plan.registrationEndsAt) {
+      throw new BadRequestException('Para começar sozinho, a liga precisa de uma data de fim das inscrições.');
+    }
   }
 
   async remove(leagueId: string, actor: Actor) {
@@ -276,12 +324,28 @@ export class DraftService {
   }
 
   async setLineup(leagueId: string, dto: SetLineupDto, actor: Actor) {
+    const league = await this.access.requireLeague(leagueId);
     const roster = await this.access.requireRoster(leagueId, actor);
     const owned = await this.prisma.draftPlayer.findMany({
       where: { rosterId: roster.id },
       select: { id: true },
     });
     const ownedIds = new Set(owned.map((player) => player.id));
+
+    const formation = dto.formation ?? roster.formation;
+    if (!isValidFormation(formation)) {
+      throw new BadRequestException(`Formação inválida: ${formation}. Use algo como 4-3-3.`);
+    }
+
+    const unique = new Set(dto.starters.map((starter) => starter.playerId));
+    if (unique.size !== dto.starters.length) {
+      throw new BadRequestException('O mesmo jogador apareceu duas vezes na escalação.');
+    }
+
+    const limit = Math.min(startersFor(formation), league.rosterSize);
+    if (dto.starters.length > limit) {
+      throw new BadRequestException(`A formação ${formation} escala no máximo ${limit} jogadores.`);
+    }
 
     for (const starter of dto.starters) {
       if (!ownedIds.has(starter.playerId)) {

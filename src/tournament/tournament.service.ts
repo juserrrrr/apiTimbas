@@ -21,6 +21,7 @@ import {
   groupName,
   groupPlanIssue,
   knockoutRoundLabel,
+  tournamentPlanIssue,
 } from './bracket.builder';
 import { resolveWalkovers } from './bracket-advance';
 import {
@@ -38,7 +39,7 @@ const MANAGED_STATUSES: TournamentStatus[] = [TournamentStatus.DRAFT, Tournament
 
 // Espelham os defaults do schema, usados para validar o plano de grupos antes de
 // o registro existir.
-const DEFAULTS = { maxTeams: 8, groupCount: 2, advancePerGroup: 2 };
+const DEFAULTS = { maxTeams: 8, groupCount: 2, advancePerGroup: 2, legs: 1 };
 
 @Injectable()
 export class TournamentService {
@@ -48,11 +49,14 @@ export class TournamentService {
   ) {}
 
   async create(dto: CreateTournamentDto, actor: Actor) {
-    this.assertGroupSettings(dto.format ?? TournamentFormat.SINGLE_ELIMINATION, {
+    this.assertPlan(dto.format ?? TournamentFormat.SINGLE_ELIMINATION, {
       teamCount: dto.maxTeams ?? DEFAULTS.maxTeams,
       groupCount: dto.groupCount ?? DEFAULTS.groupCount,
       advancePerGroup: dto.advancePerGroup ?? DEFAULTS.advancePerGroup,
+      legs: dto.legs ?? DEFAULTS.legs,
+      thirdPlace: dto.thirdPlace ?? false,
     });
+    this.assertWindow(dto.registrationEndsAt, dto.autoStartOnClose);
 
     const slug = await this.uniqueSlug(dto.name);
     return this.prisma.tournament.create({
@@ -165,14 +169,17 @@ export class TournamentService {
 
     // Só revalida quando a edição mexe no plano: durante as inscrições o total de
     // times ainda muda e nada mais precisa ficar preso a isso.
-    const planKeys = ['format', 'maxTeams', 'groupCount', 'advancePerGroup'] as const;
+    const planKeys = ['format', 'maxTeams', 'groupCount', 'advancePerGroup', 'legs', 'thirdPlace'] as const;
     if (planKeys.some((key) => key in settings)) {
-      this.assertGroupSettings((settings.format as TournamentFormat) ?? tournament.format, {
+      this.assertPlan((settings.format as TournamentFormat) ?? tournament.format, {
         teamCount: (settings.maxTeams as number) ?? tournament.maxTeams,
         groupCount: (settings.groupCount as number) ?? tournament.groupCount,
         advancePerGroup: (settings.advancePerGroup as number) ?? tournament.advancePerGroup,
+        legs: (settings.legs as number) ?? tournament.legs,
+        thirdPlace: (settings.thirdPlace as boolean) ?? tournament.thirdPlace,
       });
     }
+    this.assertWindow(dto.registrationEndsAt, dto.autoStartOnClose ?? tournament.autoStartOnClose);
 
     return this.prisma.tournament.update({
       where: { id },
@@ -212,6 +219,17 @@ export class TournamentService {
     }
 
     const memberIds = access.canModerate ? (dto.memberIds ?? []) : [actor.id];
+    if (new Set(memberIds).size !== memberIds.length) {
+      throw new BadRequestException('O mesmo jogador apareceu duas vezes na lista do time.');
+    }
+    if (memberIds.length > tournament.teamSize) {
+      throw new BadRequestException(`Este campeonato é ${tournament.teamSize} por time.`);
+    }
+    const existingMembers = await this.prisma.user.count({ where: { id: { in: memberIds } } });
+    if (existingMembers !== memberIds.length) {
+      throw new BadRequestException('Algum jogador da lista não existe.');
+    }
+
     return this.prisma.tournamentTeam.create({
       data: {
         tournamentId: id,
@@ -338,7 +356,14 @@ export class TournamentService {
       where: { tournamentId: id },
       orderBy: [{ seed: 'asc' }, { createdAt: 'asc' }],
     });
-    this.assertStartable(tournament.format, teams.length, tournament.groupCount, tournament.advancePerGroup);
+    this.assertStartable(
+      tournament.format,
+      teams.length,
+      tournament.groupCount,
+      tournament.advancePerGroup,
+      tournament.legs,
+      tournament.thirdPlace,
+    );
 
     return this.prisma.$transaction(
       async (tx) => {
@@ -519,21 +544,29 @@ export class TournamentService {
     teamCount: number,
     groupCount: number,
     advancePerGroup: number,
+    legs: number,
+    thirdPlace: boolean,
   ) {
-    if (teamCount < 2) throw new BadRequestException('É preciso ao menos 2 times inscritos para começar.');
-    if (format === TournamentFormat.DOUBLE_ELIMINATION && teamCount < 4) {
-      throw new BadRequestException('Eliminação dupla precisa de ao menos 4 times.');
-    }
-    this.assertGroupSettings(format, { teamCount, groupCount, advancePerGroup });
+    this.assertPlan(format, { teamCount, groupCount, advancePerGroup, legs, thirdPlace });
   }
 
-  private assertGroupSettings(
+  /// Mesma checagem na criação, na edição e no início: a tela filtra as opções,
+  /// mas a API é quem garante.
+  private assertPlan(
     format: TournamentFormat,
-    plan: { teamCount: number; groupCount: number; advancePerGroup: number },
+    plan: { teamCount: number; groupCount: number; advancePerGroup: number; legs: number; thirdPlace: boolean },
   ) {
-    if (format !== TournamentFormat.GROUPS_KNOCKOUT) return;
-    const issue = groupPlanIssue(plan.teamCount, plan.groupCount, plan.advancePerGroup);
+    const issue = tournamentPlanIssue(format, plan);
     if (issue) throw new BadRequestException(issue);
+  }
+
+  private assertWindow(registrationEndsAt: Date | undefined, autoStartOnClose: boolean | undefined) {
+    if (registrationEndsAt && registrationEndsAt.getTime() <= Date.now()) {
+      throw new BadRequestException('O fim das inscrições precisa ser no futuro.');
+    }
+    if (autoStartOnClose && !registrationEndsAt) {
+      throw new BadRequestException('Para começar sozinho, o campeonato precisa de uma data de fim das inscrições.');
+    }
   }
 
   private buildStandings(
