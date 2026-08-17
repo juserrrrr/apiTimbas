@@ -171,6 +171,14 @@ export class CreateTournamentDto {
   @IsOptional()
   @Type(() => Date)
   startsAt?: Date;
+
+  @IsOptional()
+  @Type(() => Date)
+  registrationEndsAt?: Date;
+
+  @IsOptional()
+  @IsBoolean()
+  autoStartOnClose?: boolean;
 }
 
 export class UpdateTournamentDto extends CreateTournamentDto {

@@ -1,14 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { ScoreReaderProvider } from '@prisma/client';
-import { describeHttpError, requestChatCompletion } from './chat-completions.client';
+import { ScoreReadMode } from '@prisma/client';
+import { AiSettingsService } from '../ai/ai-settings.service';
+import { ChatClient, describeAiError } from '../ai/chat.client';
 import { extractText } from './ocr.client';
-import { ResolvedScoreReaderConfig, ScoreReaderConfigService } from './score-reader-config.service';
-import {
-  DetectedScoreboard,
-  ScoreReadRequest,
-  ScoreReading,
-  UNAVAILABLE_READING,
-} from './score-reader.types';
+import { DetectedScoreboard, ScoreReadRequest, ScoreReading, UNAVAILABLE_READING } from './score-reader.types';
 import { SCOREBOARD_SYSTEM_PROMPT, buildScoreboardPrompt, parseScoreboard } from './scoreboard.prompt';
 
 const NAME_MATCH_THRESHOLD = 0.45;
@@ -17,24 +12,37 @@ const NAME_MATCH_THRESHOLD = 0.45;
 export class ScoreReaderService {
   private readonly logger = new Logger(ScoreReaderService.name);
 
-  constructor(private readonly config: ScoreReaderConfigService) {}
+  constructor(
+    private readonly settings: AiSettingsService,
+    private readonly chat: ChatClient,
+  ) {}
 
   async read(request: ScoreReadRequest): Promise<ScoreReading> {
-    const config = await this.config.load();
-    const unavailable = this.rejectionReason(config, request);
-    if (unavailable) return { ...UNAVAILABLE_READING, notes: unavailable };
+    const config = await this.settings.scoreReader();
+
+    if (!config.provider || config.unavailableReason) {
+      return { ...UNAVAILABLE_READING, notes: config.unavailableReason ?? UNAVAILABLE_READING.notes };
+    }
+
+    const bytes = Math.floor((request.imageBase64.length * 3) / 4);
+    if (bytes > config.maxImageBytes) {
+      return {
+        ...UNAVAILABLE_READING,
+        notes: `Imagem de ${Math.round(bytes / 1024)}KB acima do limite de leitura automática — aprovação manual necessária.`,
+      };
+    }
 
     try {
       const detected =
-        config.provider === ScoreReaderProvider.OCR_TEXT
+        config.mode === ScoreReadMode.OCR_TEXT
           ? await this.readWithOcr(config, request)
           : await this.readWithVision(config, request);
 
       if (!detected) {
         return {
           available: true,
-          provider: config.provider,
-          model: config.model,
+          provider: config.provider.id,
+          model: config.provider.model,
           homeScore: null,
           awayScore: null,
           confidence: 0,
@@ -46,8 +54,8 @@ export class ScoreReaderService {
       const oriented = this.orient(detected, request.homeName, request.awayName);
       return {
         available: true,
-        provider: config.provider,
-        model: config.model,
+        provider: config.provider.id,
+        model: config.provider.model,
         homeScore: oriented.homeScore,
         awayScore: oriented.awayScore,
         confidence: oriented.confidence,
@@ -55,12 +63,12 @@ export class ScoreReaderService {
         raw: detected as unknown,
       };
     } catch (error) {
-      const message = describeHttpError(error);
+      const message = describeAiError(error);
       this.logger.warn(`Falha na leitura do placar: ${message}`);
       return {
         available: false,
-        provider: config.provider,
-        model: config.model,
+        provider: config.provider.id,
+        model: config.provider.model,
         homeScore: null,
         awayScore: null,
         confidence: 0,
@@ -70,81 +78,24 @@ export class ScoreReaderService {
     }
   }
 
-  async test(): Promise<{ ok: boolean; message: string }> {
-    const config = await this.config.load();
-    if (!config.apiKey) return this.finishTest(false, 'Nenhuma chave de API configurada.');
-    if (config.provider === ScoreReaderProvider.OCR_TEXT && !config.ocrBaseUrl) {
-      return this.finishTest(false, 'Provider OCR_TEXT selecionado, mas sem URL de OCR.');
-    }
-
-    try {
-      const answer = await requestChatCompletion({
-        baseUrl: config.baseUrl,
-        apiKey: config.apiKey,
-        model: config.model,
-        timeoutMs: config.timeoutMs,
-        messages: [
-          { role: 'system', content: 'Responda apenas com JSON válido.' },
-          { role: 'user', content: 'Responda exatamente {"ok":true}.' },
-        ],
-      });
-      if (!answer.includes('"ok"')) {
-        return this.finishTest(false, `Modelo ${config.model} respondeu fora do formato esperado.`);
-      }
-      const ocrNote =
-        config.provider === ScoreReaderProvider.OCR_TEXT ? ` OCR apontado para ${config.ocrBaseUrl}.` : '';
-      return this.finishTest(true, `Conexão com ${config.model} em ${config.baseUrl} funcionando.${ocrNote}`);
-    } catch (error) {
-      return this.finishTest(false, describeHttpError(error));
-    }
-  }
-
-  private async finishTest(ok: boolean, message: string) {
-    await this.config.recordCheck(ok, message);
-    return { ok, message };
-  }
-
-  private rejectionReason(config: ResolvedScoreReaderConfig, request: ScoreReadRequest): string | null {
-    if (!config.enabled) return UNAVAILABLE_READING.notes;
-    if (!config.apiKey) return 'Leitura automática sem chave de API configurada — aprovação manual necessária.';
-    if (config.provider === ScoreReaderProvider.OCR_TEXT && !config.ocrBaseUrl) {
-      return 'Leitura automática sem OCR configurado — aprovação manual necessária.';
-    }
-    const bytes = Math.floor((request.imageBase64.length * 3) / 4);
-    if (bytes > config.maxImageBytes) {
-      return `Imagem de ${Math.round(bytes / 1024)}KB acima do limite de leitura automática — aprovação manual necessária.`;
-    }
-    return null;
-  }
-
   private async readWithVision(
-    config: ResolvedScoreReaderConfig,
+    config: Awaited<ReturnType<AiSettingsService['scoreReader']>>,
     request: ScoreReadRequest,
   ): Promise<DetectedScoreboard | null> {
-    const answer = await requestChatCompletion({
-      baseUrl: config.baseUrl,
-      apiKey: config.apiKey!,
-      model: config.model,
+    const answer = await this.chat.complete({
+      provider: config.provider!,
+      system: SCOREBOARD_SYSTEM_PROMPT,
+      prompt: buildScoreboardPrompt(request),
+      image: { base64: request.imageBase64, mimeType: request.mimeType },
+      json: true,
+      maxTokens: 400,
       timeoutMs: config.timeoutMs,
-      messages: [
-        { role: 'system', content: SCOREBOARD_SYSTEM_PROMPT },
-        {
-          role: 'user',
-          content: [
-            { type: 'text', text: buildScoreboardPrompt(request) },
-            {
-              type: 'image_url',
-              image_url: { url: `data:${request.mimeType};base64,${request.imageBase64}` },
-            },
-          ],
-        },
-      ],
     });
     return parseScoreboard(answer);
   }
 
   private async readWithOcr(
-    config: ResolvedScoreReaderConfig,
+    config: Awaited<ReturnType<AiSettingsService['scoreReader']>>,
     request: ScoreReadRequest,
   ): Promise<DetectedScoreboard | null> {
     const extractedText = await extractText({
@@ -157,18 +108,23 @@ export class ScoreReaderService {
     });
 
     if (!extractedText) {
-      return { leftTeam: '', leftScore: 0, rightTeam: '', rightScore: 0, confidence: 0, notes: 'OCR não encontrou texto na imagem.' };
+      return {
+        leftTeam: '',
+        leftScore: 0,
+        rightTeam: '',
+        rightScore: 0,
+        confidence: 0,
+        notes: 'OCR não encontrou texto na imagem.',
+      };
     }
 
-    const answer = await requestChatCompletion({
-      baseUrl: config.baseUrl,
-      apiKey: config.apiKey!,
-      model: config.model,
+    const answer = await this.chat.complete({
+      provider: config.provider!,
+      system: SCOREBOARD_SYSTEM_PROMPT,
+      prompt: buildScoreboardPrompt({ ...request, extractedText }),
+      json: true,
+      maxTokens: 400,
       timeoutMs: config.timeoutMs,
-      messages: [
-        { role: 'system', content: SCOREBOARD_SYSTEM_PROMPT },
-        { role: 'user', content: buildScoreboardPrompt({ ...request, extractedText }) },
-      ],
     });
     return parseScoreboard(answer);
   }
@@ -176,9 +132,8 @@ export class ScoreReaderService {
   private orient(detected: DetectedScoreboard, homeName: string, awayName: string) {
     const direct = similarity(detected.leftTeam, homeName) + similarity(detected.rightTeam, awayName);
     const swapped = similarity(detected.leftTeam, awayName) + similarity(detected.rightTeam, homeName);
-    const best = Math.max(direct, swapped);
 
-    if (best < NAME_MATCH_THRESHOLD) {
+    if (Math.max(direct, swapped) < NAME_MATCH_THRESHOLD) {
       return {
         homeScore: detected.leftScore,
         awayScore: detected.rightScore,

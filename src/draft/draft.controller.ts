@@ -16,6 +16,8 @@ import { Request, Response } from 'express';
 import { AuthGuard } from '../auth/guards/auth.guard';
 import { RoleGuard } from '../auth/guards/role.guard';
 import { ActorService } from '../common/actor.service';
+import { Roles } from '../decorators/roles.decorator';
+import { Role } from '../enums/role.enum';
 import { DraftFixtureService } from './draft-fixture.service';
 import { DraftMarketService } from './draft-market.service';
 import { DraftPickService } from './draft-pick.service';
@@ -54,6 +56,7 @@ export class DraftController {
   }
 
   @Post()
+  @Roles(Role.ADMIN)
   async create(@Req() req: AuthedRequest, @Body() dto: CreateDraftLeagueDto) {
     return this.draft.create(dto, await this.me(req));
   }

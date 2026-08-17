@@ -506,6 +506,8 @@ model Tournament {
   requireProof       Boolean           @default(true)
   autoApproveProof   Boolean           @default(true)
   autoApproveMinConfidence Int         @default(80)
+  registrationEndsAt DateTime?
+  autoStartOnClose   Boolean           @default(false)
   createdByDiscordId String
   bannerUrl          String?
   startsAt           DateTime?
@@ -522,6 +524,7 @@ model Tournament {
   @@index([status])
   @@index([game])
   @@index([status, startsAt])
+  @@index([status, registrationEndsAt])
 }
 
 model TournamentStaff {
@@ -643,28 +646,36 @@ enum MatchProofStatus {
   REJECTED
 }
 
-enum ScoreReaderProvider {
+enum AiProvider {
+  GEMINI
+  DEEPSEEK
+  OPENAI
+}
+
+enum ScoreReadMode {
   VISION
   OCR_TEXT
 }
 
-model ScoreReaderConfig {
-  id                Int                 @id @default(1)
-  enabled           Boolean             @default(false)
-  provider          ScoreReaderProvider @default(VISION)
-  baseUrl           String              @default("https://api.openai.com/v1")
-  model             String              @default("gpt-4o-mini")
-  apiKeyCipher      String?
-  ocrBaseUrl        String?
-  ocrApiKeyCipher   String?
-  ocrEngine         String?
-  timeoutMs         Int                 @default(45000)
-  maxImageBytes     Int                 @default(4194304)
-  lastCheckedAt     DateTime?
-  lastCheckOk       Boolean?
-  lastCheckMessage  String?
-  updatedByDiscordId String?
-  updatedAt         DateTime            @updatedAt
+model AiSettings {
+  id                    Int           @id @default(1)
+  analysisEnabled       Boolean       @default(true)
+  analysisProvider      AiProvider    @default(GEMINI)
+  analysisModel         String?
+  analysisFallbackModel String?
+  scoreReaderEnabled    Boolean       @default(false)
+  scoreReaderProvider   AiProvider    @default(OPENAI)
+  scoreReaderModel      String?
+  scoreReadMode         ScoreReadMode @default(VISION)
+  ocrBaseUrl            String?
+  ocrEngine             String?
+  timeoutMs             Int           @default(45000)
+  maxImageBytes         Int           @default(4194304)
+  lastCheckedAt         DateTime?
+  lastCheckOk           Boolean?
+  lastCheckMessage      String?
+  updatedByDiscordId    String?
+  updatedAt             DateTime      @updatedAt
 }
 
 model MatchProof {
@@ -796,6 +807,8 @@ model DraftLeague {
   coinsDraw          Int               @default(25)
   coinsLoss          Int               @default(10)
   transferWindowOpen Boolean           @default(true)
+  registrationEndsAt DateTime?
+  autoStartOnClose   Boolean           @default(false)
   createdByDiscordId String
   startedAt          DateTime?
   finishedAt         DateTime?
@@ -809,6 +822,7 @@ model DraftLeague {
   staff              DraftStaff[]
 
   @@index([status])
+  @@index([status, registrationEndsAt])
 }
 
 model DraftStaff {

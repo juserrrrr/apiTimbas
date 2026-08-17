@@ -113,6 +113,14 @@ export class CreateDraftLeagueDto {
   @IsOptional()
   @IsBoolean()
   transferWindowOpen?: boolean;
+
+  @IsOptional()
+  @Type(() => Date)
+  registrationEndsAt?: Date;
+
+  @IsOptional()
+  @IsBoolean()
+  autoStartOnClose?: boolean;
 }
 
 export class UpdateDraftLeagueDto extends CreateDraftLeagueDto {
