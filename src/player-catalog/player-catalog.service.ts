@@ -1,7 +1,9 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { CatalogSource, DraftLeagueStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { parsePlayerLines, parseTeamLines } from './text-parser';
 import {
+  BulkTeamsDto,
   BulkPlayersDto,
   CreateCompetitionDto,
   CreateTeamDto,
@@ -62,6 +64,35 @@ export class PlayerCatalogService {
     return this.prisma.catalogTeam.create({
       data: { ...dto, competitionId, source: CatalogSource.MANUAL },
     });
+  }
+
+  /// Leitura sem IA do texto colado, para o fluxo manual funcionar mesmo com a
+  /// IA desligada. A IA fica como opção para texto bagunçado.
+  parsePastedPlayers(text: string) {
+    const players = parsePlayerLines(text);
+    return { players: players.map((player) => ({ ...player, overall: player.overall ?? null })) };
+  }
+
+  parsePastedTeams(text: string) {
+    return { teams: parseTeamLines(text) };
+  }
+
+  async createTeams(competitionId: string, teams: Array<{ name: string; shortName?: string | null }>) {
+    await this.requireCompetition(competitionId);
+
+    let created = 0;
+    for (const team of teams) {
+      const existing = await this.prisma.catalogTeam.findUnique({
+        where: { competitionId_name: { competitionId, name: team.name } },
+      });
+      if (existing) continue;
+      await this.prisma.catalogTeam.create({
+        data: { competitionId, name: team.name, shortName: team.shortName ?? null, source: CatalogSource.MANUAL },
+      });
+      created++;
+    }
+    const total = await this.prisma.catalogTeam.count({ where: { competitionId } });
+    return { created, total };
   }
 
   async updateTeam(teamId: string, dto: UpdateTeamDto) {

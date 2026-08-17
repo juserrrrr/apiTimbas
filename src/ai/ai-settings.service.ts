@@ -30,12 +30,16 @@ export class AiSettingsService {
     private readonly registry: AiProviderRegistry,
   ) {}
 
+  /// Dois upserts simultâneos na mesma linha estouram unique constraint no
+  /// Postgres, então a leitura vem primeiro e o upsert só roda na criação.
   async row(): Promise<AiSettings> {
+    const existing = await this.prisma.aiSettings.findUnique({ where: { id: 1 } });
+    if (existing) return existing;
     return this.prisma.aiSettings.upsert({ where: { id: 1 }, update: {}, create: { id: 1 } });
   }
 
-  async analysis(): Promise<AiFeatureConfig> {
-    const settings = await this.row();
+  async analysis(preloaded?: AiSettings): Promise<AiFeatureConfig> {
+    const settings = preloaded ?? (await this.row());
     return this.featureConfig(
       settings.analysisEnabled,
       settings.analysisProvider,
@@ -45,8 +49,8 @@ export class AiSettingsService {
     );
   }
 
-  async scoreReader() {
-    const settings = await this.row();
+  async scoreReader(preloaded?: AiSettings) {
+    const settings = preloaded ?? (await this.row());
     const needsVision = settings.scoreReadMode === ScoreReadMode.VISION;
     const feature = this.featureConfig(
       settings.scoreReaderEnabled,
@@ -67,7 +71,10 @@ export class AiSettingsService {
 
   async view() {
     const settings = await this.row();
-    const [analysis, scoreReader] = await Promise.all([this.analysis(), this.scoreReader()]);
+    const [analysis, scoreReader] = await Promise.all([
+      this.analysis(settings),
+      this.scoreReader(settings),
+    ]);
 
     return {
       providers: this.registry.catalog(),

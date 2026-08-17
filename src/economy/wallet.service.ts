@@ -27,11 +27,9 @@ export class WalletService {
   }
 
   async ensureWallet(userId: number, db: Db = this.prisma) {
-    return db.wallet.upsert({
-      where: { userId },
-      update: {},
-      create: { userId },
-    });
+    const existing = await db.wallet.findUnique({ where: { userId } });
+    if (existing) return existing;
+    return db.wallet.upsert({ where: { userId }, update: {}, create: { userId } });
   }
 
   async credit(movement: CoinMovement, db: Db = this.prisma) {

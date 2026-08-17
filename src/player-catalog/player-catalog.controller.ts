@@ -8,10 +8,13 @@ import { PlayerCatalogService } from './player-catalog.service';
 import { SquadVisionService } from './squad-vision.service';
 import {
   BulkPlayersDto,
+  BulkTeamsDto,
   CreateCompetitionDto,
   CreateTeamDto,
   ExtractSquadDto,
+  ExtractTeamsDto,
   ImportToLeagueDto,
+  ParseTextDto,
   UpdateCompetitionDto,
   UpdatePlayerDto,
   UpdateTeamDto,
@@ -65,6 +68,11 @@ export class PlayerCatalogController {
     return this.catalog.createTeam(id, dto);
   }
 
+  @Post('competitions/:id/teams/bulk')
+  createTeams(@Param('id') id: string, @Body() dto: BulkTeamsDto) {
+    return this.catalog.createTeams(id, dto.teams);
+  }
+
   @Patch('teams/:teamId')
   updateTeam(@Param('teamId') teamId: string, @Body() dto: UpdateTeamDto) {
     return this.catalog.updateTeam(teamId, dto);
@@ -98,6 +106,26 @@ export class PlayerCatalogController {
   @Post('extract-squad')
   extractSquad(@Body() dto: ExtractSquadDto) {
     return this.vision.extract(dto.imageBase64, dto.mimeType, dto.teamName);
+  }
+
+  @Post('parse-pasted-players')
+  parsePastedPlayers(@Body() dto: ParseTextDto) {
+    return this.catalog.parsePastedPlayers(dto.text);
+  }
+
+  @Post('parse-pasted-teams')
+  parsePastedTeams(@Body() dto: ParseTextDto) {
+    return this.catalog.parsePastedTeams(dto.text);
+  }
+
+  @Post('parse-squad-text')
+  parseSquadText(@Body() dto: ParseTextDto) {
+    return this.vision.extractFromText(dto.text, dto.teamName);
+  }
+
+  @Post('extract-teams')
+  extractTeams(@Body() dto: ExtractTeamsDto) {
+    return this.vision.extractTeams(dto);
   }
 
   @Post('import-to-league')

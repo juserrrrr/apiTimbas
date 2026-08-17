@@ -160,6 +160,46 @@ export class UpdatePlayerDto extends CatalogPlayerInputDto {
   active?: boolean;
 }
 
+export class BulkTeamsDto {
+  @IsArray()
+  @ArrayMaxSize(120)
+  @ValidateNested({ each: true })
+  @Type(() => CreateTeamDto)
+  teams: CreateTeamDto[];
+}
+
+export class ParseTextDto {
+  @Transform(trim)
+  @IsString()
+  @MinLength(2)
+  @MaxLength(40000)
+  text: string;
+
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(60)
+  teamName?: string;
+}
+
+export class ExtractTeamsDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(6_000_000)
+  imageBase64?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  mimeType?: string;
+
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(40000)
+  text?: string;
+}
+
 export class ExtractSquadDto {
   @IsString()
   @MaxLength(6_000_000)
