@@ -46,7 +46,7 @@ export class CreateDraftLeagueDto {
   @IsOptional()
   @Type(() => Number)
   @IsInt()
-  @Min(1)
+  @Min(11)
   @Max(26)
   rosterSize?: number;
 
