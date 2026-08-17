@@ -5,6 +5,7 @@ import { PrismaService } from './prisma/prisma.service';
 import { Role } from './enums/role.enum';
 import * as bcrypt from 'bcrypt';
 import * as cookieParser from 'cookie-parser';
+import { json, urlencoded } from 'express';
 
 async function seedAdmin(prisma: PrismaService) {
   const { ADMIN_DISCORD_ID, ADMIN_NAME, ADMIN_EMAIL, ADMIN_PASSWORD } =
@@ -43,6 +44,8 @@ async function bootstrap() {
     .set('trust proxy', Number(process.env.TRUST_PROXY_HOPS ?? 1));
 
   app.use(cookieParser());
+  app.use(json({ limit: '6mb' }));
+  app.use(urlencoded({ extended: true, limit: '6mb' }));
 
   app.useGlobalPipes(
     new ValidationPipe({

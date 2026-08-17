@@ -16,6 +16,11 @@ import { AiModule } from './ai/ai.module';
 import { VerifyModule } from './verify/verify.module';
 import { PlayerStatsModule } from './playerStats/player-stats.module';
 import { EaFcClubsModule } from './ea-fc-clubs/ea-fc-clubs.module';
+import { CommonModule } from './common/common.module';
+import { EconomyModule } from './economy/economy.module';
+import { ScoreReaderModule } from './score-reader/score-reader.module';
+import { TournamentModule } from './tournament/tournament.module';
+import { DraftModule } from './draft/draft.module';
 
 @Module({
   imports: [
@@ -48,6 +53,11 @@ import { EaFcClubsModule } from './ea-fc-clubs/ea-fc-clubs.module';
     VerifyModule,
     PlayerStatsModule,
     EaFcClubsModule,
+    CommonModule,
+    EconomyModule,
+    ScoreReaderModule,
+    TournamentModule,
+    DraftModule,
   ],
   controllers: [],
   providers: [{ provide: APP_GUARD, useClass: AppThrottlerGuard }],

@@ -131,6 +131,11 @@ model User {
   dateUpdated    DateTime         @updatedAt
   TeamsLeague    UserTeamLeague[]
   leagueAccounts LeagueAccount[]
+  tournamentTeams TournamentTeamMember[]
+  tournamentStaff TournamentStaff[]
+  wallet         Wallet?
+  draftRosters   DraftRoster[]
+  draftStaff     DraftStaff[]
 }
 
 model LeagueAccount {
@@ -415,4 +420,535 @@ model EaMatchPlayerStat {
   @@id([matchId, playerId])
   @@index([playerId, matchId])
   @@index([matchId])
+}
+
+// ─── Competições ──────────────────────────────────────────────────────────────
+// O módulo de torneios é agnóstico de jogo: `game` só define rótulos e ícones na
+// UI. As regras (chaveamento, pontuação, prova por foto) valem para qualquer
+// título — EA FC é apenas o default.
+
+enum CompetitionGame {
+  EA_FC
+  LOL
+  VALORANT
+  CS
+  ROCKET_LEAGUE
+  OTHER
+}
+
+enum TournamentFormat {
+  SINGLE_ELIMINATION
+  DOUBLE_ELIMINATION
+  ROUND_ROBIN
+  GROUPS_KNOCKOUT
+}
+
+enum TournamentStatus {
+  DRAFT
+  REGISTRATION
+  RUNNING
+  FINISHED
+  CANCELLED
+}
+
+enum TournamentPhase {
+  GROUP
+  LEAGUE
+  WINNERS
+  LOSERS
+  GRAND_FINAL
+  THIRD_PLACE
+}
+
+enum TournamentMatchStatus {
+  PENDING
+  READY
+  AWAITING_PROOF
+  DISPUTED
+  FINISHED
+  WALKOVER
+}
+
+enum MatchSlot {
+  HOME
+  AWAY
+}
+
+enum CompetitionRole {
+  OWNER
+  MODERATOR
+}
+
+model Tournament {
+  id                 String            @id @default(cuid())
+  name               String
+  slug               String            @unique
+  description        String?
+  game               CompetitionGame   @default(EA_FC)
+  gameLabel          String?
+  format             TournamentFormat  @default(SINGLE_ELIMINATION)
+  status             TournamentStatus  @default(DRAFT)
+  maxTeams           Int               @default(8)
+  teamSize           Int               @default(1)
+  groupCount         Int               @default(2)
+  advancePerGroup    Int               @default(2)
+  legs               Int               @default(1)
+  thirdPlace         Boolean           @default(false)
+  allowDraws         Boolean           @default(true)
+  pointsWin          Int               @default(3)
+  pointsDraw         Int               @default(1)
+  pointsLoss         Int               @default(0)
+  coinsWin           Int               @default(50)
+  coinsDraw          Int               @default(20)
+  coinsLoss          Int               @default(5)
+  coinsChampion      Int               @default(500)
+  coinsRunnerUp      Int               @default(200)
+  requireProof       Boolean           @default(true)
+  autoApproveProof   Boolean           @default(true)
+  autoApproveMinConfidence Int         @default(80)
+  createdByDiscordId String
+  bannerUrl          String?
+  startsAt           DateTime?
+  finishedAt         DateTime?
+  championTeamId     String?
+  runnerUpTeamId     String?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+  teams              TournamentTeam[]
+  groups             TournamentGroup[]
+  matches            TournamentMatch[]
+  staff              TournamentStaff[]
+
+  @@index([status])
+  @@index([game])
+  @@index([status, startsAt])
+}
+
+model TournamentStaff {
+  id           String          @id @default(cuid())
+  tournamentId String
+  tournament   Tournament      @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  userId       Int
+  user         User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role         CompetitionRole @default(MODERATOR)
+  addedByUserId Int?
+  createdAt    DateTime        @default(now())
+
+  @@unique([tournamentId, userId])
+  @@index([userId])
+  @@index([tournamentId, role])
+}
+
+model TournamentTeam {
+  id             String                 @id @default(cuid())
+  tournamentId   String
+  tournament     Tournament             @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  name           String
+  tag            String?
+  logoUrl        String?
+  seed           Int?
+  groupId        String?
+  group          TournamentGroup?       @relation(fields: [groupId], references: [id])
+  ownerDiscordId String?
+  eaClubId       String?
+  eliminated     Boolean                @default(false)
+  played         Int                    @default(0)
+  wins           Int                    @default(0)
+  draws          Int                    @default(0)
+  losses         Int                    @default(0)
+  scoreFor       Int                    @default(0)
+  scoreAgainst   Int                    @default(0)
+  points         Int                    @default(0)
+  createdAt      DateTime               @default(now())
+  members        TournamentTeamMember[]
+  homeMatches    TournamentMatch[]      @relation("TournamentHome")
+  awayMatches    TournamentMatch[]      @relation("TournamentAway")
+
+  @@unique([tournamentId, name])
+  @@index([tournamentId, groupId])
+  @@index([ownerDiscordId])
+}
+
+model TournamentTeamMember {
+  id      String         @id @default(cuid())
+  teamId  String
+  team    TournamentTeam @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  userId  Int
+  user    User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  captain Boolean        @default(false)
+
+  @@unique([teamId, userId])
+  @@index([userId])
+}
+
+model TournamentGroup {
+  id           String            @id @default(cuid())
+  tournamentId String
+  tournament   Tournament        @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  name         String
+  order        Int
+  teams        TournamentTeam[]
+  matches      TournamentMatch[]
+
+  @@unique([tournamentId, order])
+}
+
+model TournamentMatch {
+  id                  String                @id @default(cuid())
+  tournamentId        String
+  tournament          Tournament            @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  groupId             String?
+  group               TournamentGroup?      @relation(fields: [groupId], references: [id])
+  phase               TournamentPhase       @default(WINNERS)
+  round               Int                   @default(1)
+  position            Int                   @default(0)
+  leg                 Int                   @default(1)
+  label               String?
+  homeTeamId          String?
+  homeTeam            TournamentTeam?       @relation("TournamentHome", fields: [homeTeamId], references: [id])
+  awayTeamId          String?
+  awayTeam            TournamentTeam?       @relation("TournamentAway", fields: [awayTeamId], references: [id])
+  homeScore           Int?
+  awayScore           Int?
+  winnerTeamId        String?
+  status              TournamentMatchStatus @default(PENDING)
+  scheduledAt         DateTime?
+  playedAt            DateTime?
+  reportedByDiscordId String?
+  nextMatchId         String?
+  nextMatch           TournamentMatch?      @relation("BracketAdvance", fields: [nextMatchId], references: [id])
+  nextMatchSlot       MatchSlot?
+  loserNextMatchId    String?
+  loserNextMatch      TournamentMatch?      @relation("BracketDrop", fields: [loserNextMatchId], references: [id])
+  loserNextMatchSlot  MatchSlot?
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+  feedsInto           TournamentMatch[]     @relation("BracketAdvance")
+  dropsInto           TournamentMatch[]     @relation("BracketDrop")
+  proofs              MatchProof[]
+
+  @@unique([tournamentId, phase, round, position, leg])
+  @@index([tournamentId, status])
+  @@index([tournamentId, phase, round])
+  @@index([homeTeamId])
+  @@index([awayTeamId])
+  @@index([scheduledAt])
+}
+
+// ─── Prova de resultado por foto ──────────────────────────────────────────────
+
+enum MatchProofStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum ScoreReaderProvider {
+  VISION
+  OCR_TEXT
+}
+
+model ScoreReaderConfig {
+  id                Int                 @id @default(1)
+  enabled           Boolean             @default(false)
+  provider          ScoreReaderProvider @default(VISION)
+  baseUrl           String              @default("https://api.openai.com/v1")
+  model             String              @default("gpt-4o-mini")
+  apiKeyCipher      String?
+  ocrBaseUrl        String?
+  ocrApiKeyCipher   String?
+  ocrEngine         String?
+  timeoutMs         Int                 @default(45000)
+  maxImageBytes     Int                 @default(4194304)
+  lastCheckedAt     DateTime?
+  lastCheckOk       Boolean?
+  lastCheckMessage  String?
+  updatedByDiscordId String?
+  updatedAt         DateTime            @updatedAt
+}
+
+model MatchProof {
+  id                   String           @id @default(cuid())
+  matchId              String?
+  match                TournamentMatch? @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  draftMatchId         String?
+  draftMatch           DraftMatch?      @relation(fields: [draftMatchId], references: [id], onDelete: Cascade)
+  submittedByDiscordId String
+  image                Bytes
+  mimeType             String
+  claimedHomeScore     Int
+  claimedAwayScore     Int
+  aiProvider           String?
+  aiModel              String?
+  aiHomeScore          Int?
+  aiAwayScore          Int?
+  aiConfidence         Int?
+  aiAgrees             Boolean?
+  aiNotes              String?
+  aiRaw                Json?
+  status               MatchProofStatus @default(PENDING)
+  reviewedByDiscordId  String?
+  reviewedAt           DateTime?
+  reviewNote           String?
+  createdAt            DateTime         @default(now())
+
+  @@index([matchId, status])
+  @@index([draftMatchId, status])
+  @@index([status, createdAt])
+}
+
+// ─── Economia (moedas) ────────────────────────────────────────────────────────
+
+enum WalletTxType {
+  MATCH_WIN
+  MATCH_DRAW
+  MATCH_LOSS
+  TOURNAMENT_PRIZE
+  DRAFT_SALE
+  DRAFT_PURCHASE
+  TRANSFER_IN
+  TRANSFER_OUT
+  ADMIN_ADJUST
+}
+
+model Wallet {
+  id           Int                 @id @default(autoincrement())
+  userId       Int                 @unique
+  user         User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  balance      Int                 @default(0)
+  totalEarned  Int                 @default(0)
+  totalSpent   Int                 @default(0)
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+  transactions WalletTransaction[]
+
+  @@index([balance])
+}
+
+model WalletTransaction {
+  id            String       @id @default(cuid())
+  walletId      Int
+  wallet        Wallet       @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  amount        Int
+  balanceAfter  Int
+  type          WalletTxType
+  description   String
+  referenceType String?
+  referenceId   String?
+  createdAt     DateTime     @default(now())
+
+  @@index([walletId, createdAt])
+  @@index([referenceType, referenceId])
+}
+
+// ─── Liga de draft ────────────────────────────────────────────────────────────
+
+enum DraftLeagueStatus {
+  SETUP
+  DRAFTING
+  ACTIVE
+  FINISHED
+}
+
+enum DraftOrderType {
+  SNAKE
+  LINEAR
+}
+
+enum DraftMatchStatus {
+  SCHEDULED
+  AWAITING_PROOF
+  FINISHED
+}
+
+enum TransferOfferKind {
+  BUY_FREE_AGENT
+  BUY_FROM_ROSTER
+  SWAP
+}
+
+enum TransferOfferStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  CANCELLED
+  EXPIRED
+}
+
+model DraftLeague {
+  id                 String            @id @default(cuid())
+  name               String
+  description        String?
+  status             DraftLeagueStatus @default(SETUP)
+  orderType          DraftOrderType    @default(SNAKE)
+  rosterSize         Int               @default(11)
+  formation          String            @default("4-3-3")
+  pickSeconds        Int               @default(120)
+  matchDays          Int[]             @default([0, 3])
+  matchHour          Int               @default(21)
+  totalRounds        Int               @default(0)
+  currentRound       Int               @default(0)
+  currentPickNumber  Int               @default(0)
+  pickDeadline       DateTime?
+  pointsWin          Int               @default(3)
+  pointsDraw         Int               @default(1)
+  coinsWin           Int               @default(60)
+  coinsDraw          Int               @default(25)
+  coinsLoss          Int               @default(10)
+  transferWindowOpen Boolean           @default(true)
+  createdByDiscordId String
+  startedAt          DateTime?
+  finishedAt         DateTime?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+  players            DraftPlayer[]
+  rosters            DraftRoster[]
+  picks              DraftPick[]
+  matches            DraftMatch[]
+  offers             TransferOffer[]
+  staff              DraftStaff[]
+
+  @@index([status])
+}
+
+model DraftStaff {
+  id            String          @id @default(cuid())
+  leagueId      String
+  league        DraftLeague     @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+  userId        Int
+  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role          CompetitionRole @default(MODERATOR)
+  addedByUserId Int?
+  createdAt     DateTime        @default(now())
+
+  @@unique([leagueId, userId])
+  @@index([userId])
+  @@index([leagueId, role])
+}
+
+model DraftPlayer {
+  id           String          @id @default(cuid())
+  leagueId     String
+  league       DraftLeague     @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+  name         String
+  position     String
+  overall      Int             @default(70)
+  realTeam     String?
+  nationality  String?
+  photoUrl     String?
+  price        Int             @default(100)
+  rosterId     String?
+  roster       DraftRoster?    @relation(fields: [rosterId], references: [id])
+  starter      Boolean         @default(false)
+  slot         String?
+  appearances  Int             @default(0)
+  goals        Int             @default(0)
+  assists      Int             @default(0)
+  rating       Float?
+  createdAt    DateTime        @default(now())
+  picks        DraftPick[]
+  offers       TransferOffer[]
+
+  @@unique([leagueId, name])
+  @@index([leagueId, rosterId])
+  @@index([leagueId, position])
+  @@index([leagueId, overall])
+}
+
+model DraftRoster {
+  id             String          @id @default(cuid())
+  leagueId       String
+  league         DraftLeague     @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+  userId         Int
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name           String
+  tag            String?
+  logoUrl        String?
+  formation      String          @default("4-3-3")
+  draftOrder     Int             @default(0)
+  played         Int             @default(0)
+  wins           Int             @default(0)
+  draws          Int             @default(0)
+  losses         Int             @default(0)
+  goalsFor       Int             @default(0)
+  goalsAgainst   Int             @default(0)
+  points         Int             @default(0)
+  createdAt      DateTime        @default(now())
+  players        DraftPlayer[]
+  picks          DraftPick[]
+  homeMatches    DraftMatch[]    @relation("DraftHome")
+  awayMatches    DraftMatch[]    @relation("DraftAway")
+  offersMade     TransferOffer[] @relation("TransferFrom")
+  offersReceived TransferOffer[] @relation("TransferTo")
+
+  @@unique([leagueId, userId])
+  @@unique([leagueId, name])
+  @@index([leagueId, points])
+}
+
+model DraftPick {
+  id         String      @id @default(cuid())
+  leagueId   String
+  league     DraftLeague @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+  rosterId   String
+  roster     DraftRoster @relation(fields: [rosterId], references: [id], onDelete: Cascade)
+  playerId   String
+  player     DraftPlayer @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  round      Int
+  pickNumber Int
+  price      Int         @default(0)
+  auto       Boolean     @default(false)
+  createdAt  DateTime    @default(now())
+
+  @@unique([leagueId, playerId])
+  @@unique([leagueId, pickNumber])
+  @@index([rosterId])
+}
+
+model DraftMatch {
+  id                  String           @id @default(cuid())
+  leagueId            String
+  league              DraftLeague      @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+  round               Int
+  homeRosterId        String
+  homeRoster          DraftRoster      @relation("DraftHome", fields: [homeRosterId], references: [id], onDelete: Cascade)
+  awayRosterId        String
+  awayRoster          DraftRoster      @relation("DraftAway", fields: [awayRosterId], references: [id], onDelete: Cascade)
+  homeScore           Int?
+  awayScore           Int?
+  status              DraftMatchStatus @default(SCHEDULED)
+  scheduledAt         DateTime
+  playedAt            DateTime?
+  reportedByDiscordId String?
+  createdAt           DateTime         @default(now())
+  proofs              MatchProof[]
+
+  @@unique([leagueId, round, homeRosterId])
+  @@index([leagueId, round])
+  @@index([leagueId, scheduledAt])
+  @@index([leagueId, status])
+}
+
+model TransferOffer {
+  id              String              @id @default(cuid())
+  leagueId        String
+  league          DraftLeague         @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+  kind            TransferOfferKind
+  playerId        String
+  player          DraftPlayer         @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  fromRosterId    String
+  fromRoster      DraftRoster         @relation("TransferFrom", fields: [fromRosterId], references: [id], onDelete: Cascade)
+  toRosterId      String?
+  toRoster        DraftRoster?        @relation("TransferTo", fields: [toRosterId], references: [id], onDelete: Cascade)
+  offeredPlayerId String?
+  price           Int                 @default(0)
+  message         String?
+  status          TransferOfferStatus @default(PENDING)
+  respondedAt     DateTime?
+  expiresAt       DateTime?
+  createdAt       DateTime            @default(now())
+
+  @@index([leagueId, status])
+  @@index([toRosterId, status])
+  @@index([fromRosterId, status])
 }

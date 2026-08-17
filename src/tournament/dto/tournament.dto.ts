@@ -1,0 +1,325 @@
+import { Transform, Type } from 'class-transformer';
+import {
+  IsArray,
+  IsBoolean,
+  IsEnum,
+  IsInt,
+  IsOptional,
+  IsString,
+  IsUrl,
+  Max,
+  MaxLength,
+  Min,
+  MinLength,
+  ValidateNested,
+} from 'class-validator';
+import {
+  CompetitionGame,
+  CompetitionRole,
+  TournamentFormat,
+  TournamentStatus,
+} from '@prisma/client';
+
+const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
+
+export class CreateTournamentDto {
+  @Transform(trim)
+  @IsString()
+  @MinLength(3)
+  @MaxLength(80)
+  name: string;
+
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(500)
+  description?: string;
+
+  @IsOptional()
+  @IsEnum(CompetitionGame)
+  game?: CompetitionGame;
+
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(60)
+  gameLabel?: string;
+
+  @IsOptional()
+  @IsEnum(TournamentFormat)
+  format?: TournamentFormat;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(2)
+  @Max(64)
+  maxTeams?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(11)
+  teamSize?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(2)
+  @Max(8)
+  groupCount?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(4)
+  advancePerGroup?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(2)
+  legs?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  thirdPlace?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  allowDraws?: boolean;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(10)
+  pointsWin?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(10)
+  pointsDraw?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(10)
+  pointsLoss?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(100000)
+  coinsWin?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(100000)
+  coinsDraw?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(100000)
+  coinsLoss?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(1000000)
+  coinsChampion?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(1000000)
+  coinsRunnerUp?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  requireProof?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  autoApproveProof?: boolean;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(50)
+  @Max(100)
+  autoApproveMinConfidence?: number;
+
+  @IsOptional()
+  @IsUrl({ require_tld: false, protocols: ['http', 'https'] })
+  @MaxLength(400)
+  bannerUrl?: string;
+
+  @IsOptional()
+  @Type(() => Date)
+  startsAt?: Date;
+}
+
+export class UpdateTournamentDto extends CreateTournamentDto {
+  @IsOptional()
+  declare name: string;
+
+  @IsOptional()
+  @IsEnum(TournamentStatus)
+  status?: TournamentStatus;
+}
+
+export class ListTournamentsDto {
+  @IsOptional()
+  @IsEnum(TournamentStatus)
+  status?: TournamentStatus;
+
+  @IsOptional()
+  @IsEnum(CompetitionGame)
+  game?: CompetitionGame;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  take?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  skip?: number;
+}
+
+export class AddTeamDto {
+  @Transform(trim)
+  @IsString()
+  @MinLength(2)
+  @MaxLength(48)
+  name: string;
+
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(6)
+  tag?: string;
+
+  @IsOptional()
+  @IsUrl({ require_tld: false, protocols: ['http', 'https'] })
+  @MaxLength(400)
+  logoUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  eaClubId?: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsInt({ each: true })
+  memberIds?: number[];
+}
+
+export class UpdateTeamDto extends AddTeamDto {
+  @IsOptional()
+  declare name: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(64)
+  seed?: number;
+}
+
+export class SeedEntryDto {
+  @IsString()
+  teamId: string;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(64)
+  seed: number;
+}
+
+export class SetSeedsDto {
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => SeedEntryDto)
+  seeds: SeedEntryDto[];
+}
+
+export class StaffDto {
+  @Type(() => Number)
+  @IsInt()
+  userId: number;
+
+  @IsEnum(CompetitionRole)
+  role: CompetitionRole;
+}
+
+export class ReportResultDto {
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(99)
+  homeScore: number;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(99)
+  awayScore: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2_800_000)
+  imageBase64?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  mimeType?: string;
+}
+
+export class ReviewProofDto {
+  @IsBoolean()
+  approve: boolean;
+
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(240)
+  note?: string;
+}
+
+export class ScheduleMatchDto {
+  @Type(() => Date)
+  scheduledAt: Date;
+}
+
+export class WalkoverDto {
+  @IsString()
+  winnerTeamId: string;
+
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(240)
+  reason?: string;
+}
