@@ -8,6 +8,7 @@ import {
   BulkTeamsDto,
   BulkPlayersDto,
   CreateCompetitionDto,
+  CreatePlayerDto,
   CreateTeamDto,
   ImportToLeagueDto,
   UpdateCompetitionDto,
@@ -15,12 +16,145 @@ import {
   UpdateTeamDto,
 } from './dto/player-catalog.dto';
 
+const BASE_CODE = 'TIMBAS';
+const SEM_CLUBE = 'Sem clube';
+
 @Injectable()
 export class PlayerCatalogService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly attributeAi: AttributeAiService,
   ) {}
+
+  /// A base é uma só. Competição e time existem por baixo porque o import de fora
+  /// vem assim, mas quem cadastra à mão só vê jogador: o que falta é criado aqui.
+  private async defaultTeam(clubName?: string | null) {
+    const competition = await this.prisma.catalogCompetition.upsert({
+      where: { code: BASE_CODE },
+      update: {},
+      create: { code: BASE_CODE, name: 'Base do Timbas', source: CatalogSource.MANUAL },
+    });
+
+    const name = clubName?.trim() || SEM_CLUBE;
+    const existing = await this.prisma.catalogTeam.findUnique({
+      where: { competitionId_name: { competitionId: competition.id, name } },
+    });
+    if (existing) return existing;
+
+    return this.prisma.catalogTeam.create({
+      data: { competitionId: competition.id, name, source: CatalogSource.MANUAL },
+    });
+  }
+
+  /// Lista a base inteira, sem passar por competição nem time.
+  async listAllPlayers(query: { search?: string; missingAttributes?: boolean; take?: number }) {
+    const [players, total, withAttributes] = await Promise.all([
+      this.prisma.catalogPlayer.findMany({
+        where: {
+          active: true,
+          ...(query.search ? { name: { contains: query.search, mode: 'insensitive' } } : {}),
+          ...(query.missingAttributes ? { pace: null } : {}),
+        },
+        orderBy: [{ overall: 'desc' }, { name: 'asc' }],
+        take: query.take ?? 200,
+        include: { team: { select: { id: true, name: true, competition: { select: { id: true, name: true } } } } },
+      }),
+      this.prisma.catalogPlayer.count({ where: { active: true } }),
+      this.prisma.catalogPlayer.count({ where: { active: true, pace: { not: null } } }),
+    ]);
+
+    return { players, total, withAttributes };
+  }
+
+  /// Lista colada ou lida por foto caindo direto na base, sem escolher time.
+  async createPlayers(dto: BulkPlayersDto) {
+    let created = 0;
+    let skipped = 0;
+
+    for (const player of dto.players) {
+      const taken = await this.prisma.catalogPlayer.findFirst({ where: { name: player.name, active: true } });
+      if (taken) {
+        skipped++;
+        continue;
+      }
+      const team = await this.defaultTeam(null);
+      await this.prisma.catalogPlayer.create({
+        data: { ...player, teamId: team.id, source: CatalogSource.MANUAL },
+      });
+      created++;
+    }
+
+    const total = await this.prisma.catalogPlayer.count({ where: { active: true } });
+    return { created, skipped, total };
+  }
+
+  async createPlayer(dto: CreatePlayerDto) {
+    const team = await this.defaultTeam(dto.realTeam);
+    const taken = await this.prisma.catalogPlayer.findFirst({
+      where: { name: dto.name, active: true },
+    });
+    if (taken) throw new BadRequestException(`${dto.name} já está na base.`);
+
+    return this.prisma.catalogPlayer.create({
+      data: {
+        teamId: team.id,
+        name: dto.name,
+        position: dto.position,
+        overall: dto.overall ?? 70,
+        price: dto.price ?? 100,
+        nationality: dto.nationality,
+        source: CatalogSource.MANUAL,
+      },
+      include: { team: { select: { id: true, name: true, competition: { select: { id: true, name: true } } } } },
+    });
+  }
+
+  /// Estima quem está sem atributo na base inteira, em lote, para a liga simulada
+  /// poder usar todo mundo. Liga real não precisa disso.
+  async estimateMissingAttributes(limit: number) {
+    const players = await this.prisma.catalogPlayer.findMany({
+      where: { active: true, pace: null },
+      orderBy: { name: 'asc' },
+      take: limit,
+      include: { team: { select: { name: true, competition: { select: { name: true } } } } },
+    });
+    if (players.length === 0) {
+      throw new BadRequestException('Todo mundo da base já tem atributos.');
+    }
+
+    const estimation = await this.attributeAi.estimate(
+      players.map((player) => ({
+        name: player.name,
+        position: player.position,
+        realTeam: player.team.name,
+        nationality: player.nationality,
+        birthDate: player.birthDate,
+        competition: player.team.competition.name,
+      })),
+    );
+
+    const byName = new Map(players.map((player) => [player.name, player]));
+    const now = new Date();
+    let updated = 0;
+
+    for (const row of estimation.players) {
+      const player = byName.get(row.name);
+      if (!player) continue;
+      await this.prisma.catalogPlayer.update({
+        where: { id: player.id },
+        data: {
+          ...row.attributes,
+          overall: row.overall,
+          attributesModel: estimation.model,
+          attributesNote: row.note || null,
+          attributesAt: now,
+        },
+      });
+      updated++;
+    }
+
+    return { updated, requested: players.length, model: estimation.model };
+  }
 
   async listCompetitions() {
     const competitions = await this.prisma.catalogCompetition.findMany({
@@ -272,10 +406,14 @@ export class PlayerCatalogService {
     const players = await this.prisma.catalogPlayer.findMany({
       where: {
         active: true,
-        team: {
-          competitionId: dto.competitionId,
-          ...(dto.teamIds?.length ? { id: { in: dto.teamIds } } : {}),
-        },
+        ...(dto.competitionId || dto.teamIds?.length
+          ? {
+              team: {
+                ...(dto.competitionId ? { competitionId: dto.competitionId } : {}),
+                ...(dto.teamIds?.length ? { id: { in: dto.teamIds } } : {}),
+              },
+            }
+          : {}),
         ...(dto.minOverall ? { overall: { gte: dto.minOverall } } : {}),
       },
       include: { team: { select: { name: true } } },

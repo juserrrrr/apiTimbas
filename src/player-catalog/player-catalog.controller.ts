@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '../auth/guards/auth.guard';
 import { PermissionGuard, RequirePermissions } from '../access/permission.guard';
 import { CatalogSyncService } from './catalog-sync.service';
@@ -8,7 +8,10 @@ import {
   BulkPlayersDto,
   BulkTeamsDto,
   CreateCompetitionDto,
+  CreatePlayerDto,
   CreateTeamDto,
+  EstimateMissingDto,
+  ListBasePlayersDto,
   EstimateAttributesDto,
   ExtractSquadDto,
   ExtractTeamsDto,
@@ -28,6 +31,26 @@ export class PlayerCatalogController {
     private readonly sync: CatalogSyncService,
     private readonly vision: SquadVisionService,
   ) {}
+
+  @Get('players')
+  basePlayers(@Query() query: ListBasePlayersDto) {
+    return this.catalog.listAllPlayers(query);
+  }
+
+  @Post('players')
+  createPlayer(@Body() dto: CreatePlayerDto) {
+    return this.catalog.createPlayer(dto);
+  }
+
+  @Post('players/bulk')
+  createPlayers(@Body() dto: BulkPlayersDto) {
+    return this.catalog.createPlayers(dto);
+  }
+
+  @Post('players/estimate-missing')
+  estimateMissing(@Body() dto: EstimateMissingDto) {
+    return this.catalog.estimateMissingAttributes(dto.limit ?? 24);
+  }
 
   @Get('competitions')
   async competitions() {

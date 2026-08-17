@@ -192,6 +192,76 @@ export class EstimateAttributesDto {
   onlyMissing?: boolean;
 }
 
+/// Cadastro direto na base, sem escolher competição nem time.
+export class CreatePlayerDto {
+  @Transform(trim)
+  @IsString()
+  @MinLength(2)
+  @MaxLength(60)
+  name: string;
+
+  @Transform(trim)
+  @IsString()
+  @MinLength(1)
+  @MaxLength(12)
+  position: string;
+
+  @IsOptional()
+  @Transform(emptyToNull)
+  @IsString()
+  @MaxLength(60)
+  realTeam?: string | null;
+
+  @IsOptional()
+  @Transform(emptyToNull)
+  @IsString()
+  @MaxLength(40)
+  nationality?: string | null;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(99)
+  overall?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(1000000)
+  price?: number;
+}
+
+export class ListBasePlayersDto {
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(60)
+  search?: string;
+
+  @IsOptional()
+  @Transform(({ value }) => value === 'true' || value === true)
+  @IsBoolean()
+  missingAttributes?: boolean;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(400)
+  take?: number;
+}
+
+export class EstimateMissingDto {
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(60)
+  limit?: number;
+}
+
 export class BulkPlayersDto {
   @IsArray()
   @ArrayMaxSize(400)
@@ -272,8 +342,10 @@ export class ImportToLeagueDto {
   @IsString()
   leagueId: string;
 
+  /// Sem competição, vai a base inteira: ela é uma só.
+  @IsOptional()
   @IsString()
-  competitionId: string;
+  competitionId?: string;
 
   @IsOptional()
   @IsArray()
