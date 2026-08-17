@@ -26,7 +26,7 @@ ALTER TABLE "DraftAuctionBid" ALTER COLUMN "amount" TYPE DOUBLE PRECISION;
 ALTER TABLE "DraftBudgetEntry" ALTER COLUMN "amount" TYPE DOUBLE PRECISION;
 ALTER TABLE "DraftBudgetEntry" ALTER COLUMN "balanceAfter" TYPE DOUBLE PRECISION;
 
-ALTER TABLE "DraftTransferOffer" ALTER COLUMN "price" TYPE DOUBLE PRECISION;
+ALTER TABLE "TransferOffer" ALTER COLUMN "price" TYPE DOUBLE PRECISION;
 
 -- A mesma curva de src/football/market-value.ts, para a base que já existe não
 -- ficar com preço da escala antiga enquanto o mercado cobra na nova.
