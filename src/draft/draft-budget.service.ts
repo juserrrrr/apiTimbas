@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { DraftBudgetTxType, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { formatMoney } from '../football/market-value';
 
 type Db = PrismaService | Prisma.TransactionClient;
 
@@ -73,7 +74,7 @@ export class DraftBudgetService {
         select: { budget: true },
       });
       throw new BadRequestException(
-        `Caixa insuficiente: você tem ${current.budget} e precisa de ${movement.amount}.`,
+        `Caixa insuficiente: você tem ${formatMoney(current.budget)} e precisa de ${formatMoney(movement.amount)}.`,
       );
     }
     const roster = await db.draftRoster.findUniqueOrThrow({ where: { id: movement.rosterId } });

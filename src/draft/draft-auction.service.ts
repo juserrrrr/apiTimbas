@@ -6,6 +6,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { DraftAccessService } from './draft-access.service';
 import { DraftBudgetService } from './draft-budget.service';
 import { extendedDeadline, minimumBid } from './auction-rules';
+import { formatMoney } from '../football/market-value';
 import { CreateAuctionDto } from './dto/draft.dto';
 
 /// Leilão de lance aberto. Três decisões que valem explicar:
@@ -122,7 +123,7 @@ export class DraftAuctionService {
           league.auctionMinIncrementPercent,
         );
         if (amount < minimum) {
-          throw new BadRequestException(`O lance mínimo agora é ${minimum}.`);
+          throw new BadRequestException(`O lance mínimo agora é ${formatMoney(minimum)}.`);
         }
 
         // O dinheiro sai na hora e volta para quem for coberto depois.

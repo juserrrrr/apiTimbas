@@ -18,6 +18,20 @@ export function salaryFor(price: number): number {
   return roundToScale(Math.max(1_000, price / 200));
 }
 
+/// Dinheiro em texto, do jeito que a pessoa lê na tela: R$ 12,5 mi.
+export function formatMoney(value: number): string {
+  const amount = Math.abs(value);
+  const sign = value < 0 ? '-' : '';
+  if (amount >= 1_000_000_000) return `${sign}R$ ${trim(amount / 1_000_000_000)} bi`;
+  if (amount >= 1_000_000) return `${sign}R$ ${trim(amount / 1_000_000)} mi`;
+  if (amount >= 100_000) return `${sign}R$ ${trim(amount / 1_000)} mil`;
+  return `${sign}R$ ${amount.toLocaleString('pt-BR')}`;
+}
+
+function trim(value: number): string {
+  return (Math.round(value * 10) / 10).toLocaleString('pt-BR', { maximumFractionDigits: 1 });
+}
+
 /// Arredonda para um número redondo na casa do valor, para o mercado não ficar
 /// cheio de preço quebrado.
 function roundToScale(value: number): number {
