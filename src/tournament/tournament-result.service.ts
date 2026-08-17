@@ -10,7 +10,7 @@ import {
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { WalletService } from '../economy/wallet.service';
-import { bracketSizeFor, seedSlots } from './bracket.builder';
+import { bracketSizeFor, compareStandings, orderGroupQualifiers, seedSlots } from './bracket.builder';
 import { isKnockout, placeTeam, propagate, resolveWalkovers } from './bracket-advance';
 
 const OPEN_STATUSES: TournamentMatchStatus[] = [
@@ -245,41 +245,33 @@ export class TournamentResultService {
     });
     if (!firstKnockout || firstKnockout.homeTeamId || firstKnockout.awayTeamId) return;
 
-    const qualifiers: string[] = [];
-    const standings = await Promise.all(
-      groups.map((group) =>
-        tx.tournamentTeam.findMany({
-          where: { groupId: group.id },
-          orderBy: [{ points: 'desc' }, { scoreFor: 'desc' }, { scoreAgainst: 'asc' }, { name: 'asc' }],
-          select: { id: true },
-        }),
-      ),
+    const teams = await tx.tournamentTeam.findMany({
+      where: { tournamentId: tournament.id, groupId: { not: null } },
+      select: { id: true, groupId: true, name: true, points: true, scoreFor: true, scoreAgainst: true },
+    });
+    const standings = groups.map((group) =>
+      teams
+        .filter((team) => team.groupId === group.id)
+        .sort(compareStandings)
+        .map((team) => team.id),
     );
 
-    for (let place = 0; place < tournament.advancePerGroup; place++) {
-      const order = place % 2 === 0 ? standings : [...standings].reverse();
-      for (const table of order) {
-        const team = table[place];
-        if (team) qualifiers.push(team.id);
-      }
-    }
-
-    const size = bracketSizeFor(qualifiers.length);
-    const slots = seedSlots(size);
+    const qualifiers = orderGroupQualifiers(standings, tournament.advancePerGroup);
+    const slots = seedSlots(bracketSizeFor(qualifiers.length));
     const roundOne = await tx.tournamentMatch.findMany({
       where: { tournamentId: tournament.id, phase: TournamentPhase.WINNERS, round: 1 },
       orderBy: { position: 'asc' },
     });
 
     for (const match of roundOne) {
-      const homeTeamId = qualifiers[slots[match.position * 2] - 1];
-      const awayTeamId = qualifiers[slots[match.position * 2 + 1] - 1];
-      if (homeTeamId) await placeTeam(tx, match.id, 'HOME', homeTeamId);
-      if (awayTeamId) await placeTeam(tx, match.id, 'AWAY', awayTeamId);
+      const home = qualifiers[slots[match.position * 2] - 1];
+      const away = qualifiers[slots[match.position * 2 + 1] - 1];
+      if (home) await placeTeam(tx, match.id, 'HOME', home.teamId);
+      if (away) await placeTeam(tx, match.id, 'AWAY', away.teamId);
     }
 
     const nonQualified = await tx.tournamentTeam.findMany({
-      where: { tournamentId: tournament.id, id: { notIn: qualifiers } },
+      where: { tournamentId: tournament.id, id: { notIn: qualifiers.map((entry) => entry.teamId) } },
       select: { id: true },
     });
     await tx.tournamentTeam.updateMany({

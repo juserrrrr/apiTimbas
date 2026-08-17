@@ -7,6 +7,19 @@ export interface MatchRef {
   slot: MatchSlot;
 }
 
+export interface GroupQualifier {
+  teamId: string;
+  groupIndex: number;
+  place: number;
+}
+
+export interface StandingLike {
+  points: number;
+  scoreFor: number;
+  scoreAgainst: number;
+  name: string;
+}
+
 export interface MatchPlan {
   phase: TournamentPhase;
   round: number;
@@ -239,6 +252,84 @@ export function buildRoundRobin(
   }
 
   return plans;
+}
+
+export function groupName(order: number): string {
+  return `Grupo ${String.fromCharCode(65 + order)}`;
+}
+
+export function compareStandings(a: StandingLike, b: StandingLike): number {
+  return (
+    b.points - a.points ||
+    b.scoreFor - b.scoreAgainst - (a.scoreFor - a.scoreAgainst) ||
+    b.scoreFor - a.scoreFor ||
+    a.name.localeCompare(b.name)
+  );
+}
+
+/// Cada grupo roda o próprio turno, mas a chave única da partida é
+/// (torneio, fase, rodada, posição, mão) e não inclui o grupo. Por isso cada
+/// grupo recebe uma faixa exclusiva de posições.
+export function buildGroupStage(groupSizes: number[], legs: number): MatchPlan[] {
+  const stride = Math.max(1, ...groupSizes.map((size) => Math.ceil(size / 2)));
+
+  return groupSizes.flatMap((size, order) =>
+    buildRoundRobin(size, legs, TournamentPhase.GROUP, order).map((plan) => ({
+      ...plan,
+      position: order * stride + plan.position,
+      label: `${groupName(order)} · ${plan.label}`,
+    })),
+  );
+}
+
+/// Ordena os classificados como cabeças de chave: primeiro todos os líderes de
+/// grupo, depois todos os segundos, e assim por diante. Combinado com
+/// `seedSlots`, o líder de um grupo cruza com o pior classificado de outro.
+export function orderGroupQualifiers(standings: string[][], advancePerGroup: number): GroupQualifier[] {
+  const seeds: GroupQualifier[] = [];
+
+  for (let place = 0; place < advancePerGroup; place++) {
+    standings.forEach((table, groupIndex) => {
+      const teamId = table[place];
+      if (teamId) seeds.push({ teamId, groupIndex, place });
+    });
+  }
+
+  return avoidSameGroupOpeners(seeds);
+}
+
+/// Com byes na chave o cruzamento por colocação ainda pode juntar dois times do
+/// mesmo grupo na estreia. Nesse caso um deles troca de vaga com outro da mesma
+/// colocação, o que mantém a força dos cabeças e desfaz o reencontro.
+function avoidSameGroupOpeners(seeds: GroupQualifier[]): GroupQualifier[] {
+  if (seeds.length < 3) return seeds;
+
+  const slots = seedSlots(bracketSizeFor(seeds.length));
+  const ordered = [...seeds];
+  const teamAt = (slot: number) => ordered[slots[slot] - 1];
+  const opponentOf = (index: number) => ordered[slots[slots.indexOf(index + 1) ^ 1] - 1];
+
+  for (let slot = 0; slot < slots.length; slot += 2) {
+    const home = teamAt(slot);
+    const away = teamAt(slot + 1);
+    if (!home || !away || home.groupIndex !== away.groupIndex) continue;
+
+    const awayIndex = ordered.indexOf(away);
+    for (let index = 0; index < ordered.length; index++) {
+      const candidate = ordered[index];
+      if (index === awayIndex || candidate.place !== away.place) continue;
+      if (candidate.groupIndex === home.groupIndex) continue;
+
+      const partner = opponentOf(index);
+      if (partner && partner.groupIndex === away.groupIndex) continue;
+
+      ordered[awayIndex] = candidate;
+      ordered[index] = away;
+      break;
+    }
+  }
+
+  return ordered;
 }
 
 export function distributeIntoGroups(teamCount: number, groupCount: number): number[][] {

@@ -2,9 +2,11 @@ import { TournamentPhase } from '@prisma/client';
 import {
   bracketSizeFor,
   buildDoubleElimination,
+  buildGroupStage,
   buildRoundRobin,
   buildSingleElimination,
   distributeIntoGroups,
+  orderGroupQualifiers,
   seedSlots,
 } from './bracket.builder';
 
@@ -123,6 +125,86 @@ describe('buildRoundRobin', () => {
       (plan) => plan.leg === 2 && plan.homeIndex === first.awayIndex && plan.awayIndex === first.homeIndex,
     );
     expect(second).toBeDefined();
+  });
+});
+
+describe('buildGroupStage', () => {
+  it('não repete a mesma posição entre grupos na mesma rodada', () => {
+    const plans = buildGroupStage([4, 4, 4], 1);
+    const keys = plans.map((plan) => `${plan.round}-${plan.position}-${plan.leg}`);
+    expect(new Set(keys).size).toBe(plans.length);
+  });
+
+  it('mantém a chave única com grupos de tamanhos diferentes e turno e returno', () => {
+    const plans = buildGroupStage([5, 4, 4, 3], 2);
+    const keys = plans.map((plan) => `${plan.round}-${plan.position}-${plan.leg}`);
+    expect(new Set(keys).size).toBe(plans.length);
+  });
+
+  it('faz todo mundo do grupo jogar entre si e identifica o grupo no rótulo', () => {
+    const plans = buildGroupStage([4, 4], 1);
+    expect(plans.filter((plan) => plan.groupOrder === 0)).toHaveLength(6);
+    expect(plans.filter((plan) => plan.groupOrder === 1)).toHaveLength(6);
+    expect(plans[0].label).toContain('Grupo A');
+    expect(plans.at(-1)!.label).toContain('Grupo B');
+  });
+});
+
+describe('orderGroupQualifiers', () => {
+  const openers = (qualifiers: ReturnType<typeof orderGroupQualifiers>) => {
+    const slots = seedSlots(bracketSizeFor(qualifiers.length));
+    const pairs = [];
+    for (let slot = 0; slot < slots.length; slot += 2) {
+      pairs.push([qualifiers[slots[slot] - 1], qualifiers[slots[slot + 1] - 1]]);
+    }
+    return pairs;
+  };
+
+  it('cruza o líder de um grupo com o segundo de outro', () => {
+    const qualifiers = orderGroupQualifiers([['a1', 'a2'], ['b1', 'b2']], 2);
+    expect(qualifiers.map((entry) => entry.teamId)).toEqual(['a1', 'b1', 'a2', 'b2']);
+    expect(openers(qualifiers).map((pair) => pair.map((entry) => entry?.teamId))).toEqual([
+      ['a1', 'b2'],
+      ['b1', 'a2'],
+    ]);
+  });
+
+  it('classifica primeiro, segundo e terceiro de cada grupo', () => {
+    const qualifiers = orderGroupQualifiers(
+      [
+        ['a1', 'a2', 'a3', 'a4'],
+        ['b1', 'b2', 'b3', 'b4'],
+        ['c1', 'c2', 'c3', 'c4'],
+      ],
+      3,
+    );
+    expect(qualifiers).toHaveLength(9);
+    expect(qualifiers.slice(0, 3).map((entry) => entry.teamId)).toEqual(['a1', 'b1', 'c1']);
+    expect(qualifiers.filter((entry) => entry.place === 2).map((entry) => entry.teamId)).toEqual([
+      'a3',
+      'b3',
+      'c3',
+    ]);
+  });
+
+  it('nunca abre o mata-mata com dois times do mesmo grupo', () => {
+    for (const groupCount of [2, 3, 4, 5, 6, 8]) {
+      for (const advancePerGroup of [1, 2, 3, 4]) {
+        const standings = Array.from({ length: groupCount }, (_, group) =>
+          Array.from({ length: 4 }, (_, place) => `g${group}p${place}`),
+        );
+        const qualifiers = orderGroupQualifiers(standings, advancePerGroup);
+        for (const [home, away] of openers(qualifiers)) {
+          if (!home || !away) continue;
+          expect(home.groupIndex).not.toBe(away.groupIndex);
+        }
+      }
+    }
+  });
+
+  it('ignora colocações que o grupo não tem', () => {
+    const qualifiers = orderGroupQualifiers([['a1', 'a2'], ['b1']], 2);
+    expect(qualifiers.map((entry) => entry.teamId)).toEqual(['a1', 'b1', 'a2']);
   });
 });
 

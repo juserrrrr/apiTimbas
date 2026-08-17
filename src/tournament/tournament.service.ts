@@ -13,9 +13,12 @@ import {
   MatchPlan,
   bracketSizeFor,
   buildDoubleElimination,
+  buildGroupStage,
   buildRoundRobin,
   buildSingleElimination,
+  compareStandings,
   distributeIntoGroups,
+  groupName,
   knockoutRoundLabel,
 } from './bracket.builder';
 import { resolveWalkovers } from './bracket-advance';
@@ -341,7 +344,15 @@ export class TournamentService {
         const teamIdsBySeed = teams.map((team) => team.id);
         const plans =
           tournament.format === TournamentFormat.GROUPS_KNOCKOUT
-            ? await this.planGroupStage(tx, id, teamIdsBySeed, tournament.groupCount, tournament.advancePerGroup, tournament.legs)
+            ? await this.planGroupStage(
+                tx,
+                id,
+                teamIdsBySeed,
+                tournament.groupCount,
+                tournament.advancePerGroup,
+                tournament.legs,
+                tournament.thirdPlace,
+              )
             : this.planFor(tournament.format, teams.length, tournament.legs, tournament.thirdPlace);
 
         const groups = await tx.tournamentGroup.findMany({
@@ -444,35 +455,41 @@ export class TournamentService {
     groupCount: number,
     advancePerGroup: number,
     legs: number,
+    thirdPlace: boolean,
   ): Promise<MatchPlan[]> {
     const distribution = distributeIntoGroups(teamIdsBySeed.length, groupCount);
-    const plans: MatchPlan[] = [];
 
     for (const [order, seedIndexes] of distribution.entries()) {
       const group = await tx.tournamentGroup.create({
-        data: {
-          tournamentId,
-          order,
-          name: `Grupo ${String.fromCharCode(65 + order)}`,
-        },
+        data: { tournamentId, order, name: groupName(order) },
       });
       await tx.tournamentTeam.updateMany({
         where: { id: { in: seedIndexes.map((seedIndex) => teamIdsBySeed[seedIndex]) } },
         data: { groupId: group.id },
       });
-      plans.push(...buildRoundRobin(seedIndexes.length, legs, TournamentPhase.GROUP, order));
     }
 
-    const qualifiers = groupCount * advancePerGroup;
+    const groupPlans = buildGroupStage(
+      distribution.map((seedIndexes) => seedIndexes.length),
+      legs,
+    );
+
+    const qualifiers = distribution.reduce(
+      (total, seedIndexes) => total + Math.min(advancePerGroup, seedIndexes.length),
+      0,
+    );
     const knockoutRounds = Math.log2(bracketSizeFor(qualifiers));
-    const knockout = buildSingleElimination(qualifiers, false).map((plan) => ({
+    const knockout = buildSingleElimination(qualifiers, thirdPlace).map((plan) => ({
       ...plan,
       homeSeed: undefined,
       awaySeed: undefined,
-      label: `Mata-mata · ${knockoutRoundLabel(plan.round, knockoutRounds)}`,
+      label:
+        plan.phase === TournamentPhase.THIRD_PLACE
+          ? plan.label
+          : `Mata-mata · ${knockoutRoundLabel(plan.round, knockoutRounds)}`,
     }));
 
-    return [...plans, ...knockout];
+    return [...groupPlans, ...knockout];
   }
 
   private assertStartable(
@@ -518,13 +535,7 @@ export class TournamentService {
   ) {
     const rank = (rows: typeof teams) =>
       [...rows]
-        .sort(
-          (a, b) =>
-            b.points - a.points ||
-            b.scoreFor - b.scoreAgainst - (a.scoreFor - a.scoreAgainst) ||
-            b.scoreFor - a.scoreFor ||
-            a.name.localeCompare(b.name),
-        )
+        .sort(compareStandings)
         .map((team, index) => ({
           position: index + 1,
           teamId: team.id,
