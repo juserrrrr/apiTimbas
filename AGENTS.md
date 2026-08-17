@@ -47,6 +47,14 @@ logged in `DraftBudgetEntry`, which dies with the league. Voluntary spending is
 blocked without cash; salary is an obligation, so it goes through and leaves the
 roster in the red, which blocks signings until it recovers.
 
+Auctions are open bids. The leader's money leaves the budget on the bid and is
+refunded when someone outbids, so nobody wins an auction without the cash. A bid
+inside the anti-snipe window pushes the deadline, and closing happens at the
+deadline even with the transfer window shut, since closing is settlement and not
+negotiation. A roster auctions its own players; the pool's free agents are
+auctioned by the organization. `auction-rules.ts` holds the minimum bid and the
+deadline extension as pure functions with a spec.
+
 Neither is scoped to a Discord server, competitions are platform-wide. Only
 match/ranking features use `serverId`.
 

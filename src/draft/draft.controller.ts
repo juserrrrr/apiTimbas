@@ -20,6 +20,7 @@ import { ActorService } from '../common/actor.service';
 import { Roles } from '../decorators/roles.decorator';
 import { Role } from '../enums/role.enum';
 import { DraftAccessService } from './draft-access.service';
+import { DraftAuctionService } from './draft-auction.service';
 import { DraftBudgetService } from './draft-budget.service';
 import { DraftFixtureService } from './draft-fixture.service';
 import { DraftMarketService } from './draft-market.service';
@@ -28,6 +29,7 @@ import { DraftSimulationService } from './draft-simulation.service';
 import { DraftService } from './draft.service';
 import {
   BaseMarketQueryDto,
+  CreateAuctionDto,
   CreateDraftLeagueDto,
   CreateOfferDto,
   DraftStaffDto,
@@ -35,6 +37,7 @@ import {
   JoinDraftDto,
   ListDraftLeaguesDto,
   MakePickDto,
+  PlaceBidDto,
   ReportDraftResultDto,
   RespondOfferDto,
   ReviewDraftProofDto,
@@ -56,6 +59,7 @@ export class DraftController {
     private readonly fixtures: DraftFixtureService,
     private readonly simulation: DraftSimulationService,
     private readonly budgets: DraftBudgetService,
+    private readonly auctions_: DraftAuctionService,
     private readonly access: DraftAccessService,
     private readonly actor: ActorService,
   ) {}
@@ -176,6 +180,31 @@ export class DraftController {
   @Post(':id/base-market/sign')
   async signFromBase(@Req() req: AuthedRequest, @Param('id') id: string, @Body() dto: SignFromBaseDto) {
     return this.market.signFromBase(id, dto.catalogPlayerId, await this.me(req));
+  }
+
+  @Get(':id/auctions')
+  async auctions(@Req() req: AuthedRequest, @Param('id') id: string) {
+    return this.auctions_.list(id, await this.me(req));
+  }
+
+  @Post(':id/auctions')
+  async createAuction(@Req() req: AuthedRequest, @Param('id') id: string, @Body() dto: CreateAuctionDto) {
+    return this.auctions_.create(id, dto, await this.me(req));
+  }
+
+  @Post(':id/auctions/:auctionId/bid')
+  async bid(
+    @Req() req: AuthedRequest,
+    @Param('id') id: string,
+    @Param('auctionId') auctionId: string,
+    @Body() dto: PlaceBidDto,
+  ) {
+    return this.auctions_.bid(id, auctionId, dto.amount, await this.me(req));
+  }
+
+  @Delete(':id/auctions/:auctionId')
+  async cancelAuction(@Req() req: AuthedRequest, @Param('id') id: string, @Param('auctionId') auctionId: string) {
+    return this.auctions_.cancel(id, auctionId, await this.me(req));
   }
 
   @Get(':id/offers')

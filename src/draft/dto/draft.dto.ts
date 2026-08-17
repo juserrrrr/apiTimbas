@@ -104,6 +104,31 @@ export class CreateDraftLeagueDto {
   paySalaries?: boolean;
 
   @IsOptional()
+  @IsBoolean()
+  auctionsEnabled?: boolean;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(336)
+  auctionHours?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(100)
+  auctionMinIncrementPercent?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(120)
+  auctionAntiSnipeMinutes?: number;
+
+  @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(0)
@@ -306,6 +331,33 @@ export class SetTacticsDto {
   @IsOptional()
   @IsEnum(TacticIntensity)
   tempo?: TacticIntensity;
+}
+
+export class CreateAuctionDto {
+  @IsString()
+  playerId: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(10000000)
+  startingBid?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(336)
+  hours?: number;
+}
+
+export class PlaceBidDto {
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(10000000)
+  amount: number;
 }
 
 export class SignFromBaseDto {

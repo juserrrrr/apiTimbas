@@ -76,6 +76,17 @@ export class BuildDemoDraftDto {
   @IsBoolean()
   paySalaries?: boolean;
 
+  @IsOptional()
+  @IsBoolean()
+  auctionsEnabled?: boolean;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(336)
+  auctionHours?: number;
+
   @IsIn(DRAFT_STAGES)
   stage: (typeof DRAFT_STAGES)[number];
 }

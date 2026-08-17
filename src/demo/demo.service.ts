@@ -107,6 +107,8 @@ export class DemoService {
         resultMode: dto.resultMode ?? DraftResultMode.REPORTED,
         startingBudget: dto.startingBudget ?? 1000,
         paySalaries: dto.paySalaries ?? true,
+        auctionsEnabled: dto.auctionsEnabled ?? true,
+        auctionHours: dto.auctionHours ?? 24,
         coinsWin: 60,
         coinsDraw: 25,
         coinsLoss: 10,
@@ -400,6 +402,10 @@ export class DemoService {
         resultMode: true,
         startingBudget: true,
         paySalaries: true,
+        auctionsEnabled: true,
+        auctionHours: true,
+        auctionMinIncrementPercent: true,
+        auctionAntiSnipeMinutes: true,
         totalRounds: true,
         currentRound: true,
         transferWindowOpen: true,
@@ -407,7 +413,7 @@ export class DemoService {
       },
     });
 
-    const [rosters, playedMatches, topScorer, entries, wages] = await Promise.all([
+    const [rosters, playedMatches, topScorer, entries, wages, openAuctions] = await Promise.all([
       this.prisma.draftRoster.findMany({
         where: { leagueId: id },
         orderBy: { points: 'desc' },
@@ -428,6 +434,7 @@ export class DemoService {
         where: { leagueId: id, rosterId: { not: null } },
         _sum: { salary: true },
       }),
+      this.prisma.draftAuction.count({ where: { leagueId: id, status: 'OPEN' } }),
     ]);
 
     return {
@@ -443,6 +450,10 @@ export class DemoService {
         modoDeResultado: league.resultMode,
         caixaInicial: league.startingBudget,
         cobraSalario: league.paySalaries,
+        leilao: league.auctionsEnabled
+          ? `${league.auctionHours}h, +${league.auctionMinIncrementPercent}% por lance, prorroga ${league.auctionAntiSnipeMinutes} min`
+          : 'desligado',
+        leiloesAbertos: openAuctions,
         rodadas: `${league.currentRound}/${league.totalRounds}`,
         partidasEncerradas: playedMatches,
         mercadoAberto: league.transferWindowOpen,

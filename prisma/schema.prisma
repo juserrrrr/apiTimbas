@@ -880,7 +880,17 @@ enum DraftBudgetTxType {
   SALE
   TRANSFER_IN
   TRANSFER_OUT
+  AUCTION_BID
+  AUCTION_REFUND
+  AUCTION_SALE
   ADJUST
+}
+
+enum AuctionStatus {
+  OPEN
+  SOLD
+  EXPIRED
+  CANCELLED
 }
 
 enum DraftMatchStatus {
@@ -904,50 +914,58 @@ enum TransferOfferStatus {
 }
 
 model DraftLeague {
-  id                        String              @id @default(cuid())
-  name                      String
-  description               String?
-  status                    DraftLeagueStatus   @default(SETUP)
-  orderType                 DraftOrderType      @default(SNAKE)
-  rosterSize                Int                 @default(11)
-  formation                 String              @default("4-3-3")
-  pickSeconds               Int                 @default(120)
-  matchDays                 Int[]               @default([0, 3])
-  matchHour                 Int                 @default(21)
-  totalRounds               Int                 @default(0)
-  currentRound              Int                 @default(0)
-  currentPickNumber         Int                 @default(0)
-  pickDeadline              DateTime?
-  pointsWin                 Int                 @default(3)
-  pointsDraw                Int                 @default(1)
+  id                         String              @id @default(cuid())
+  name                       String
+  description                String?
+  status                     DraftLeagueStatus   @default(SETUP)
+  orderType                  DraftOrderType      @default(SNAKE)
+  rosterSize                 Int                 @default(11)
+  formation                  String              @default("4-3-3")
+  pickSeconds                Int                 @default(120)
+  matchDays                  Int[]               @default([0, 3])
+  matchHour                  Int                 @default(21)
+  totalRounds                Int                 @default(0)
+  currentRound               Int                 @default(0)
+  currentPickNumber          Int                 @default(0)
+  pickDeadline               DateTime?
+  pointsWin                  Int                 @default(3)
+  pointsDraw                 Int                 @default(1)
   // O dinheiro é da liga, não da conta: cada elenco começa com este caixa, que
   // nasce de novo a cada draft. Premiação de rodada e salário mexem nele.
-  startingBudget            Int                 @default(1000)
-  paySalaries               Boolean             @default(true)
-  coinsWin                  Int                 @default(60)
-  coinsDraw                 Int                 @default(25)
-  coinsLoss                 Int                 @default(10)
-  resultMode                DraftResultMode     @default(REPORTED)
-  transferWindowOpen        Boolean             @default(true)
+  startingBudget             Int                 @default(1000)
+  paySalaries                Boolean             @default(true)
+  // Leilão: lance aberto, prazo em horas, incremento mínimo em porcentagem do
+  // lance atual e prorrogação quando alguém dá lance no fim, para não virar
+  // corrida de último segundo.
+  auctionsEnabled            Boolean             @default(true)
+  auctionHours               Int                 @default(24)
+  auctionMinIncrementPercent Int                 @default(5)
+  auctionAntiSnipeMinutes    Int                 @default(5)
+  coinsWin                   Int                 @default(60)
+  coinsDraw                  Int                 @default(25)
+  coinsLoss                  Int                 @default(10)
+  resultMode                 DraftResultMode     @default(REPORTED)
+  transferWindowOpen         Boolean             @default(true)
   // O mercado fecha esse tanto de minutos antes do horário da rodada e reabre
   // quando a rodada inteira termina.
-  marketClosesMinutesBefore Int                 @default(180)
-  marketAutoManaged         Boolean             @default(true)
-  registrationEndsAt        DateTime?
-  autoStartOnClose          Boolean             @default(false)
-  createdByDiscordId        String
-  startedAt                 DateTime?
-  finishedAt                DateTime?
-  createdAt                 DateTime            @default(now())
-  updatedAt                 DateTime            @updatedAt
-  players                   DraftPlayer[]
-  rosters                   DraftRoster[]
-  picks                     DraftPick[]
-  matches                   DraftMatch[]
-  offers                    TransferOffer[]
-  staff                     DraftStaff[]
-  sources                   DraftLeagueSource[]
-  budgetEntries             DraftBudgetEntry[]
+  marketClosesMinutesBefore  Int                 @default(180)
+  marketAutoManaged          Boolean             @default(true)
+  registrationEndsAt         DateTime?
+  autoStartOnClose           Boolean             @default(false)
+  createdByDiscordId         String
+  startedAt                  DateTime?
+  finishedAt                 DateTime?
+  createdAt                  DateTime            @default(now())
+  updatedAt                  DateTime            @updatedAt
+  players                    DraftPlayer[]
+  rosters                    DraftRoster[]
+  picks                      DraftPick[]
+  matches                    DraftMatch[]
+  offers                     TransferOffer[]
+  staff                      DraftStaff[]
+  sources                    DraftLeagueSource[]
+  budgetEntries              DraftBudgetEntry[]
+  auctions                   DraftAuction[]
 
   @@index([status])
   @@index([status, registrationEndsAt])
@@ -1021,6 +1039,7 @@ model DraftPlayer {
   createdAt       DateTime        @default(now())
   picks           DraftPick[]
   offers          TransferOffer[]
+  auctions        DraftAuction[]
 
   @@unique([leagueId, name])
   @@index([leagueId, rosterId])
@@ -1030,38 +1049,41 @@ model DraftPlayer {
 }
 
 model DraftRoster {
-  id             String             @id @default(cuid())
-  leagueId       String
-  league         DraftLeague        @relation(fields: [leagueId], references: [id], onDelete: Cascade)
-  userId         Int
-  user           User               @relation(fields: [userId], references: [id], onDelete: Cascade)
-  name           String
-  tag            String?
-  logoUrl        String?
-  formation      String             @default("4-3-3")
-  mentality      TacticMentality    @default(BALANCED)
-  pressing       TacticIntensity    @default(MEDIUM)
-  tempo          TacticIntensity    @default(MEDIUM)
-  tacticsAt      DateTime?
-  budget         Int                @default(0)
-  earned         Int                @default(0)
-  spent          Int                @default(0)
-  draftOrder     Int                @default(0)
-  played         Int                @default(0)
-  wins           Int                @default(0)
-  draws          Int                @default(0)
-  losses         Int                @default(0)
-  goalsFor       Int                @default(0)
-  goalsAgainst   Int                @default(0)
-  points         Int                @default(0)
-  createdAt      DateTime           @default(now())
-  players        DraftPlayer[]
-  picks          DraftPick[]
-  homeMatches    DraftMatch[]       @relation("DraftHome")
-  awayMatches    DraftMatch[]       @relation("DraftAway")
-  offersMade     TransferOffer[]    @relation("TransferFrom")
-  offersReceived TransferOffer[]    @relation("TransferTo")
-  budgetEntries  DraftBudgetEntry[]
+  id              String             @id @default(cuid())
+  leagueId        String
+  league          DraftLeague        @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+  userId          Int
+  user            User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name            String
+  tag             String?
+  logoUrl         String?
+  formation       String             @default("4-3-3")
+  mentality       TacticMentality    @default(BALANCED)
+  pressing        TacticIntensity    @default(MEDIUM)
+  tempo           TacticIntensity    @default(MEDIUM)
+  tacticsAt       DateTime?
+  budget          Int                @default(0)
+  earned          Int                @default(0)
+  spent           Int                @default(0)
+  draftOrder      Int                @default(0)
+  played          Int                @default(0)
+  wins            Int                @default(0)
+  draws           Int                @default(0)
+  losses          Int                @default(0)
+  goalsFor        Int                @default(0)
+  goalsAgainst    Int                @default(0)
+  points          Int                @default(0)
+  createdAt       DateTime           @default(now())
+  players         DraftPlayer[]
+  picks           DraftPick[]
+  homeMatches     DraftMatch[]       @relation("DraftHome")
+  awayMatches     DraftMatch[]       @relation("DraftAway")
+  offersMade      TransferOffer[]    @relation("TransferFrom")
+  offersReceived  TransferOffer[]    @relation("TransferTo")
+  budgetEntries   DraftBudgetEntry[]
+  auctionsSelling DraftAuction[]     @relation("AuctionSeller")
+  auctionsLeading DraftAuction[]     @relation("AuctionLeader")
+  auctionBids     DraftAuctionBid[]
 
   @@unique([leagueId, userId])
   @@unique([leagueId, name])
@@ -1084,6 +1106,46 @@ model DraftPick {
 
   @@unique([leagueId, playerId])
   @@unique([leagueId, pickNumber])
+  @@index([rosterId])
+}
+
+/// Leilão de lance aberto: todo mundo vê o maior lance e quem deu. O dinheiro do
+/// líder fica preso até alguém cobrir, o que evita ganhar leilão sem ter caixa.
+model DraftAuction {
+  id             String            @id @default(cuid())
+  leagueId       String
+  league         DraftLeague       @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+  playerId       String
+  player         DraftPlayer       @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  // Nulo quando é o pool da liga indo a leilão: aí não há vendedor para receber.
+  sellerRosterId String?
+  sellerRoster   DraftRoster?      @relation("AuctionSeller", fields: [sellerRosterId], references: [id], onDelete: SetNull)
+  startingBid    Int
+  currentBid     Int               @default(0)
+  bidCount       Int               @default(0)
+  leaderRosterId String?
+  leaderRoster   DraftRoster?      @relation("AuctionLeader", fields: [leaderRosterId], references: [id], onDelete: SetNull)
+  status         AuctionStatus     @default(OPEN)
+  endsAt         DateTime
+  closedAt       DateTime?
+  createdAt      DateTime          @default(now())
+  bids           DraftAuctionBid[]
+
+  @@index([leagueId, status])
+  @@index([status, endsAt])
+  @@index([playerId])
+}
+
+model DraftAuctionBid {
+  id        String       @id @default(cuid())
+  auctionId String
+  auction   DraftAuction @relation(fields: [auctionId], references: [id], onDelete: Cascade)
+  rosterId  String
+  roster    DraftRoster  @relation(fields: [rosterId], references: [id], onDelete: Cascade)
+  amount    Int
+  createdAt DateTime     @default(now())
+
+  @@index([auctionId, createdAt])
   @@index([rosterId])
 }
 
