@@ -17,14 +17,17 @@ import {
 } from 'class-validator';
 import { CatalogSource } from '@prisma/client';
 
-const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
+const trim = ({ value }: { value: unknown }) =>
+  typeof value === 'string' ? value.trim() : value;
 const emptyToNull = ({ value }: { value: unknown }) =>
   typeof value === 'string' && value.trim() === '' ? null : value;
 
 export class CreateCompetitionDto {
   @Transform(trim)
   @IsString()
-  @Matches(/^[A-Za-z0-9_-]{2,20}$/, { message: 'code deve ter de 2 a 20 letras, números, hífen ou underline' })
+  @Matches(/^[A-Za-z0-9_-]{2,20}$/, {
+    message: 'code deve ter de 2 a 20 letras, números, hífen ou underline',
+  })
   code: string;
 
   @Transform(trim)
@@ -288,6 +291,15 @@ export class BulkTeamsDto {
   @ValidateNested({ each: true })
   @Type(() => CreateTeamDto)
   teams: CreateTeamDto[];
+}
+
+export class SyncWikipediaSquadsDto {
+  @IsArray()
+  @ArrayMaxSize(40)
+  @IsString({ each: true })
+  @MinLength(2, { each: true })
+  @MaxLength(100, { each: true })
+  teams: string[];
 }
 
 export class ParseTextDto {

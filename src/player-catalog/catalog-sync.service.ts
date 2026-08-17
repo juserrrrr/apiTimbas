@@ -3,6 +3,7 @@ import axios from 'axios';
 import { CatalogSource } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { normalizePosition } from './position.mapper';
+import { parseSquadWikitext } from './wikipedia-squad.parser';
 
 export interface SyncedPlayer {
   externalId: string | null;
@@ -21,6 +22,8 @@ export interface SyncedTeam {
 }
 
 const FOOTBALL_DATA_BASE = 'https://api.football-data.org/v4';
+const WIKIPEDIA_API = 'https://en.wikipedia.org/w/api.php';
+const WIKIPEDIA_CODE = 'WIKIPEDIA';
 
 @Injectable()
 export class CatalogSyncService {
@@ -33,9 +36,19 @@ export class CatalogSyncService {
   }
 
   async sync(competitionId: string) {
-    const competition = await this.prisma.catalogCompetition.findUniqueOrThrow({ where: { id: competitionId } });
+    const competition = await this.prisma.catalogCompetition.findUniqueOrThrow({
+      where: { id: competitionId },
+    });
     if (competition.source === CatalogSource.MANUAL) {
-      throw new BadRequestException('Esta competição é manual, não há fonte externa para sincronizar.');
+      throw new BadRequestException(
+        'Esta competição é manual, não há fonte externa para sincronizar.',
+      );
+    }
+
+    if (competition.source === CatalogSource.WIKIPEDIA) {
+      throw new BadRequestException(
+        'Envie a lista de times novamente para atualizar os elencos da Wikipedia.',
+      );
     }
 
     try {
@@ -44,7 +57,11 @@ export class CatalogSyncService {
           ? await this.fetchFromFootballData(competition.code)
           : await this.fetchFromGeneric(competition.sourcePath);
 
-      const result = await this.persist(competitionId, teams, competition.source);
+      const result = await this.persist(
+        competitionId,
+        teams,
+        competition.source,
+      );
       await this.prisma.catalogCompetition.update({
         where: { id: competitionId },
         data: {
@@ -59,25 +76,105 @@ export class CatalogSyncService {
       this.logger.warn(`Falha ao sincronizar ${competition.code}: ${message}`);
       await this.prisma.catalogCompetition.update({
         where: { id: competitionId },
-        data: { lastSyncAt: new Date(), lastSyncOk: false, lastSyncMessage: message },
+        data: {
+          lastSyncAt: new Date(),
+          lastSyncOk: false,
+          lastSyncMessage: message,
+        },
       });
       throw new BadRequestException(message);
     }
   }
 
+  async syncWikipedia(names: string[]) {
+    const teams = [
+      ...new Set(names.map((name) => name.trim()).filter(Boolean)),
+    ];
+    if (teams.length === 0)
+      throw new BadRequestException(
+        'Informe ao menos um time para buscar na Wikipedia.',
+      );
+
+    const competition = await this.prisma.catalogCompetition.upsert({
+      where: { code: WIKIPEDIA_CODE },
+      update: {
+        name: 'Elencos da Wikipedia',
+        source: CatalogSource.WIKIPEDIA,
+        sourcePath: WIKIPEDIA_API,
+      },
+      create: {
+        code: WIKIPEDIA_CODE,
+        name: 'Elencos da Wikipedia',
+        source: CatalogSource.WIKIPEDIA,
+        sourcePath: WIKIPEDIA_API,
+      },
+    });
+
+    const fetched = await Promise.allSettled(
+      teams.map((name) => this.fetchWikipediaTeam(name)),
+    );
+    const squads = fetched.flatMap((result) =>
+      result.status === 'fulfilled' ? [result.value] : [],
+    );
+    const failures = fetched.flatMap((result, index) =>
+      result.status === 'rejected'
+        ? [`${teams[index]}: ${describeSyncError(result.reason)}`]
+        : [],
+    );
+    if (squads.length === 0) {
+      const message =
+        failures.join(' | ') || 'Nenhum elenco foi encontrado na Wikipedia.';
+      await this.prisma.catalogCompetition.update({
+        where: { id: competition.id },
+        data: {
+          lastSyncAt: new Date(),
+          lastSyncOk: false,
+          lastSyncMessage: message.slice(0, 240),
+        },
+      });
+      throw new BadRequestException(message);
+    }
+
+    const result = await this.persist(
+      competition.id,
+      squads,
+      CatalogSource.WIKIPEDIA,
+    );
+    const message = failures.length
+      ? `${result.teams} times e ${result.players} jogadores atualizados. ${failures.length} time(s) não encontrado(s).`
+      : `${result.teams} times e ${result.players} jogadores atualizados.`;
+    await this.prisma.catalogCompetition.update({
+      where: { id: competition.id },
+      data: {
+        lastSyncAt: new Date(),
+        lastSyncOk: failures.length === 0,
+        lastSyncMessage: message,
+      },
+    });
+    return { ...result, failures };
+  }
+
   private async fetchFromFootballData(code: string): Promise<SyncedTeam[]> {
     const token = process.env.FOOTBALL_DATA_TOKEN?.trim();
     if (!token) {
-      throw new BadRequestException('FOOTBALL_DATA_TOKEN não está definida nesta instância da API.');
+      throw new BadRequestException(
+        'FOOTBALL_DATA_TOKEN não está definida nesta instância da API.',
+      );
     }
 
-    const response = await axios.get(`${FOOTBALL_DATA_BASE}/competitions/${code}/teams`, {
-      headers: { 'X-Auth-Token': token },
-      timeout: 30000,
-    });
+    const response = await axios.get(
+      `${FOOTBALL_DATA_BASE}/competitions/${code}/teams`,
+      {
+        headers: { 'X-Auth-Token': token },
+        timeout: 30000,
+      },
+    );
 
     const teams = response.data?.teams;
-    if (!Array.isArray(teams)) throw new BadRequestException('A resposta da API não trouxe a lista de times.');
+    if (!Array.isArray(teams))
+      throw new BadRequestException(
+        'A resposta da API não trouxe a lista de times.',
+      );
 
     return teams.map((team: Record<string, any>) => ({
       externalId: team.id ? String(team.id) : null,
@@ -92,19 +189,106 @@ export class CatalogSyncService {
               name: String(player.name).trim(),
               position: normalizePosition(player.position),
               nationality: player.nationality ?? null,
-              birthDate: player.dateOfBirth ? new Date(player.dateOfBirth) : null,
+              birthDate: player.dateOfBirth
+                ? new Date(player.dateOfBirth)
+                : null,
             }))
         : [],
     }));
   }
 
+  private async fetchWikipediaTeam(name: string): Promise<SyncedTeam> {
+    const direct = await this.wikipediaPage(name).catch(() => null);
+    const titles = await this.wikipediaSearch(name);
+    const candidates = [
+      direct,
+      ...(await Promise.all(
+        titles.map((title) => this.wikipediaPage(title).catch(() => null)),
+      )),
+    ].filter(
+      (page): page is { title: string; wikitext: string } => page !== null,
+    );
+
+    for (const page of candidates) {
+      const players = parseSquadWikitext(page.wikitext).map((player) => ({
+        externalId: null,
+        name: player.name,
+        position: normalizePosition(player.position),
+        nationality: player.nationality,
+        birthDate: null,
+      }));
+      if (players.length > 0) {
+        return {
+          externalId: page.title,
+          name,
+          shortName: null,
+          crestUrl: null,
+          players,
+        };
+      }
+    }
+    throw new BadRequestException(
+      'nenhuma página encontrada tem um elenco principal legível',
+    );
+  }
+
+  private async wikipediaPage(
+    name: string,
+  ): Promise<{ title: string; wikitext: string }> {
+    const response = await axios.get(WIKIPEDIA_API, {
+      params: {
+        action: 'query',
+        format: 'json',
+        formatversion: 2,
+        redirects: 1,
+        prop: 'revisions',
+        rvprop: 'content',
+        rvslots: 'main',
+        titles: name,
+      },
+      timeout: 30000,
+    });
+    const page = response.data?.query?.pages?.[0];
+    const wikitext = page?.revisions?.[0]?.slots?.main?.content;
+    if (!page || page.missing || typeof wikitext !== 'string') {
+      throw new BadRequestException(
+        'página não encontrada na Wikipedia em inglês',
+      );
+    }
+    return { title: String(page.title), wikitext };
+  }
+
+  private async wikipediaSearch(name: string): Promise<string[]> {
+    const response = await axios.get(WIKIPEDIA_API, {
+      params: {
+        action: 'query',
+        format: 'json',
+        list: 'search',
+        srsearch: `${name} football club`,
+        srlimit: 5,
+      },
+      timeout: 30000,
+    });
+    const titles = response.data?.query?.search;
+    return Array.isArray(titles)
+      ? titles
+          .map((entry: { title?: unknown }) => String(entry.title ?? ''))
+          .filter(Boolean)
+      : [];
+  }
+
   private async fetchFromGeneric(url: string | null): Promise<SyncedTeam[]> {
-    if (!url) throw new BadRequestException('Nenhuma URL de origem configurada para esta competição.');
+    if (!url)
+      throw new BadRequestException(
+        'Nenhuma URL de origem configurada para esta competição.',
+      );
 
     const response = await axios.get(url, { timeout: 30000 });
     const teams = response.data?.teams ?? response.data;
     if (!Array.isArray(teams)) {
-      throw new BadRequestException('A URL precisa devolver um array de times ou um objeto com a chave "teams".');
+      throw new BadRequestException(
+        'A URL precisa devolver um array de times ou um objeto com a chave "teams".',
+      );
     }
 
     return teams.map((team: Record<string, any>) => ({
@@ -120,7 +304,9 @@ export class CatalogSyncService {
               name: String(player.name).trim(),
               position: normalizePosition(player.position),
               nationality: player.nationality ?? null,
-              birthDate: player.dateOfBirth ? new Date(player.dateOfBirth) : null,
+              birthDate: player.dateOfBirth
+                ? new Date(player.dateOfBirth)
+                : null,
             }))
         : [],
     }));
@@ -128,7 +314,11 @@ export class CatalogSyncService {
 
   /// Sincronizar nunca apaga: jogadores que sumiram da fonte só ficam inativos,
   /// para não derrubar elencos de ligas que já escolheram aquele jogador.
-  private async persist(competitionId: string, teams: SyncedTeam[], source: CatalogSource) {
+  private async persist(
+    competitionId: string,
+    teams: SyncedTeam[],
+    source: CatalogSource,
+  ) {
     const syncedAt = new Date();
     let teamCount = 0;
     let playerCount = 0;
@@ -185,7 +375,11 @@ export class CatalogSyncService {
 
       if (team.players.length > 0) {
         await this.prisma.catalogPlayer.updateMany({
-          where: { teamId: saved.id, source: { not: CatalogSource.MANUAL }, syncedAt: { lt: syncedAt } },
+          where: {
+            teamId: saved.id,
+            source: { not: CatalogSource.MANUAL },
+            syncedAt: { lt: syncedAt },
+          },
           data: { active: false },
         });
       }
@@ -196,10 +390,17 @@ export class CatalogSyncService {
 }
 
 function describeSyncError(error: unknown): string {
-  const status = (error as { response?: { status?: number } })?.response?.status;
-  if (status === 403) return 'A API recusou o token (403). Confira o plano e a competição liberada.';
-  if (status === 404) return 'Competição não encontrada na API (404). Confira o código.';
-  if (status === 429) return 'Limite de requisições da API atingido (429). Tente de novo em alguns minutos.';
-  const message = (error as { response?: { data?: { message?: string } } })?.response?.data?.message;
-  return String(message ?? (error as Error)?.message ?? 'Erro desconhecido').slice(0, 240);
+  const status = (error as { response?: { status?: number } })?.response
+    ?.status;
+  if (status === 403)
+    return 'A API recusou o token (403). Confira o plano e a competição liberada.';
+  if (status === 404)
+    return 'Competição não encontrada na API (404). Confira o código.';
+  if (status === 429)
+    return 'Limite de requisições da API atingido (429). Tente de novo em alguns minutos.';
+  const message = (error as { response?: { data?: { message?: string } } })
+    ?.response?.data?.message;
+  return String(
+    message ?? (error as Error)?.message ?? 'Erro desconhecido',
+  ).slice(0, 240);
 }

@@ -759,6 +759,7 @@ enum CatalogSource {
   MANUAL
   FOOTBALL_DATA
   GENERIC
+  WIKIPEDIA
 }
 
 model CatalogCompetition {

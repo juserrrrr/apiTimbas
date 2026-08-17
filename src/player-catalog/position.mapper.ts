@@ -5,6 +5,7 @@ const POSITION_ALIASES: Record<string, string> = {
   goleiro: 'GOL',
   defence: 'ZAG',
   defender: 'ZAG',
+  df: 'ZAG',
   'centre-back': 'ZAG',
   'center-back': 'ZAG',
   cb: 'ZAG',
@@ -20,6 +21,7 @@ const POSITION_ALIASES: Record<string, string> = {
   le: 'LE',
   midfield: 'MEI',
   midfielder: 'MEI',
+  mf: 'MEI',
   'central midfield': 'MC',
   'centre-midfield': 'MC',
   cm: 'MC',
@@ -34,6 +36,7 @@ const POSITION_ALIASES: Record<string, string> = {
   offence: 'ATA',
   attacker: 'ATA',
   forward: 'ATA',
+  fw: 'ATA',
   'centre-forward': 'ATA',
   striker: 'ATA',
   st: 'ATA',
@@ -49,7 +52,18 @@ const POSITION_ALIASES: Record<string, string> = {
   pd: 'PD',
 };
 
-export const CATALOG_POSITIONS = ['GOL', 'ZAG', 'LD', 'LE', 'VOL', 'MC', 'MEI', 'PD', 'PE', 'ATA'];
+export const CATALOG_POSITIONS = [
+  'GOL',
+  'ZAG',
+  'LD',
+  'LE',
+  'VOL',
+  'MC',
+  'MEI',
+  'PD',
+  'PE',
+  'ATA',
+];
 
 export function normalizePosition(raw: string | null | undefined): string {
   if (!raw) return 'MEI';

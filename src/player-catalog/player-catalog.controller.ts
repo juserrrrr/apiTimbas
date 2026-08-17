@@ -1,6 +1,19 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import { AuthGuard } from '../auth/guards/auth.guard';
-import { PermissionGuard, RequirePermissions } from '../access/permission.guard';
+import {
+  PermissionGuard,
+  RequirePermissions,
+} from '../access/permission.guard';
 import { CatalogSyncService } from './catalog-sync.service';
 import { PlayerCatalogService } from './player-catalog.service';
 import { SquadVisionService } from './squad-vision.service';
@@ -17,6 +30,7 @@ import {
   ExtractTeamsDto,
   ImportToLeagueDto,
   ParseTextDto,
+  SyncWikipediaSquadsDto,
   UpdateCompetitionDto,
   UpdatePlayerDto,
   UpdateTeamDto,
@@ -66,7 +80,10 @@ export class PlayerCatalogController {
   }
 
   @Patch('competitions/:id')
-  updateCompetition(@Param('id') id: string, @Body() dto: UpdateCompetitionDto) {
+  updateCompetition(
+    @Param('id') id: string,
+    @Body() dto: UpdateCompetitionDto,
+  ) {
     return this.catalog.updateCompetition(id, dto);
   }
 
@@ -78,6 +95,11 @@ export class PlayerCatalogController {
   @Post('competitions/:id/sync')
   syncCompetition(@Param('id') id: string) {
     return this.sync.sync(id);
+  }
+
+  @Post('wikipedia/sync')
+  syncWikipedia(@Body() dto: SyncWikipediaSquadsDto) {
+    return this.sync.syncWikipedia(dto.teams);
   }
 
   @Get('competitions/:id/teams')
@@ -116,7 +138,10 @@ export class PlayerCatalogController {
   }
 
   @Post('teams/:teamId/estimate-attributes')
-  estimateTeamAttributes(@Param('teamId') teamId: string, @Body() dto: EstimateAttributesDto) {
+  estimateTeamAttributes(
+    @Param('teamId') teamId: string,
+    @Body() dto: EstimateAttributesDto,
+  ) {
     return this.catalog.estimateTeamAttributes(teamId, dto.onlyMissing ?? true);
   }
 
@@ -126,7 +151,10 @@ export class PlayerCatalogController {
   }
 
   @Patch('players/:playerId')
-  updatePlayer(@Param('playerId') playerId: string, @Body() dto: UpdatePlayerDto) {
+  updatePlayer(
+    @Param('playerId') playerId: string,
+    @Body() dto: UpdatePlayerDto,
+  ) {
     return this.catalog.updatePlayer(playerId, dto);
   }
 
