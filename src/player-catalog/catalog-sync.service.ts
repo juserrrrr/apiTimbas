@@ -41,11 +41,9 @@ const AI_CODE = 'AI_SQUADS';
 /// Abaixo disso o modelo já avisou que não tem certeza de que o jogador estava
 /// no elenco. Entra na base só quem ele reconhece de verdade.
 const MIN_AI_CONFIDENCE = 40;
-/// Cada clube é uma chamada de modelo. Mais que isso numa requisição só e o
-/// navegador desiste antes da resposta.
-const MAX_AI_TEAMS_PER_SYNC = 12;
-/// Preencher elenco é mais lento que listar clube, então o lote é bem menor: a
-/// tela repete a chamada até acabar e vai mostrando quanto falta.
+/// Cada clube é uma chamada de modelo, e um elenco demora. Vinte clubes numa
+/// requisição só passam de dez minutos e o navegador corta no meio, então todo
+/// caminho que busca elenco vai em lote curto e a tela repete até acabar.
 const DEFAULT_AI_FILL_BATCH = 3;
 const MAX_AI_FILL_BATCH = 6;
 const WIKIPEDIA_HEADERS = {
@@ -77,8 +75,8 @@ export class CatalogSyncService {
     }
 
     /// Wikipedia e IA não têm endpoint de competição: atualizar é refazer a
-    /// pergunta para os clubes que já estão aqui. A IA vai de doze em doze,
-    /// começando pelos mais desatualizados, porque cada clube é uma chamada.
+    /// pergunta para os clubes que já estão aqui. A IA pega só os três mais
+    /// desatualizados por vez, pelo mesmo motivo que `fillCompetition`.
     if (
       competition.source === CatalogSource.WIKIPEDIA ||
       competition.source === CatalogSource.AI
@@ -98,7 +96,7 @@ export class CatalogSyncService {
       const names = registered.map((team) => team.name);
       return isAi
         ? this.syncAiSquads(
-            { teams: names.slice(0, MAX_AI_TEAMS_PER_SYNC) },
+            { teams: names.slice(0, DEFAULT_AI_FILL_BATCH) },
             competitionId,
           )
         : this.syncWikipedia(names, competitionId);
