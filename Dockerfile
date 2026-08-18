@@ -14,7 +14,10 @@ WORKDIR /app
 
 COPY . .
 
-RUN npm run build
+# Sem teto, o V8 cresce até o host matar o processo, e a compilação morre sem
+# imprimir erro nenhum. Com teto ele coleta lixo e termina, e um estouro de
+# verdade vira "JavaScript heap out of memory" em vez de morte silenciosa.
+RUN NODE_OPTIONS=--max-old-space-size=1024 npm run build
 RUN npm prune --omit=dev --no-audit --no-fund
 
 FROM node:20-slim AS runner
