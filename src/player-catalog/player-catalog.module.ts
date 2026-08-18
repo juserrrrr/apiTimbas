@@ -9,6 +9,7 @@ import { AttributeAiService } from './attribute-ai.service';
 import { CatalogSyncService } from './catalog-sync.service';
 import { PlayerCatalogController } from './player-catalog.controller';
 import { PlayerCatalogService } from './player-catalog.service';
+import { SofifaService } from './sofifa.service';
 import { SquadVisionService } from './squad-vision.service';
 import { WorldSimulationService } from './world-simulation.service';
 
@@ -20,6 +21,7 @@ import { WorldSimulationService } from './world-simulation.service';
     CatalogSyncService,
     SquadVisionService,
     AiSquadService,
+    SofifaService,
     AttributeAiService,
     WorldSimulationService,
   ],

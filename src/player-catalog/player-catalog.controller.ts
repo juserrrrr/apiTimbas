@@ -16,6 +16,7 @@ import {
 } from '../access/permission.guard';
 import { AiSquadService } from './ai-squad.service';
 import { CatalogSyncService } from './catalog-sync.service';
+import { SofifaService } from './sofifa.service';
 import { PlayerCatalogService } from './player-catalog.service';
 import { SquadVisionService } from './squad-vision.service';
 import {
@@ -34,6 +35,7 @@ import {
   ExtractTeamsDto,
   ImportToLeagueDto,
   ParseTextDto,
+  SofifaCompetitionDto,
   SyncWikipediaSquadsDto,
   UpdateCompetitionDto,
   UpdatePlayerDto,
@@ -49,6 +51,7 @@ export class PlayerCatalogController {
     private readonly sync: CatalogSyncService,
     private readonly vision: SquadVisionService,
     private readonly aiSquad: AiSquadService,
+    private readonly sofifaSource: SofifaService,
   ) {}
 
   @Get('players')
@@ -137,6 +140,29 @@ export class PlayerCatalogController {
   @Post('teams/:teamId/ai-squad')
   fillTeam(@Param('teamId') teamId: string, @Body() dto: AiFillDto) {
     return this.sync.fillTeamWithAi(teamId, dto.referenceDate);
+  }
+
+  /// Elenco medido do FC 26, quando o clube existe no jogo.
+  @Post('teams/:teamId/sofifa')
+  fillTeamFromSofifa(@Param('teamId') teamId: string) {
+    return this.sync.fillTeamFromSofifa(teamId);
+  }
+
+  /// As ligas que o FC 26 tem, para o painel oferecer numa lista.
+  @Get('sofifa/leagues')
+  sofifaLeagues() {
+    return this.sofifaSource.listLeagues();
+  }
+
+  /// A liga do jogo vira competição com todos os clubes dela.
+  @Post('sofifa/competition')
+  createSofifaCompetition(@Body() dto: SofifaCompetitionDto) {
+    return this.sync.createSofifaCompetition(dto);
+  }
+
+  @Post('competitions/:id/sofifa-fill')
+  fillCompetitionFromSofifa(@Param('id') id: string, @Body() dto: AiFillDto) {
+    return this.sync.fillCompetitionFromSofifa(id, dto.limit);
   }
 
   @Get('competitions/:id/teams')

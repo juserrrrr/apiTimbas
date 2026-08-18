@@ -5,6 +5,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { PlayerAttributes } from '../football/attributes';
 import { marketValueFor } from '../football/market-value';
 import { AiSquadService } from './ai-squad.service';
+import { SofifaService, SofifaPlayer } from './sofifa.service';
 import { normalizePosition, normalizeShirtNumber } from './position.mapper';
 import { parseSquadWikitext } from './wikipedia-squad.parser';
 
@@ -45,6 +46,9 @@ const MIN_AI_CONFIDENCE = 40;
 /// requisição só passam de dez minutos e o navegador corta no meio, então todo
 /// caminho que busca elenco vai em lote curto e a tela repete até acabar.
 const DEFAULT_AI_FILL_BATCH = 3;
+/// O SoFIFA responde em menos de um segundo por clube, então cabe uma liga
+/// inteira na mesma requisição. O teto existe só para não varrer sem limite.
+const MAX_SOFIFA_TEAMS = 25;
 const MAX_AI_FILL_BATCH = 6;
 const WIKIPEDIA_HEADERS = {
   'User-Agent': 'Timbas/1.0 (https://github.com/juserrrrr/apiTimbas)',
@@ -58,7 +62,189 @@ export class CatalogSyncService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly aiSquad: AiSquadService,
+    private readonly sofifa: SofifaService,
   ) {}
+
+  /// A liga inteira do FC 26: o SoFIFA diz quais clubes a disputam e todos
+  /// entram como pastas. Os elencos ficam para `fillCompetitionFromSofifa`, que
+  /// é rápido mas são vinte páginas.
+  async createSofifaCompetition(input: { name: string; code?: string }) {
+    const league = await this.sofifa.findLeague(input.name);
+    const teams = await this.sofifa.fetchLeagueTeams(league.id);
+    if (teams.length === 0) {
+      throw new BadRequestException(`O SoFIFA não listou clubes para ${league.name}.`);
+    }
+
+    const code = (input.code?.trim() || slugCode(`${league.name} ${league.country ?? ''}`)).toUpperCase();
+    const competition = await this.prisma.catalogCompetition.upsert({
+      where: { code },
+      update: { name: league.name, country: league.country, source: CatalogSource.SOFIFA },
+      create: {
+        code,
+        name: league.name,
+        country: league.country,
+        source: CatalogSource.SOFIFA,
+      },
+    });
+
+    const syncedAt = new Date();
+    let created = 0;
+    for (const team of teams) {
+      const existing = await this.prisma.catalogTeam.findUnique({
+        where: { competitionId_name: { competitionId: competition.id, name: team.name } },
+      });
+      if (existing) continue;
+      await this.prisma.catalogTeam.create({
+        data: {
+          competitionId: competition.id,
+          externalId: String(team.id),
+          name: team.name,
+          source: CatalogSource.SOFIFA,
+          syncedAt,
+        },
+      });
+      created++;
+    }
+
+    return { competition, league, teams, created };
+  }
+
+  /// Elenco do FC 26, tirado do SoFIFA. É a fonte a se preferir quando o clube
+  /// está no jogo: vem o elenco inteiro, com os seis atributos do card medidos,
+  /// em vez do que o modelo lembra.
+  async fillTeamFromSofifa(teamId: string) {
+    const team = await this.prisma.catalogTeam.findUniqueOrThrow({
+      where: { id: teamId },
+      include: { competition: { select: { id: true } } },
+    });
+
+    const squad = await this.sofifaSquad(team);
+    const result = await this.persist(
+      team.competition.id,
+      [
+        {
+          externalId: String(squad.teamId),
+          name: team.name,
+          shortName: null,
+          crestUrl: null,
+          players: squad.players.map(toSyncedPlayer),
+        },
+      ],
+      CatalogSource.SOFIFA,
+    );
+
+    return { ...result, team: team.name, matched: squad.teamName };
+  }
+
+  /// Os clubes vazios da competição, de uma vez: aqui cada time é uma página
+  /// HTML, não uma chamada de modelo, então cabe tudo numa requisição só.
+  async fillCompetitionFromSofifa(competitionId: string, limit?: number) {
+    await this.prisma.catalogCompetition.findUniqueOrThrow({ where: { id: competitionId } });
+    const teams = await this.prisma.catalogTeam.findMany({
+      where: { competitionId, players: { none: { active: true } } },
+      orderBy: { name: 'asc' },
+      take: Math.min(Math.max(limit ?? MAX_SOFIFA_TEAMS, 1), MAX_SOFIFA_TEAMS),
+    });
+
+    const squads: SyncedTeam[] = [];
+    const failures: string[] = [];
+    for (const team of teams) {
+      try {
+        const squad = await this.sofifaSquad(team);
+        squads.push({
+          externalId: String(squad.teamId),
+          name: team.name,
+          shortName: null,
+          crestUrl: null,
+          players: squad.players.map(toSyncedPlayer),
+        });
+      } catch (error) {
+        failures.push(`${team.name}: ${(error as Error)?.message ?? 'erro desconhecido'}`);
+      }
+    }
+
+    if (squads.length === 0) {
+      throw new BadRequestException(
+        failures.join(' | ') || 'Nenhum clube vazio para preencher nesta competição.',
+      );
+    }
+
+    const result = await this.persist(competitionId, squads, CatalogSource.SOFIFA);
+    const remaining = await this.prisma.catalogTeam.count({
+      where: { competitionId, players: { none: { active: true } } },
+    });
+
+    await this.prisma.catalogCompetition.update({
+      where: { id: competitionId },
+      data: {
+        lastSyncAt: new Date(),
+        lastSyncOk: failures.length === 0,
+        lastSyncMessage:
+          `${result.teams} times e ${result.players} jogadores vieram do SoFIFA.` +
+          (failures.length ? ` ${failures.length} clube(s) não encontrados.` : ''),
+      },
+    });
+
+    return {
+      ...result,
+      failures,
+      filled: squads.map((squad) => squad.name),
+      remaining,
+    };
+  }
+
+  /// O time importado da liga já guarda o id do SoFIFA em `externalId`, e por
+  /// ele a busca é direta. Só quem foi criado à mão precisa procurar pelo nome,
+  /// que é onde mora o risco de cair no clube errado.
+  private async sofifaSquad(team: { name: string; externalId: string | null }) {
+    const id = Number(team.externalId);
+    return Number.isFinite(id) && id > 0
+      ? this.sofifa.fetchSquad(id, team.name)
+      : this.sofifa.fetchSquadByName(team.name);
+  }
+
+  /// Relê todos os clubes da competição, não só os vazios.
+  private async refreshFromSofifa(competitionId: string) {
+    const teams = await this.prisma.catalogTeam.findMany({
+      where: { competitionId },
+      orderBy: [{ syncedAt: 'asc' }, { name: 'asc' }],
+      take: MAX_SOFIFA_TEAMS,
+    });
+    if (teams.length === 0) {
+      throw new BadRequestException('Esta competição ainda não tem nenhum time.');
+    }
+
+    const squads: SyncedTeam[] = [];
+    const failures: string[] = [];
+    for (const team of teams) {
+      try {
+        const squad = await this.sofifaSquad(team);
+        squads.push({
+          externalId: String(squad.teamId),
+          name: team.name,
+          shortName: null,
+          crestUrl: null,
+          players: squad.players.map(toSyncedPlayer),
+        });
+      } catch (error) {
+        failures.push(`${team.name}: ${(error as Error)?.message ?? 'erro desconhecido'}`);
+      }
+    }
+    if (squads.length === 0) throw new BadRequestException(failures.join(' | '));
+
+    const result = await this.persist(competitionId, squads, CatalogSource.SOFIFA);
+    await this.prisma.catalogCompetition.update({
+      where: { id: competitionId },
+      data: {
+        lastSyncAt: new Date(),
+        lastSyncOk: failures.length === 0,
+        lastSyncMessage:
+          `${result.teams} times e ${result.players} jogadores relidos do SoFIFA.` +
+          (failures.length ? ` ${failures.length} clube(s) não encontrados.` : ''),
+      },
+    });
+    return { ...result, failures };
+  }
 
   hasFootballDataToken(): boolean {
     return Boolean(process.env.FOOTBALL_DATA_TOKEN?.trim());
@@ -72,6 +258,12 @@ export class CatalogSyncService {
       throw new BadRequestException(
         'Esta competição é manual, não há fonte externa para sincronizar.',
       );
+    }
+
+    /// No SoFIFA atualizar é reler a página de cada clube, inclusive os que já
+    /// têm elenco: é assim que a base pega a atualização de nota do jogo.
+    if (competition.source === CatalogSource.SOFIFA) {
+      return this.refreshFromSofifa(competitionId);
     }
 
     /// Wikipedia e IA não têm endpoint de competição: atualizar é refazer a
@@ -721,6 +913,28 @@ function cardData(
     attributesModel: player.card.model,
     attributesNote: player.card.note,
     attributesAt: syncedAt,
+  };
+}
+
+/// O card vem medido do jogo, então entra como está. O preço continua saindo da
+/// nossa tabela: o valor em euro do site é de outra escala e desequilibraria o
+/// orçamento do draft.
+function toSyncedPlayer(player: SofifaPlayer): SyncedPlayer {
+  return {
+    externalId: player.sofifaId,
+    name: player.name,
+    position: player.position,
+    shirtNumber: null,
+    nationality: null,
+    birthDate: null,
+    card: player.attributes
+      ? {
+          attributes: player.attributes,
+          overall: player.overall,
+          model: 'SoFIFA FC 26',
+          note: null,
+        }
+      : null,
   };
 }
 

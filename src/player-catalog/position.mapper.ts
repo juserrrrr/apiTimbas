@@ -2,7 +2,12 @@ const POSITION_ALIASES: Record<string, string> = {
   goalkeeper: 'GOL',
   goalie: 'GOL',
   gk: 'GOL',
+  gl: 'GOL',
   goleiro: 'GOL',
+  // O SoFIFA em português separa meia de ponta, e a nossa base não: quem joga
+  // aberto no meio entra como ponta do mesmo lado.
+  md: 'PD',
+  me: 'PE',
   defence: 'ZAG',
   defender: 'ZAG',
   df: 'ZAG',

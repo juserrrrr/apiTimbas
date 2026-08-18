@@ -359,6 +359,23 @@ export class AiCompetitionDto {
   referenceDate?: string;
 }
 
+/// A liga do FC 26 pelo nome, como o SoFIFA a chama.
+export class SofifaCompetitionDto {
+  @Transform(trim)
+  @IsString()
+  @MinLength(3)
+  @MaxLength(80)
+  name: string;
+
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @Matches(/^[A-Za-z0-9_-]{2,20}$/, {
+    message: 'code deve ter de 2 a 20 letras, números, hífen ou underline',
+  })
+  code?: string;
+}
+
 /// Preencher elencos pela IA, um time ou um lote curto de times vazios.
 export class AiFillDto {
   @IsOptional()
