@@ -60,9 +60,8 @@ export class ChatClient {
       await this.waitForCooldown();
 
       try {
-        return provider.wire === 'gemini'
-          ? await this.callGemini(call, model, timeoutMs)
-          : await this.callOpenAi(call, model, timeoutMs);
+        if (provider.wire === 'gemini') return await this.callGemini(call, model, timeoutMs);
+        return await this.callOpenAi(call, model, timeoutMs, provider.wire === 'openai-responses');
       } catch (error) {
         const status = (error as { response?: { status?: number } })?.response?.status;
         const code = (error as { code?: string })?.code;
@@ -124,12 +123,19 @@ export class ChatClient {
   /// modelo novo do jeito dela. Em vez de adivinhar pelo nome, deixamos o
   /// provedor dizer: ele recusa uma vez, guardamos a manha daquele modelo e a
   /// chamada é refeita. Da segunda vez em diante já sai certa.
-  private async callOpenAi(request: ChatRequest, model: string, timeoutMs: number): Promise<string> {
+  private async callOpenAi(
+    request: ChatRequest,
+    model: string,
+    timeoutMs: number,
+    responses: boolean,
+  ): Promise<string> {
     /// Uma volta por parâmetro conhecido: o modelo que recusa os dois aprende os
     /// dois nesta mesma chamada, em vez de falhar uma vez para cada.
     for (let attempt = 0; attempt <= UNSUPPORTED_PARAMS.length; attempt++) {
       try {
-        return await this.postOpenAi(request, model, timeoutMs);
+        return responses
+          ? await this.postResponses(request, model, timeoutMs)
+          : await this.postOpenAi(request, model, timeoutMs);
       } catch (error) {
         const param = unsupportedParamFrom(error);
         if (!param || this.quirksOf(model).has(param)) throw error;
@@ -148,6 +154,39 @@ export class ChatClient {
     const fresh = new Set<UnsupportedParam>();
     this.quirks.set(model, fresh);
     return fresh;
+  }
+
+  /// A API Responses da OpenAI. O corpo é outro: `instructions` no lugar do
+  /// papel de sistema, `input` no lugar de `messages`, `max_output_tokens` no
+  /// lugar de `max_tokens`, e é só aqui que cabe o esforço de raciocínio.
+  private async postResponses(request: ChatRequest, model: string, timeoutMs: number): Promise<string> {
+    const quirks = this.quirksOf(model);
+    const content: Array<Record<string, unknown>> = [{ type: 'input_text', text: request.prompt }];
+    if (request.image) {
+      content.push({
+        type: 'input_image',
+        image_url: `data:${request.image.mimeType};base64,${request.image.base64}`,
+      });
+    }
+
+    const response = await axios.post(
+      `${request.provider.baseUrl}/responses`,
+      {
+        model,
+        ...(request.system ? { instructions: request.system } : {}),
+        input: [{ role: 'user', content }],
+        max_output_tokens: request.maxTokens ?? 2048,
+        ...(quirks.has('temperature') ? {} : { temperature: request.temperature ?? 0.2 }),
+        ...(request.json ? { text: { format: { type: 'json_object' } } } : {}),
+        ...(request.provider.effort ? { reasoning: { effort: request.provider.effort } } : {}),
+      },
+      {
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${request.provider.apiKey}` },
+        timeout: timeoutMs,
+      },
+    );
+
+    return readResponsesOutput(response.data);
   }
 
   private async postOpenAi(request: ChatRequest, model: string, timeoutMs: number): Promise<string> {
@@ -209,6 +248,27 @@ export class ChatClient {
     const seconds = Number(Array.isArray(header) ? header[0] : header);
     return Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : 60_000;
   }
+}
+
+/// A resposta do Responses vem como uma lista de itens, e o raciocínio entra
+/// nela junto com a mensagem. Só interessa o texto de saída: `output_text` é o
+/// atalho que a API oferece, e o resto é o caminho longo para quando ele falta.
+export function readResponsesOutput(data: unknown): string {
+  const payload = data as {
+    output_text?: unknown;
+    output?: Array<{ type?: string; content?: Array<{ type?: string; text?: unknown }> }>;
+  };
+
+  if (typeof payload?.output_text === 'string') return payload.output_text;
+  if (Array.isArray(payload?.output_text)) return payload.output_text.join('');
+  if (!Array.isArray(payload?.output)) return '';
+
+  return payload.output
+    .filter((item) => item?.type !== 'reasoning')
+    .flatMap((item) => item?.content ?? [])
+    .filter((part) => part?.type === 'output_text' && typeof part?.text === 'string')
+    .map((part) => part.text as string)
+    .join('');
 }
 
 /// Lê a recusa do provedor: qual parâmetro do corpo ele não aceita neste modelo.

@@ -16,6 +16,7 @@ export interface UpdateAiSettingsInput {
   analysisEnabled?: boolean;
   analysisProvider?: AiProvider;
   analysisModel?: string | null;
+  analysisEffort?: string | null;
   analysisFallbackProvider?: AiProvider | null;
   analysisFallbackModel?: string | null;
   scoreReaderEnabled?: boolean;
@@ -50,8 +51,13 @@ export class AiSettingsService {
       settings.analysisModel,
       false,
       settings.analysisFallbackProvider
-        ? this.registry.resolve(settings.analysisFallbackProvider, settings.analysisFallbackModel)
+        ? this.registry.resolve(
+            settings.analysisFallbackProvider,
+            settings.analysisFallbackModel,
+            settings.analysisEffort,
+          )
         : null,
+      settings.analysisEffort,
     );
   }
 
@@ -63,6 +69,7 @@ export class AiSettingsService {
       settings.scoreReaderProvider,
       settings.scoreReaderModel,
       needsVision,
+      null,
       null,
     );
 
@@ -88,6 +95,8 @@ export class AiSettingsService {
         enabled: settings.analysisEnabled,
         provider: settings.analysisProvider,
         model: settings.analysisModel,
+        effort: settings.analysisEffort,
+        effectiveEffort: analysis.provider?.effort ?? null,
         fallbackProvider: settings.analysisFallbackProvider,
         fallbackModel: settings.analysisFallbackModel,
         effectiveModel: analysis.provider?.model ?? null,
@@ -140,6 +149,7 @@ export class AiSettingsService {
     model: string | null,
     needsVision: boolean,
     fallbackProvider: ResolvedProvider | null,
+    effort: string | null,
   ): AiFeatureConfig {
     /// Reserva do mesmo provedor não é reserva: se a chave foi recusada ou a
     /// casa saiu do ar, todos os modelos dela caem juntos.
@@ -155,7 +165,7 @@ export class AiSettingsService {
       };
     }
 
-    const resolved = this.registry.resolve(provider, model);
+    const resolved = this.registry.resolve(provider, model, effort);
     if (!resolved) {
       const envKey = this.registry.catalog().find((item) => item.id === provider)?.envKey;
       return {

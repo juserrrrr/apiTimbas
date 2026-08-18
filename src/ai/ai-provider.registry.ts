@@ -12,13 +12,22 @@ export interface AiProviderDefinition {
   /// lista envelhece: ela é atalho, não trava.
   models: string[];
   supportsVision: boolean;
-  wire: 'gemini' | 'openai';
+  /// Protocolo do corpo da requisição. `openai` é o chat/completions clássico,
+  /// que a DeepSeek também fala; `openai-responses` é o /v1/responses, onde vive
+  /// o esforço de raciocínio.
+  wire: 'gemini' | 'openai' | 'openai-responses';
+  /// Só o Responses aceita `reasoning.effort`. Nos outros o painel nem oferece.
+  supportsEffort: boolean;
   docsUrl: string;
 }
+
+export const EFFORT_LEVELS = ['minimal', 'low', 'medium', 'high'] as const;
+export type EffortLevel = (typeof EFFORT_LEVELS)[number];
 
 export interface ResolvedProvider extends AiProviderDefinition {
   apiKey: string;
   model: string;
+  effort: EffortLevel | null;
 }
 
 export const AI_PROVIDERS: Record<AiProvider, AiProviderDefinition> = {
@@ -38,6 +47,7 @@ export const AI_PROVIDERS: Record<AiProvider, AiProviderDefinition> = {
     ],
     supportsVision: true,
     wire: 'gemini',
+    supportsEffort: false,
     docsUrl: 'https://aistudio.google.com/apikey',
   },
   DEEPSEEK: {
@@ -49,6 +59,7 @@ export const AI_PROVIDERS: Record<AiProvider, AiProviderDefinition> = {
     models: ['deepseek-chat'],
     supportsVision: false,
     wire: 'openai',
+    supportsEffort: false,
     docsUrl: 'https://platform.deepseek.com/api_keys',
   },
   OPENAI: {
@@ -59,7 +70,8 @@ export const AI_PROVIDERS: Record<AiProvider, AiProviderDefinition> = {
     defaultModel: 'gpt-5.6-luna',
     models: ['gpt-5.6', 'gpt-5.6-terra', 'gpt-5.6-luna'],
     supportsVision: true,
-    wire: 'openai',
+    wire: 'openai-responses',
+    supportsEffort: true,
     docsUrl: 'https://platform.openai.com/api-keys',
   },
 };
@@ -75,14 +87,20 @@ export class AiProviderRegistry {
     return this.apiKeyOf(provider) !== null;
   }
 
-  resolve(provider: AiProvider, model?: string | null): ResolvedProvider | null {
+  resolve(
+    provider: AiProvider,
+    model?: string | null,
+    effort?: string | null,
+  ): ResolvedProvider | null {
     const apiKey = this.apiKeyOf(provider);
     if (!apiKey) return null;
     const definition = AI_PROVIDERS[provider];
+    const level = EFFORT_LEVELS.find((item) => item === effort?.trim()) ?? null;
     return {
       ...definition,
       apiKey,
       model: model?.trim() || definition.defaultModel,
+      effort: definition.supportsEffort ? level : null,
     };
   }
 
@@ -96,6 +114,7 @@ export class AiProviderRegistry {
       defaultModel: definition.defaultModel,
       models: definition.models,
       supportsVision: definition.supportsVision,
+      supportsEffort: definition.supportsEffort,
       docsUrl: definition.docsUrl,
       configured: this.isConfigured(definition.id),
     }));

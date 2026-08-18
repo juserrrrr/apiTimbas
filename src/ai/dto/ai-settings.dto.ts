@@ -1,6 +1,7 @@
 import { Transform, Type } from 'class-transformer';
-import { IsBoolean, IsEnum, IsInt, IsOptional, IsString, Matches, Max, MaxLength, Min } from 'class-validator';
+import { IsBoolean, IsEnum, IsIn, IsInt, IsOptional, IsString, Matches, Max, MaxLength, Min } from 'class-validator';
 import { AiProvider, ScoreReadMode } from '@prisma/client';
+import { EFFORT_LEVELS } from '../ai-provider.registry';
 
 const emptyToNull = ({ value }: { value: unknown }) =>
   typeof value === 'string' && value.trim() === '' ? null : value;
@@ -21,6 +22,12 @@ export class UpdateAiSettingsDto {
   @IsString()
   @MaxLength(120)
   analysisModel?: string | null;
+
+  /// Esforço de raciocínio. Nulo deixa o provedor decidir.
+  @IsOptional()
+  @Transform(emptyToNull)
+  @IsIn(EFFORT_LEVELS)
+  analysisEffort?: string | null;
 
   /// Nulo desliga a reserva: uma falha vira erro em vez de trocar de provedor.
   @IsOptional()

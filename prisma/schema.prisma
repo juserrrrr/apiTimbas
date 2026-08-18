@@ -742,6 +742,8 @@ model AiSettings {
   analysisModel            String?
   // Reserva é outro provedor, não outro modelo da mesma casa: chave recusada ou
   // provedor fora do ar derruba todos os modelos dele junto.
+  // Esforço de raciocínio, só no wire Responses: minimal, low, medium ou high.
+  analysisEffort           String?
   analysisFallbackProvider AiProvider?
   analysisFallbackModel    String?
   scoreReaderEnabled       Boolean       @default(false)
@@ -764,6 +766,7 @@ enum CatalogSource {
   GENERIC
   WIKIPEDIA
   AI
+  SOFIFA
 }
 
 model CatalogCompetition {

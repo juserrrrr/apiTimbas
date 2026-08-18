@@ -1,4 +1,4 @@
-import { parseJsonObject, unsupportedParamFrom } from './chat.client';
+import { parseJsonObject, readResponsesOutput, unsupportedParamFrom } from './chat.client';
 
 const refusal = (status: number, message: string) => ({
   response: { status, data: { error: { message } } },
@@ -46,5 +46,32 @@ describe('parseJsonObject', () => {
   it('devolve null para texto sem objeto e para lista', () => {
     expect(parseJsonObject('sem json aqui')).toBeNull();
     expect(parseJsonObject('[1,2,3]')).toBeNull();
+  });
+});
+
+describe('readResponsesOutput', () => {
+  it('usa o atalho output_text', () => {
+    expect(readResponsesOutput({ output_text: '{"ok":true}' })).toBe('{"ok":true}');
+  });
+
+  it('junta o texto dos itens e pula o raciocínio', () => {
+    const data = {
+      output: [
+        { type: 'reasoning', content: [{ type: 'reasoning_text', text: 'pensando' }] },
+        {
+          type: 'message',
+          content: [
+            { type: 'output_text', text: '{"ok"' },
+            { type: 'output_text', text: ':true}' },
+          ],
+        },
+      ],
+    };
+    expect(readResponsesOutput(data)).toBe('{"ok":true}');
+  });
+
+  it('devolve vazio quando não veio saída legível', () => {
+    expect(readResponsesOutput({})).toBe('');
+    expect(readResponsesOutput({ output: [{ type: 'reasoning' }] })).toBe('');
   });
 });
