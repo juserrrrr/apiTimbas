@@ -75,8 +75,10 @@ const SYSTEM_PROMPT =
   'Você é um pesquisador de futebol que lista elencos de clubes de memória e um scout que traduz o nível de cada jogador para os atributos do card do EA FC. Responda somente com JSON válido. Prefira deixar um campo nulo a inventar um dado. Nunca use travessão nos textos.';
 
 /// Um elenco profissional passa de trinta nomes, e cada um traz camisa, ficha e
-/// os seis atributos. Menos que isso e a resposta chega cortada no meio.
-const MAX_TOKENS = 8192;
+/// os seis atributos. No wire Responses o teto ainda divide espaço com os tokens
+/// de raciocínio, então é folgado de propósito: apertado, a resposta chega
+/// cortada no meio de um jogador e o parser recusa a lista inteira.
+const MAX_TOKENS = 12_000;
 
 @Injectable()
 export class AiSquadService {
@@ -247,16 +249,19 @@ Responda APENAS neste formato:
 
 Regras:
 - Liste TODOS os jogadores do elenco principal, dos goleiros aos atacantes, na ordem de posição.
+- Um elenco profissional tem de 22 a 32 jogadores, com pelo menos dois goleiros. Reserva e terceiro goleiro contam. Se você listar menos de 20, escreva em notes por que a lista ficou curta.
+- Não pare nos jogadores famosos. O elenco inteiro interessa, inclusive quem quase não joga.
+- Quem já atua pelo time profissional entra na lista mesmo que tenha subido da base agora, e nesse caso fromYouth é false. fromYouth só vale para quem ainda joga no time B ou nas categorias de base e não faz parte do grupo principal.
 - position tem que ser uma destas siglas: ${CATALOG_POSITIONS.join(', ')}.
 - birthDate no formato AAAA-MM-DD, ou null se você não souber a data exata.
 - Use null em qualquer campo que você não saiba. Palpite em campo de dado é erro.
 - confidence vai de 0 a 100 e mede a certeza de que esse jogador estava no elenco nessa data.
-- onLoan é true para quem está emprestado a outro clube, fromYouth é true para quem subiu da base e ainda não é do grupo principal. Inclua os dois, marcados.
+- onLoan é true para quem está emprestado a outro clube. Inclua essa gente também, marcada.
 - Os seis atributos vão de 1 a 99, na escala do EA FC, pelo nível do jogador nessa data.
 - Para jogador de linha eles são ritmo (pace), finalização (shooting), passe (passing), drible (dribbling), defesa (defending) e físico (physical).
 - Para goleiro as mesmas chaves valem, na ordem: pace = elasticidade, shooting = manejo, passing = chute, dribbling = reflexos, defending = velocidade, physical = posicionamento.
 - overall precisa ser coerente com os atributos e com a posição.
-- Se ${date} for depois do que você conhece, marque beyondKnowledge como true, devolva o elenco mais recente que você conhece e diga em notes até quando o seu conhecimento vai.
+- Se ${date} for depois do que você conhece, marque beyondKnowledge como true, devolva o elenco mais recente que você conhece e diga em notes de que temporada ele é. Esse aviso é obrigatório: elenco velho entregue como atual é o pior erro possível aqui.
 - Não invente jogador. É melhor devolver menos gente do que devolver gente que não estava lá.`;
 }
 
