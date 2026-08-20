@@ -38,6 +38,7 @@ interface Peer {
 
 interface Stream {
   id: string;
+  slug: string;
   title: string;
   hostUserId: number;
   hostName: string;
@@ -90,6 +91,7 @@ export class StreamingService implements OnModuleInit {
     for (const row of persisted) {
       const stream: Stream = {
         id: row.id,
+        slug: row.slug,
         title: row.title,
         hostUserId: row.hostUserId,
         hostName: row.hostName,
@@ -159,6 +161,7 @@ export class StreamingService implements OnModuleInit {
 
     const stream: Stream = {
       id: randomUUID(),
+      slug: this.availableSlug(user.name, user.id),
       title: title?.trim() || `Transmissão de ${user.name}`,
       hostUserId: user.id,
       hostName: user.name,
@@ -176,6 +179,7 @@ export class StreamingService implements OnModuleInit {
     await this.prisma.activeStream.create({
       data: {
         id: stream.id,
+        slug: stream.slug,
         title: stream.title,
         hostUserId: stream.hostUserId,
         hostName: stream.hostName,
@@ -454,7 +458,7 @@ export class StreamingService implements OnModuleInit {
   }
 
   async leave(id: string, peerId: string, user: RequestUser) {
-    const stream = this.streams.get(id);
+    const stream = this.findStream(id);
     if (!stream) return { left: true };
 
     const peer = stream.peers.get(peerId);
@@ -472,7 +476,7 @@ export class StreamingService implements OnModuleInit {
   }
 
   leavePublic(id: string, peerId: string, guestToken: string) {
-    const stream = this.streams.get(id);
+    const stream = this.findStream(id);
     if (!stream) return { left: true };
     const peer = this.guestPeer(stream, peerId, guestToken);
     this.dropPeer(stream, peer.id);
@@ -537,7 +541,7 @@ export class StreamingService implements OnModuleInit {
   }
 
   activate(streamId: string, peerId: string) {
-    const stream = this.streams.get(streamId);
+    const stream = this.findStream(streamId);
     const peer = stream?.peers.get(peerId);
     if (!peer) return;
 
@@ -549,7 +553,7 @@ export class StreamingService implements OnModuleInit {
   // Called once the SSE response is subscribed, otherwise these events would be
   // emitted into a subject nobody is listening to yet.
   announce(streamId: string, peerId: string) {
-    const stream = this.streams.get(streamId);
+    const stream = this.findStream(streamId);
     const peer = stream?.peers.get(peerId);
     if (!stream || !peer) return;
 
@@ -568,7 +572,7 @@ export class StreamingService implements OnModuleInit {
   }
 
   detach(streamId: string, peerId: string) {
-    const stream = this.streams.get(streamId);
+    const stream = this.findStream(streamId);
     const peer = stream?.peers.get(peerId);
     if (!peer) return;
 
@@ -671,13 +675,41 @@ export class StreamingService implements OnModuleInit {
 
   // ─── INTERNALS ────────────────────────────────────────────────────────────
 
-  private getStream(id: string): Stream {
-    const stream = this.streams.get(id);
+  private getStream(identifier: string): Stream {
+    const stream = this.findStream(identifier);
     if (!stream)
       throw new NotFoundException(
         'Transmissão não encontrada ou já encerrada.',
       );
     return stream;
+  }
+
+  private findStream(identifier: string): Stream | undefined {
+    return (
+      this.streams.get(identifier) ??
+      [...this.streams.values()].find(
+        (stream) => stream.slug === identifier.toLocaleLowerCase('en-US'),
+      )
+    );
+  }
+
+  private availableSlug(name: string, userId: number): string {
+    const base =
+      name
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLocaleLowerCase('en-US')
+        .replace(/[^a-z0-9._-]+/g, '-')
+        .replace(/^-+|-+$/g, '') || 'live';
+    const inUse = (candidate: string) =>
+      [...this.streams.values()].some(
+        (stream) => stream.hostUserId !== userId && stream.slug === candidate,
+      );
+
+    if (!inUse(base)) return base;
+    let candidate = `${base}-${userId}`;
+    while (inUse(candidate)) candidate = `${candidate}-live`;
+    return candidate;
   }
 
   private assertPublic(stream: Stream) {
@@ -688,7 +720,7 @@ export class StreamingService implements OnModuleInit {
     }
     if (stream.visibility !== 'PUBLIC') {
       throw new NotFoundException(
-        'Esta transmissão é privada. Peça ao criador o link para pessoas logadas.',
+        'Esta transmissão é privada. Entre no Timbas para assistir.',
       );
     }
   }
@@ -704,6 +736,7 @@ export class StreamingService implements OnModuleInit {
   private toSummary(stream: Stream) {
     return {
       id: stream.id,
+      slug: stream.slug,
       title: stream.title,
       hostName: stream.hostName,
       hostAvatar: stream.hostAvatar,
@@ -779,10 +812,7 @@ export class StreamingService implements OnModuleInit {
     if (!channel?.isTextBased() || channel.isDMBased()) return;
 
     const webUrl = process.env.WEB_URL?.replace(/\/+$/, '');
-    const watchPath =
-      stream.visibility === 'PUBLIC'
-        ? `/live/${stream.id}`
-        : `/dashboard/live/${stream.id}/watch`;
+    const watchPath = `/live/${stream.slug}`;
     const watchUrl = webUrl ? `${webUrl}${watchPath}` : null;
     const host = stream.hostDiscordId
       ? `<@${stream.hostDiscordId}>`

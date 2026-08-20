@@ -64,6 +64,7 @@ describe('StreamingService host sessions', () => {
     const service = createService([
       {
         id: 'persisted-live',
+        slug: 'host',
         title: 'Live persistida',
         hostUserId: host.id,
         hostName: host.name,
@@ -82,10 +83,26 @@ describe('StreamingService host sessions', () => {
     expect(service.list()).toEqual([
       expect.objectContaining({
         id: 'persisted-live',
+        slug: 'host',
         live: true,
         startedAt: startedAt.toISOString(),
       }),
     ]);
-    expect(service.join('persisted-live', host, 'studio').role).toBe('host');
+    expect(service.join('host', host, 'studio').role).toBe('host');
+  });
+
+  it('gera um link curto com o nick normalizado', async () => {
+    const service = createService();
+    const stream = await service.create(
+      { ...host, name: 'João.Player' },
+      'Live',
+      'guild-1',
+      'PUBLIC',
+    );
+
+    expect(stream.slug).toBe('joao.player');
+    expect(service.findOne('joao.player')).toEqual(
+      expect.objectContaining({ id: stream.id, slug: 'joao.player' }),
+    );
   });
 });

@@ -28,6 +28,7 @@ model StreamAnnouncementChannel {
 
 model ActiveStream {
   id            String   @id
+  slug          String   @unique
   title         String
   hostUserId    Int      @unique
   hostName      String
