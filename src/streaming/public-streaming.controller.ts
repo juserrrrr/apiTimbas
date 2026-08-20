@@ -3,6 +3,7 @@ import { Response } from 'express';
 import { RequireFeature } from '../decorators/feature.decorator';
 import { FEATURE_SCREEN_SHARE } from '../feature-flags/feature-flags.constants';
 import { FeatureFlagGuard } from '../feature-flags/guards/feature-flag.guard';
+import { JoinPublicStreamDto } from './dto/join-public-stream.dto';
 import { PublicPeerDto } from './dto/public-peer.dto';
 import { PublicSignalDto } from './dto/public-signal.dto';
 import { StreamingService } from './streaming.service';
@@ -19,8 +20,8 @@ export class PublicStreamingController {
   }
 
   @Post('streams/:id/join')
-  join(@Param('id') id: string) {
-    return this.streaming.joinPublic(id);
+  join(@Param('id') id: string, @Body() dto: JoinPublicStreamDto) {
+    return this.streaming.joinPublic(id, dto?.clientId);
   }
 
   @Post('streams/:id/leave')

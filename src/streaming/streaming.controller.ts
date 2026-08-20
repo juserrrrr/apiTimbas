@@ -19,6 +19,7 @@ import { FeatureFlagGuard } from '../feature-flags/guards/feature-flag.guard';
 import { FEATURE_SCREEN_SHARE } from '../feature-flags/feature-flags.constants';
 import { FeatureFlagsService } from '../feature-flags/feature-flags.service';
 import { CreateStreamDto } from './dto/create-stream.dto';
+import { JoinStreamDto } from './dto/join-stream.dto';
 import { PeerDto } from './dto/peer.dto';
 import { SignalDto } from './dto/signal.dto';
 import { UpdateAnnouncementChannelDto } from './dto/update-announcement-channel.dto';
@@ -109,8 +110,8 @@ export class StreamingController {
   }
 
   @Post('streams/:id/join')
-  join(@Param('id') id: string, @Req() req: any) {
-    return this.streaming.join(id, toRequestUser(req));
+  join(@Param('id') id: string, @Body() dto: JoinStreamDto, @Req() req: any) {
+    return this.streaming.join(id, toRequestUser(req), dto?.clientId);
   }
 
   @Post('streams/:id/leave')

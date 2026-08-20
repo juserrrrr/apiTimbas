@@ -20,6 +20,7 @@ export interface SignalEvent {
 
 interface Peer {
   id: string;
+  clientId: string | null;
   userId: number | null;
   name: string;
   avatar: string | null;
@@ -227,13 +228,14 @@ export class StreamingService {
 
   // ─── JOIN / LEAVE ─────────────────────────────────────────────────────────
 
-  join(id: string, user: RequestUser) {
+  join(id: string, user: RequestUser, clientId?: string) {
     const stream = this.getStream(id);
     const isHost = stream.hostUserId === user.id;
     const peerId = randomUUID();
 
     const peer: Peer = {
       id: peerId,
+      clientId: clientId ?? null,
       userId: user.id,
       name: user.name,
       avatar: user.avatar,
@@ -257,10 +259,12 @@ export class StreamingService {
       this.broadcastToViewers(stream, { type: 'host_ready', from: peerId });
     } else {
       // A refresh creates a new browser peer before the old page can finish
-      // its leave request. Keep a single active viewer for each Timbas user
-      // so the live count represents people, not page reloads.
+      // its leave request. Keep one viewer per user/browser tab.
       for (const existing of [...stream.peers.values()]) {
-        if (existing.id !== stream.hostPeerId && existing.userId === user.id) {
+        if (
+          existing.id !== stream.hostPeerId &&
+          (existing.userId === user.id || (clientId && existing.clientId === clientId))
+        ) {
           this.dropPeer(stream, existing.id);
         }
       }
@@ -276,13 +280,21 @@ export class StreamingService {
     };
   }
 
-  joinPublic(id: string) {
+  joinPublic(id: string, clientId?: string) {
     const stream = this.getStream(id);
     this.assertPublic(stream);
+
+    if (clientId) {
+      for (const existing of [...stream.peers.values()]) {
+        if (existing.id !== stream.hostPeerId && existing.clientId === clientId) this.dropPeer(stream, existing.id);
+      }
+    }
+
     const peerId = randomUUID();
     const guestToken = randomUUID();
     const peer: Peer = {
       id: peerId,
+      clientId: clientId ?? null,
       userId: null,
       name: 'Convidado',
       avatar: null,
@@ -469,8 +481,11 @@ export class StreamingService {
   }
 
   private assertPublic(stream: Stream) {
-    if (stream.visibility !== 'PUBLIC' || !stream.broadcasting) {
+    if (!stream.broadcasting) {
       throw new NotFoundException('Transmissão não encontrada ou já encerrada.');
+    }
+    if (stream.visibility !== 'PUBLIC') {
+      throw new NotFoundException('Esta transmissão é privada. Peça ao criador o link para pessoas logadas.');
     }
   }
 
