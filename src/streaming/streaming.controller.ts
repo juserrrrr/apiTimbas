@@ -6,12 +6,9 @@ import {
   Param,
   Patch,
   Post,
-  Query,
   Req,
-  Res,
   UseGuards,
 } from '@nestjs/common';
-import { Response } from 'express';
 import { AuthGuard } from '../auth/guards/auth.guard';
 import { PermissionGuard, RequirePermissions } from '../access/permission.guard';
 import { RequireFeature } from '../decorators/feature.decorator';
@@ -133,69 +130,5 @@ export class StreamingController {
   @Post('streams/:id/events/ticket')
   ticket(@Param('id') id: string, @Body() dto: PeerDto, @Req() req: any) {
     return this.streaming.createTicket(id, dto.peerId, toRequestUser(req));
-  }
-
-  // EventSource cannot send an Authorization header, so the channel is opened
-  // with a single-use ticket minted by the authenticated endpoint above.
-  @Get('streams/:id/events')
-  events(
-    @Param('id') id: string,
-    @Query('ticket') ticket: string,
-    @Req() req: any,
-    @Res() res: Response,
-  ) {
-    const peerId = ticket ? this.streaming.consumeTicket(ticket, id) : null;
-    if (!peerId) {
-      res.status(401).json({ message: 'Unauthorized' });
-      return;
-    }
-
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache, no-transform');
-    res.setHeader('Connection', 'keep-alive');
-    res.setHeader('X-Accel-Buffering', 'no');
-    res.setHeader('Content-Encoding', 'none');
-    res.flushHeaders();
-    res.write(': connected\n\n');
-
-    let subject: ReturnType<StreamingService['attach']>;
-    try {
-      subject = this.streaming.attach(id, peerId);
-    } catch {
-      res.write(`data: ${JSON.stringify({ type: 'stream_ended' })}\n\n`);
-      res.end();
-      return;
-    }
-
-    res.write(`data: ${JSON.stringify({ type: 'ready', from: peerId })}\n\n`);
-
-    const subscription = subject.subscribe({
-      next: (event) => {
-        if (!res.writableEnded) res.write(`data: ${JSON.stringify(event)}\n\n`);
-      },
-      complete: () => {
-        if (!res.writableEnded) res.end();
-      },
-      error: () => {
-        if (!res.writableEnded) res.end();
-      },
-    });
-
-    this.streaming.activate(id, peerId);
-    this.streaming.announce(id, peerId);
-
-    const heartbeat = setInterval(() => {
-      if (!res.writableEnded) res.write(': heartbeat\n\n');
-      else clearInterval(heartbeat);
-    }, 25000);
-
-    const close = () => {
-      clearInterval(heartbeat);
-      subscription.unsubscribe();
-      this.streaming.detach(id, peerId);
-    };
-
-    req.on?.('close', close);
-    res.on('close', close);
   }
 }
