@@ -1,4 +1,5 @@
 import {
+  ConflictException,
   ForbiddenException,
   Injectable,
   Logger,
@@ -69,7 +70,10 @@ const HOST_GRACE_MS = 90_000;
 export class StreamingService {
   private readonly logger = new Logger(StreamingService.name);
   private readonly streams = new Map<string, Stream>();
-  private readonly tickets = new Map<string, { streamId: string; peerId: string; expiresAt: number }>();
+  private readonly tickets = new Map<
+    string,
+    { streamId: string; peerId: string; expiresAt: number }
+  >();
 
   constructor(
     private readonly access: AccessService,
@@ -87,8 +91,14 @@ export class StreamingService {
 
   // TURN credentials stay server side; the browser fetches them per session.
   iceServers() {
-    const servers: { urls: string | string[]; username?: string; credential?: string }[] = [
-      { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] },
+    const servers: {
+      urls: string | string[];
+      username?: string;
+      credential?: string;
+    }[] = [
+      {
+        urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'],
+      },
     ];
 
     const turnUrls = process.env.TURN_URLS;
@@ -105,8 +115,15 @@ export class StreamingService {
   // ─── STREAM LIFECYCLE ─────────────────────────────────────────────────────
 
   // Permission is enforced by PermissionGuard on the controller.
-  create(user: RequestUser, title: string | undefined, guildId: string, visibility: 'MEMBERS' | 'PUBLIC' = 'MEMBERS') {
-    const existing = [...this.streams.values()].find((s) => s.hostUserId === user.id);
+  create(
+    user: RequestUser,
+    title: string | undefined,
+    guildId: string,
+    visibility: 'MEMBERS' | 'PUBLIC' = 'MEMBERS',
+  ) {
+    const existing = [...this.streams.values()].find(
+      (s) => s.hostUserId === user.id,
+    );
     if (existing) return this.toSummary(existing);
 
     const stream: Stream = {
@@ -125,7 +142,9 @@ export class StreamingService {
       peers: new Map(),
     };
     this.streams.set(stream.id, stream);
-    this.logger.log(`Live created stream=${stream.id} visibility=${stream.visibility}`);
+    this.logger.log(
+      `Live created stream=${stream.id} visibility=${stream.visibility}`,
+    );
     return this.toSummary(stream);
   }
 
@@ -143,7 +162,9 @@ export class StreamingService {
   viewers(id: string, user: RequestUser) {
     const stream = this.getStream(id);
     if (stream.hostUserId !== user.id && user.role !== Role.ADMIN) {
-      throw new ForbiddenException('Apenas o dono da transmissão pode consultar os espectadores.');
+      throw new ForbiddenException(
+        'Apenas o dono da transmissão pode consultar os espectadores.',
+      );
     }
     return this.viewerList(stream);
   }
@@ -151,16 +172,24 @@ export class StreamingService {
   end(id: string, user: RequestUser) {
     const stream = this.getStream(id);
     if (stream.hostUserId !== user.id && user.role !== Role.ADMIN) {
-      throw new ForbiddenException('Apenas o dono da transmissão pode encerrá-la.');
+      throw new ForbiddenException(
+        'Apenas o dono da transmissão pode encerrá-la.',
+      );
     }
     this.destroy(stream, 'manual_end');
     return { ended: true };
   }
 
-  updateVisibility(id: string, user: RequestUser, visibility: 'MEMBERS' | 'PUBLIC') {
+  updateVisibility(
+    id: string,
+    user: RequestUser,
+    visibility: 'MEMBERS' | 'PUBLIC',
+  ) {
     const stream = this.getStream(id);
     if (stream.hostUserId !== user.id && user.role !== Role.ADMIN) {
-      throw new ForbiddenException('Only the stream owner can change its privacy.');
+      throw new ForbiddenException(
+        'Only the stream owner can change its privacy.',
+      );
     }
 
     if (stream.visibility === visibility) return this.toSummary(stream);
@@ -183,7 +212,9 @@ export class StreamingService {
   async start(id: string, user: RequestUser) {
     const stream = this.getStream(id);
     if (stream.hostUserId !== user.id) {
-      throw new ForbiddenException('Apenas o dono da transmissão pode iniciá-la.');
+      throw new ForbiddenException(
+        'Apenas o dono da transmissão pode iniciá-la.',
+      );
     }
 
     if (!stream.broadcasting) {
@@ -198,7 +229,9 @@ export class StreamingService {
 
   async announcementGuilds() {
     const settings = await this.prisma.streamAnnouncementChannel.findMany();
-    const configured = new Map(settings.map((setting) => [setting.guildId, setting.channelId]));
+    const configured = new Map(
+      settings.map((setting) => [setting.guildId, setting.channelId]),
+    );
 
     return [...this.client.guilds.cache.values()]
       .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'))
@@ -215,21 +248,32 @@ export class StreamingService {
 
   async announcementTargets() {
     const guilds = await this.announcementGuilds();
-    return guilds.map(({ id, name, channelId }) => ({ id, name, configured: channelId !== null }));
+    return guilds.map(({ id, name, channelId }) => ({
+      id,
+      name,
+      configured: channelId !== null,
+    }));
   }
 
   async setAnnouncementChannel(guildId: string, channelId?: string) {
     const guild = this.client.guilds.cache.get(guildId);
-    if (!guild) throw new NotFoundException('Servidor do Discord não encontrado pelo bot.');
+    if (!guild)
+      throw new NotFoundException(
+        'Servidor do Discord não encontrado pelo bot.',
+      );
 
     if (!channelId) {
-      await this.prisma.streamAnnouncementChannel.delete({ where: { guildId } }).catch(() => undefined);
+      await this.prisma.streamAnnouncementChannel
+        .delete({ where: { guildId } })
+        .catch(() => undefined);
       return { guildId, channelId: null };
     }
 
     const channel = guild.channels.cache.get(channelId);
     if (!channel || !channel.isTextBased() || channel.isDMBased()) {
-      throw new NotFoundException('Canal de texto não encontrado neste servidor.');
+      throw new NotFoundException(
+        'Canal de texto não encontrado neste servidor.',
+      );
     }
 
     await this.prisma.streamAnnouncementChannel.upsert({
@@ -242,9 +286,9 @@ export class StreamingService {
 
   // ─── JOIN / LEAVE ─────────────────────────────────────────────────────────
 
-  join(id: string, user: RequestUser, clientId?: string) {
+  join(id: string, user: RequestUser, clientId?: string, asViewer = false) {
     const stream = this.getStream(id);
-    const isHost = stream.hostUserId === user.id;
+    const isHost = stream.hostUserId === user.id && !asViewer;
     const peerId = randomUUID();
 
     const peer: Peer = {
@@ -265,14 +309,23 @@ export class StreamingService {
     if (isHost) {
       // Host reconnecting: drop the old signaling peer but keep the viewers, so
       // the new host peer can renegotiate with each one of them.
-      const previous = stream.hostPeerId ? stream.peers.get(stream.hostPeerId) : null;
+      const previous = stream.hostPeerId
+        ? stream.peers.get(stream.hostPeerId)
+        : null;
+      if (previous?.attached) {
+        throw new ConflictException(
+          'A transmissão já está aberta em outra aba. Feche a outra aba antes de abrir o estúdio aqui.',
+        );
+      }
       if (previous) {
         stream.peers.delete(previous.id);
         previous.subject.complete();
       }
       stream.hostPeerId = peerId;
       stream.peers.set(peerId, peer);
-      this.logger.log(`Live peer joined stream=${stream.id} peer=${peerId} role=host`);
+      this.logger.log(
+        `Live peer joined stream=${stream.id} peer=${peerId} role=host`,
+      );
       this.broadcastToViewers(stream, { type: 'host_ready', from: peerId });
     } else {
       // A refresh creates a new browser peer before the old page can finish
@@ -280,13 +333,16 @@ export class StreamingService {
       for (const existing of [...stream.peers.values()]) {
         if (
           existing.id !== stream.hostPeerId &&
-          (existing.userId === user.id || (clientId && existing.clientId === clientId))
+          (existing.userId === user.id ||
+            (clientId && existing.clientId === clientId))
         ) {
           this.dropPeer(stream, existing.id);
         }
       }
       stream.peers.set(peerId, peer);
-      this.logger.log(`Live peer joined stream=${stream.id} peer=${peerId} role=viewer`);
+      this.logger.log(
+        `Live peer joined stream=${stream.id} peer=${peerId} role=viewer`,
+      );
     }
 
     return {
@@ -304,7 +360,8 @@ export class StreamingService {
 
     if (clientId) {
       for (const existing of [...stream.peers.values()]) {
-        if (existing.id !== stream.hostPeerId && existing.clientId === clientId) this.dropPeer(stream, existing.id);
+        if (existing.id !== stream.hostPeerId && existing.clientId === clientId)
+          this.dropPeer(stream, existing.id);
       }
     }
 
@@ -325,8 +382,15 @@ export class StreamingService {
       lastSeen: Date.now(),
     };
     stream.peers.set(peerId, peer);
-    this.logger.log(`Live peer joined stream=${stream.id} peer=${peerId} role=guest`);
-    return { peerId, guestToken, hostPeerId: stream.hostPeerId, stream: this.toSummary(stream) };
+    this.logger.log(
+      `Live peer joined stream=${stream.id} peer=${peerId} role=guest`,
+    );
+    return {
+      peerId,
+      guestToken,
+      hostPeerId: stream.hostPeerId,
+      stream: this.toSummary(stream),
+    };
   }
 
   leave(id: string, peerId: string, user: RequestUser) {
@@ -360,11 +424,19 @@ export class StreamingService {
   createTicket(streamId: string, peerId: string, user: RequestUser) {
     const stream = this.getStream(streamId);
     const peer = stream.peers.get(peerId);
-    if (!peer) throw new NotFoundException('Peer não encontrado. Entre na transmissão novamente.');
-    if (peer.userId !== user.id) throw new ForbiddenException('Peer não pertence a este usuário.');
+    if (!peer)
+      throw new NotFoundException(
+        'Peer não encontrado. Entre na transmissão novamente.',
+      );
+    if (peer.userId !== user.id)
+      throw new ForbiddenException('Peer não pertence a este usuário.');
 
     const ticket = randomUUID();
-    this.tickets.set(ticket, { streamId, peerId, expiresAt: Date.now() + TICKET_TTL_MS });
+    this.tickets.set(ticket, {
+      streamId,
+      peerId,
+      expiresAt: Date.now() + TICKET_TTL_MS,
+    });
     return { ticket };
   }
 
@@ -373,7 +445,11 @@ export class StreamingService {
     this.assertPublic(stream);
     this.guestPeer(stream, peerId, guestToken);
     const ticket = randomUUID();
-    this.tickets.set(ticket, { streamId, peerId, expiresAt: Date.now() + TICKET_TTL_MS });
+    this.tickets.set(ticket, {
+      streamId,
+      peerId,
+      expiresAt: Date.now() + TICKET_TTL_MS,
+    });
     return { ticket };
   }
 
@@ -394,7 +470,9 @@ export class StreamingService {
     peer.attached = true;
     peer.listening = false;
     peer.lastSeen = Date.now();
-    this.logger.log(`Live events attached stream=${stream.id} peer=${peer.id} role=${peer.id === stream.hostPeerId ? 'host' : 'viewer'}`);
+    this.logger.log(
+      `Live events attached stream=${stream.id} peer=${peer.id} role=${peer.id === stream.hostPeerId ? 'host' : 'viewer'}`,
+    );
     return peer.subject;
   }
 
@@ -419,7 +497,8 @@ export class StreamingService {
       // Viewers that arrived before this channel opened would be invisible to
       // the host, so replay them now.
       for (const viewer of stream.peers.values()) {
-        if (viewer.id !== peerId && viewer.attached) this.sendToHost(stream, this.viewerJoinedEvent(viewer));
+        if (viewer.id !== peerId && viewer.attached)
+          this.sendToHost(stream, this.viewerJoinedEvent(viewer));
       }
       return;
     }
@@ -450,10 +529,12 @@ export class StreamingService {
     const stream = this.getStream(streamId);
     const from = stream.peers.get(dto.from);
     if (!from) throw new NotFoundException('Peer de origem não encontrado.');
-    if (from.userId !== user.id) throw new ForbiddenException('Peer não pertence a este usuário.');
+    if (from.userId !== user.id)
+      throw new ForbiddenException('Peer não pertence a este usuário.');
 
     const target = stream.peers.get(dto.to);
-    if (!target) throw new NotFoundException('Destinatário não está mais na transmissão.');
+    if (!target)
+      throw new NotFoundException('Destinatário não está mais na transmissão.');
 
     // Viewers only talk to the host; the host talks to anyone in the room.
     if (dto.from !== stream.hostPeerId && dto.to !== stream.hostPeerId) {
@@ -463,7 +544,9 @@ export class StreamingService {
     from.lastSeen = Date.now();
     this.deliver(target, { type: dto.type, from: dto.from, payload: dto.data });
     if (dto.type === 'offer' || dto.type === 'answer') {
-      this.logger.log(`Live signal stream=${stream.id} type=${dto.type} from=${dto.from} to=${dto.to}`);
+      this.logger.log(
+        `Live signal stream=${stream.id} type=${dto.type} from=${dto.from} to=${dto.to}`,
+      );
     }
     return { sent: true };
   }
@@ -473,13 +556,19 @@ export class StreamingService {
     this.assertPublic(stream);
     const from = this.guestPeer(stream, dto.from, dto.guestToken);
     const target = stream.peers.get(dto.to);
-    if (!target) throw new NotFoundException('Destinatário não está mais na transmissão.');
-    if (dto.to !== stream.hostPeerId) throw new ForbiddenException('Convidados só podem sinalizar para o host.');
+    if (!target)
+      throw new NotFoundException('Destinatário não está mais na transmissão.');
+    if (dto.to !== stream.hostPeerId)
+      throw new ForbiddenException(
+        'Convidados só podem sinalizar para o host.',
+      );
 
     from.lastSeen = Date.now();
     this.deliver(target, { type: dto.type, from: dto.from, payload: dto.data });
     if (dto.type === 'offer' || dto.type === 'answer') {
-      this.logger.log(`Live signal stream=${stream.id} type=${dto.type} from=${dto.from} to=${dto.to}`);
+      this.logger.log(
+        `Live signal stream=${stream.id} type=${dto.type} from=${dto.from} to=${dto.to}`,
+      );
     }
     return { sent: true };
   }
@@ -503,10 +592,12 @@ export class StreamingService {
 
       for (const peer of [...stream.peers.values()]) {
         if (peer.attached) continue;
-        const grace = peer.id === stream.hostPeerId ? HOST_GRACE_MS : PEER_STALE_MS;
+        const grace =
+          peer.id === stream.hostPeerId ? HOST_GRACE_MS : PEER_STALE_MS;
         if (now - peer.lastSeen < grace) continue;
 
-        if (peer.id === stream.hostPeerId) this.destroy(stream, 'host_events_timeout');
+        if (peer.id === stream.hostPeerId)
+          this.destroy(stream, 'host_events_timeout');
         else this.dropPeer(stream, peer.id);
       }
     }
@@ -516,16 +607,23 @@ export class StreamingService {
 
   private getStream(id: string): Stream {
     const stream = this.streams.get(id);
-    if (!stream) throw new NotFoundException('Transmissão não encontrada ou já encerrada.');
+    if (!stream)
+      throw new NotFoundException(
+        'Transmissão não encontrada ou já encerrada.',
+      );
     return stream;
   }
 
   private assertPublic(stream: Stream) {
     if (!stream.broadcasting) {
-      throw new NotFoundException('Transmissão não encontrada ou já encerrada.');
+      throw new NotFoundException(
+        'Transmissão não encontrada ou já encerrada.',
+      );
     }
     if (stream.visibility !== 'PUBLIC') {
-      throw new NotFoundException('Esta transmissão é privada. Peça ao criador o link para pessoas logadas.');
+      throw new NotFoundException(
+        'Esta transmissão é privada. Peça ao criador o link para pessoas logadas.',
+      );
     }
   }
 
@@ -579,8 +677,17 @@ export class StreamingService {
     }
   }
 
-  private destroy(stream: Stream, reason: 'manual_end' | 'host_leave' | 'host_never_connected' | 'host_events_timeout') {
-    this.logger.warn(`Live destroyed stream=${stream.id} reason=${reason} viewers=${this.viewerList(stream).length}`);
+  private destroy(
+    stream: Stream,
+    reason:
+      | 'manual_end'
+      | 'host_leave'
+      | 'host_never_connected'
+      | 'host_events_timeout',
+  ) {
+    this.logger.warn(
+      `Live destroyed stream=${stream.id} reason=${reason} viewers=${this.viewerList(stream).length}`,
+    );
     const hostPeerId = stream.hostPeerId;
     for (const peer of stream.peers.values()) {
       if (peer.id !== hostPeerId) this.deliver(peer, { type: 'stream_ended' });
@@ -593,7 +700,9 @@ export class StreamingService {
 
   private async announceToDiscord(stream: Stream) {
     if (stream.announced) return;
-    const setting = await this.prisma.streamAnnouncementChannel.findUnique({ where: { guildId: stream.guildId } });
+    const setting = await this.prisma.streamAnnouncementChannel.findUnique({
+      where: { guildId: stream.guildId },
+    });
     if (!setting) return;
 
     const guild = this.client.guilds.cache.get(stream.guildId);
@@ -601,9 +710,14 @@ export class StreamingService {
     if (!channel?.isTextBased() || channel.isDMBased()) return;
 
     const webUrl = process.env.WEB_URL?.replace(/\/+$/, '');
-    const watchPath = stream.visibility === 'PUBLIC' ? `/live/${stream.id}` : `/dashboard/live/${stream.id}/watch`;
+    const watchPath =
+      stream.visibility === 'PUBLIC'
+        ? `/live/${stream.id}`
+        : `/dashboard/live/${stream.id}/watch`;
     const watchUrl = webUrl ? `${webUrl}${watchPath}` : null;
-    const host = stream.hostDiscordId ? `<@${stream.hostDiscordId}>` : stream.hostName;
+    const host = stream.hostDiscordId
+      ? `<@${stream.hostDiscordId}>`
+      : stream.hostName;
     const embed = new EmbedBuilder()
       .setColor(0xef4444)
       .setTitle('🔴 Transmissão ao vivo')
@@ -619,7 +733,10 @@ export class StreamingService {
       });
     }
 
-    await channel.send({ content: stream.hostDiscordId ? `<@${stream.hostDiscordId}>` : undefined, embeds: [embed] });
+    await channel.send({
+      content: stream.hostDiscordId ? `<@${stream.hostDiscordId}>` : undefined,
+      embeds: [embed],
+    });
     stream.announced = true;
   }
 

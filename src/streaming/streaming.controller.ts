@@ -10,7 +10,10 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { AuthGuard } from '../auth/guards/auth.guard';
-import { PermissionGuard, RequirePermissions } from '../access/permission.guard';
+import {
+  PermissionGuard,
+  RequirePermissions,
+} from '../access/permission.guard';
 import { RequireFeature } from '../decorators/feature.decorator';
 import { FeatureFlagGuard } from '../feature-flags/guards/feature-flag.guard';
 import { FEATURE_SCREEN_SHARE } from '../feature-flags/feature-flags.constants';
@@ -21,7 +24,12 @@ import { PeerDto } from './dto/peer.dto';
 import { SignalDto } from './dto/signal.dto';
 import { UpdateAnnouncementChannelDto } from './dto/update-announcement-channel.dto';
 import { UpdateStreamDto } from './dto/update-stream.dto';
-import { RequestUser, STREAM_MANAGE_PERMISSION, STREAM_PERMISSION, StreamingService } from './streaming.service';
+import {
+  RequestUser,
+  STREAM_MANAGE_PERMISSION,
+  STREAM_PERMISSION,
+  StreamingService,
+} from './streaming.service';
 
 function toRequestUser(req: any): RequestUser {
   const payload = req.tokenPayload;
@@ -47,7 +55,10 @@ export class StreamingController {
   async permission(@Req() req: any) {
     const user = toRequestUser(req);
     const { canStream } = await this.streaming.getPermission(user.id);
-    return { canStream, featureEnabled: await this.featureFlags.isEnabled(FEATURE_SCREEN_SHARE) };
+    return {
+      canStream,
+      featureEnabled: await this.featureFlags.isEnabled(FEATURE_SCREEN_SHARE),
+    };
   }
 
   @Get('ice')
@@ -63,7 +74,12 @@ export class StreamingController {
   @RequirePermissions(STREAM_PERMISSION)
   @Post('streams')
   create(@Body() dto: CreateStreamDto, @Req() req: any) {
-    return this.streaming.create(toRequestUser(req), dto.title, dto.guildId, dto.visibility);
+    return this.streaming.create(
+      toRequestUser(req),
+      dto.title,
+      dto.guildId,
+      dto.visibility,
+    );
   }
 
   @RequirePermissions(STREAM_PERMISSION)
@@ -74,8 +90,16 @@ export class StreamingController {
 
   @RequirePermissions(STREAM_PERMISSION)
   @Patch('streams/:id')
-  update(@Param('id') id: string, @Body() dto: UpdateStreamDto, @Req() req: any) {
-    return this.streaming.updateVisibility(id, toRequestUser(req), dto.visibility);
+  update(
+    @Param('id') id: string,
+    @Body() dto: UpdateStreamDto,
+    @Req() req: any,
+  ) {
+    return this.streaming.updateVisibility(
+      id,
+      toRequestUser(req),
+      dto.visibility,
+    );
   }
 
   @RequirePermissions(STREAM_MANAGE_PERMISSION)
@@ -114,7 +138,12 @@ export class StreamingController {
 
   @Post('streams/:id/join')
   join(@Param('id') id: string, @Body() dto: JoinStreamDto, @Req() req: any) {
-    return this.streaming.join(id, toRequestUser(req), dto?.clientId);
+    return this.streaming.join(
+      id,
+      toRequestUser(req),
+      dto?.clientId,
+      dto?.asViewer,
+    );
   }
 
   @Post('streams/:id/leave')
