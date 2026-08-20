@@ -143,6 +143,29 @@ export class StreamingService {
     return { ended: true };
   }
 
+  updateVisibility(id: string, user: RequestUser, visibility: 'MEMBERS' | 'PUBLIC') {
+    const stream = this.getStream(id);
+    if (stream.hostUserId !== user.id && user.role !== Role.ADMIN) {
+      throw new ForbiddenException('Only the stream owner can change its privacy.');
+    }
+
+    if (stream.visibility === visibility) return this.toSummary(stream);
+    stream.visibility = visibility;
+
+    // Guests do not have an authenticated Timbas session. Remove them as soon
+    // as the host makes the stream private.
+    if (visibility === 'MEMBERS') {
+      for (const peer of [...stream.peers.values()]) {
+        if (peer.guestToken) {
+          peer.subject.next({ type: 'stream_ended' });
+          this.dropPeer(stream, peer.id);
+        }
+      }
+    }
+
+    return this.toSummary(stream);
+  }
+
   async start(id: string, user: RequestUser) {
     const stream = this.getStream(id);
     if (stream.hostUserId !== user.id) {
@@ -233,6 +256,14 @@ export class StreamingService {
       stream.peers.set(peerId, peer);
       this.broadcastToViewers(stream, { type: 'host_ready', from: peerId });
     } else {
+      // A refresh creates a new browser peer before the old page can finish
+      // its leave request. Keep a single active viewer for each Timbas user
+      // so the live count represents people, not page reloads.
+      for (const existing of [...stream.peers.values()]) {
+        if (existing.id !== stream.hostPeerId && existing.userId === user.id) {
+          this.dropPeer(stream, existing.id);
+        }
+      }
       stream.peers.set(peerId, peer);
     }
 
@@ -343,7 +374,7 @@ export class StreamingService {
       // Viewers that arrived before this channel opened would be invisible to
       // the host, so replay them now.
       for (const viewer of stream.peers.values()) {
-        if (viewer.id !== peerId) peer.subject.next(this.viewerJoinedEvent(viewer));
+        if (viewer.id !== peerId && viewer.attached) peer.subject.next(this.viewerJoinedEvent(viewer));
       }
       return;
     }
@@ -357,8 +388,16 @@ export class StreamingService {
     const peer = stream?.peers.get(peerId);
     if (!peer) return;
 
+    const wasAttached = peer.attached;
     peer.attached = false;
     peer.lastSeen = Date.now();
+
+    // The SSE connection is the viewer's live presence. This runs when a tab
+    // refreshes or closes, so the count never accumulates stale viewers.
+    if (wasAttached && peerId !== stream.hostPeerId) {
+      this.sendToHost(stream, { type: 'viewer_left', from: peerId });
+      this.broadcastViewerCount(stream);
+    }
   }
 
   signal(streamId: string, dto: SignalDto, user: RequestUser) {
@@ -465,7 +504,7 @@ export class StreamingService {
 
   private viewerList(stream: Stream) {
     return [...stream.peers.values()]
-      .filter((peer) => peer.id !== stream.hostPeerId)
+      .filter((peer) => peer.id !== stream.hostPeerId && peer.attached)
       .map((peer) => ({
         peerId: peer.id,
         name: peer.name,

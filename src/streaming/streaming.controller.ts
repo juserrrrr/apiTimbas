@@ -4,6 +4,7 @@ import {
   Delete,
   Get,
   Param,
+  Patch,
   Post,
   Query,
   Req,
@@ -21,6 +22,7 @@ import { CreateStreamDto } from './dto/create-stream.dto';
 import { PeerDto } from './dto/peer.dto';
 import { SignalDto } from './dto/signal.dto';
 import { UpdateAnnouncementChannelDto } from './dto/update-announcement-channel.dto';
+import { UpdateStreamDto } from './dto/update-stream.dto';
 import { RequestUser, STREAM_MANAGE_PERMISSION, STREAM_PERMISSION, StreamingService } from './streaming.service';
 
 function toRequestUser(req: any): RequestUser {
@@ -70,6 +72,12 @@ export class StreamingController {
   @Post('streams/:id/start')
   start(@Param('id') id: string, @Req() req: any) {
     return this.streaming.start(id, toRequestUser(req));
+  }
+
+  @RequirePermissions(STREAM_PERMISSION)
+  @Patch('streams/:id')
+  update(@Param('id') id: string, @Body() dto: UpdateStreamDto, @Req() req: any) {
+    return this.streaming.updateVisibility(id, toRequestUser(req), dto.visibility);
   }
 
   @RequirePermissions(STREAM_MANAGE_PERMISSION)
@@ -136,9 +144,12 @@ export class StreamingController {
     }
 
     res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
     res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+    res.setHeader('Content-Encoding', 'none');
     res.flushHeaders();
+    res.write(': connected\n\n');
 
     let subject: ReturnType<StreamingService['attach']>;
     try {
