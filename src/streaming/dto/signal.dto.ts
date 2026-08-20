@@ -1,4 +1,4 @@
-import { IsIn, IsNotEmpty, IsString } from 'class-validator';
+import { Allow, IsIn, IsNotEmpty, IsString } from 'class-validator';
 
 export class SignalDto {
   @IsString()
@@ -12,5 +12,6 @@ export class SignalDto {
   @IsIn(['offer', 'answer', 'ice'])
   type: 'offer' | 'answer' | 'ice';
 
+  @Allow()
   data: unknown;
 }
