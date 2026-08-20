@@ -187,6 +187,13 @@ model PlatformSettings {
   updatedAt          DateTime @updatedAt
 }
 
+model FeatureFlag {
+  key         String   @id
+  enabled     Boolean  @default(false)
+  description String?
+  updatedAt   DateTime @updatedAt
+}
+
 model LeagueAccount {
   id        Int      @id @default(autoincrement())
   puuid     String   @unique

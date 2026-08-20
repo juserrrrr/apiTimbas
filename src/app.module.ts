@@ -24,6 +24,8 @@ import { DraftModule } from './draft/draft.module';
 import { AccessModule } from './access/access.module';
 import { DemoModule } from './demo/demo.module';
 import { PlayerCatalogModule } from './player-catalog/player-catalog.module';
+import { FeatureFlagsModule } from './feature-flags/feature-flags.module';
+import { StreamingModule } from './streaming/streaming.module';
 
 @Module({
   imports: [
@@ -64,6 +66,8 @@ import { PlayerCatalogModule } from './player-catalog/player-catalog.module';
     DemoModule,
     AccessModule,
     PlayerCatalogModule,
+    FeatureFlagsModule,
+    StreamingModule,
   ],
   controllers: [],
   providers: [{ provide: APP_GUARD, useClass: AppThrottlerGuard }],

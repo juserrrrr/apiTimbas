@@ -29,6 +29,8 @@ export const PERMISSION_CATEGORIES = [
       { key: 'ai.manage', label: 'Gerir a IA', hint: 'Escolhe provedor, modelo e liga cada recurso' },
       { key: 'economy.manage', label: 'Gerir moedas', hint: 'Ajusta saldo da carteira de conta' },
       { key: 'demo.manage', label: 'Laboratório', hint: 'Gera e apaga dados de teste' },
+      { key: 'features.manage', label: 'Gerir recursos', hint: 'Liga e desliga funcionalidades da plataforma' },
+      { key: 'stream.broadcast', label: 'Transmitir tela', hint: 'Abre transmissão ao vivo para quem tiver o link' },
     ],
   },
 ] as const;

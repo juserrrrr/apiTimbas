@@ -32,6 +32,8 @@ src/
 ├── tournament/             # Brackets for any game (single/double elim, league, groups)
 ├── draft/                  # Draft leagues: pool, live draft, fixtures, transfer market
 ├── football/               # Pure football math: attributes, match engine, development
+├── feature-flags/          # DB-backed toggles + FeatureFlagGuard (@RequireFeature)
+├── streaming/              # WebRTC screen share: in-memory rooms + SSE signaling
 └── prisma/                 # PrismaService
 ```
 
@@ -320,6 +322,11 @@ GEMINI_API_KEY, DEEPSEEK_API_KEY, OPENAI_API_KEY
 Player catalog sync, optional: `FOOTBALL_DATA_TOKEN`.
 OCR model cache directory, optional: `OCR_CACHE_PATH` (defaults to the system temp
 dir; set it to a writable path on read-only filesystems).
+
+Optional (WebRTC relay for restrictive networks):
+```
+TURN_URLS (comma separated), TURN_USERNAME, TURN_CREDENTIAL
+```
 
 ## Agents Available
 Use these subagents for specialized tasks:
