@@ -706,6 +706,8 @@ export class StreamingService implements OnModuleInit {
       id: stream.id,
       title: stream.title,
       hostName: stream.hostName,
+      hostAvatar: stream.hostAvatar,
+      hostDiscordId: stream.hostDiscordId,
       visibility: stream.visibility,
       startedAt: new Date(stream.startedAt).toISOString(),
       viewers: this.viewerList(stream).length,

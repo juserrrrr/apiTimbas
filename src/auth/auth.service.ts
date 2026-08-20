@@ -248,6 +248,7 @@ export class AuthService {
       });
     } else {
       const updateData = {
+        ...(user.name !== discordUser.username && { name: discordUser.username }),
         ...(user.avatar !== incomingAvatar && { avatar: incomingAvatar }),
         lastLoginAt: new Date(),
         ...(lastLoginIp && { lastLoginIp }),
