@@ -175,6 +175,7 @@ export class StreamingController {
       },
     });
 
+    this.streaming.activate(id, peerId);
     this.streaming.announce(id, peerId);
 
     const heartbeat = setInterval(() => {

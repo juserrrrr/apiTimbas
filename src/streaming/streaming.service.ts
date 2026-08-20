@@ -28,6 +28,8 @@ interface Peer {
   guestToken: string | null;
   subject: Subject<SignalEvent>;
   attached: boolean;
+  listening: boolean;
+  pendingEvents: SignalEvent[];
   lastSeen: number;
 }
 
@@ -60,7 +62,8 @@ export const STREAM_MANAGE_PERMISSION = 'stream.manage';
 
 const TICKET_TTL_MS = 30_000;
 const PEER_STALE_MS = 60_000;
-const HOST_GRACE_MS = 90_000;
+const UNSTARTED_STREAM_TTL_MS = 90_000;
+const HOST_RECONNECT_GRACE_MS = 10 * 60_000;
 
 @Injectable()
 export class StreamingService {
@@ -158,7 +161,7 @@ export class StreamingService {
     if (visibility === 'MEMBERS') {
       for (const peer of [...stream.peers.values()]) {
         if (peer.guestToken) {
-          peer.subject.next({ type: 'stream_ended' });
+          this.deliver(peer, { type: 'stream_ended' });
           this.dropPeer(stream, peer.id);
         }
       }
@@ -243,6 +246,8 @@ export class StreamingService {
       guestToken: null,
       subject: new Subject<SignalEvent>(),
       attached: false,
+      listening: false,
+      pendingEvents: [],
       lastSeen: Date.now(),
     };
 
@@ -302,6 +307,8 @@ export class StreamingService {
       guestToken,
       subject: new Subject<SignalEvent>(),
       attached: false,
+      listening: false,
+      pendingEvents: [],
       lastSeen: Date.now(),
     };
     stream.peers.set(peerId, peer);
@@ -371,8 +378,19 @@ export class StreamingService {
     if (!peer) throw new NotFoundException('Peer não encontrado.');
 
     peer.attached = true;
+    peer.listening = false;
     peer.lastSeen = Date.now();
     return peer.subject;
+  }
+
+  activate(streamId: string, peerId: string) {
+    const stream = this.streams.get(streamId);
+    const peer = stream?.peers.get(peerId);
+    if (!peer) return;
+
+    const pending = peer.pendingEvents.splice(0);
+    for (const event of pending) peer.subject.next(event);
+    peer.listening = true;
   }
 
   // Called once the SSE response is subscribed, otherwise these events would be
@@ -386,7 +404,7 @@ export class StreamingService {
       // Viewers that arrived before this channel opened would be invisible to
       // the host, so replay them now.
       for (const viewer of stream.peers.values()) {
-        if (viewer.id !== peerId && viewer.attached) peer.subject.next(this.viewerJoinedEvent(viewer));
+        if (viewer.id !== peerId && viewer.attached) this.deliver(viewer, this.viewerJoinedEvent(viewer));
       }
       return;
     }
@@ -402,6 +420,7 @@ export class StreamingService {
 
     const wasAttached = peer.attached;
     peer.attached = false;
+    peer.listening = false;
     peer.lastSeen = Date.now();
 
     // The SSE connection is the viewer's live presence. This runs when a tab
@@ -427,7 +446,7 @@ export class StreamingService {
     }
 
     from.lastSeen = Date.now();
-    target.subject.next({ type: dto.type, from: dto.from, payload: dto.data });
+    this.deliver(target, { type: dto.type, from: dto.from, payload: dto.data });
     return { sent: true };
   }
 
@@ -440,7 +459,7 @@ export class StreamingService {
     if (dto.to !== stream.hostPeerId) throw new ForbiddenException('Convidados só podem sinalizar para o host.');
 
     from.lastSeen = Date.now();
-    target.subject.next({ type: dto.type, from: dto.from, payload: dto.data });
+    this.deliver(target, { type: dto.type, from: dto.from, payload: dto.data });
     return { sent: true };
   }
 
@@ -456,14 +475,16 @@ export class StreamingService {
 
     for (const stream of [...this.streams.values()]) {
       // Created but never opened a signaling channel: the host gave up.
-      if (!stream.hostPeerId && now - stream.startedAt > HOST_GRACE_MS) {
+      if (!stream.hostPeerId && !stream.broadcasting && now - stream.startedAt > UNSTARTED_STREAM_TTL_MS) {
         this.destroy(stream);
         continue;
       }
 
       for (const peer of [...stream.peers.values()]) {
         if (peer.attached) continue;
-        const grace = peer.id === stream.hostPeerId ? HOST_GRACE_MS : PEER_STALE_MS;
+        const grace = peer.id === stream.hostPeerId
+          ? stream.broadcasting ? HOST_RECONNECT_GRACE_MS : UNSTARTED_STREAM_TTL_MS
+          : PEER_STALE_MS;
         if (now - peer.lastSeen < grace) continue;
 
         if (peer.id === stream.hostPeerId) this.destroy(stream);
@@ -542,7 +563,7 @@ export class StreamingService {
   private destroy(stream: Stream) {
     const hostPeerId = stream.hostPeerId;
     for (const peer of stream.peers.values()) {
-      if (peer.id !== hostPeerId) peer.subject.next({ type: 'stream_ended' });
+      if (peer.id !== hostPeerId) this.deliver(peer, { type: 'stream_ended' });
       peer.subject.complete();
     }
     stream.peers.clear();
@@ -582,21 +603,32 @@ export class StreamingService {
     stream.announced = true;
   }
 
+  private deliver(peer: Peer, event: SignalEvent) {
+    if (peer.listening) {
+      peer.subject.next(event);
+      return;
+    }
+
+    if (peer.pendingEvents.length >= 128) peer.pendingEvents.shift();
+    peer.pendingEvents.push(event);
+  }
+
   private sendToHost(stream: Stream, event: SignalEvent) {
     if (!stream.hostPeerId) return;
-    stream.peers.get(stream.hostPeerId)?.subject.next(event);
+    const host = stream.peers.get(stream.hostPeerId);
+    if (host) this.deliver(host, event);
   }
 
   private broadcastToViewers(stream: Stream, event: SignalEvent) {
     for (const peer of stream.peers.values()) {
-      if (peer.id !== stream.hostPeerId) peer.subject.next(event);
+      if (peer.id !== stream.hostPeerId) this.deliver(peer, event);
     }
   }
 
   private broadcastViewerCount(stream: Stream) {
     const count = this.viewerList(stream).length;
     for (const peer of stream.peers.values()) {
-      peer.subject.next({ type: 'viewers', payload: { count } });
+      this.deliver(peer, { type: 'viewers', payload: { count } });
     }
   }
 }

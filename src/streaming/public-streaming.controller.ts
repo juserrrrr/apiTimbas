@@ -82,6 +82,7 @@ export class PublicStreamingController {
       },
     });
 
+    this.streaming.activate(id, peerId);
     this.streaming.announce(id, peerId);
     const heartbeat = setInterval(() => {
       if (!res.writableEnded) res.write(': heartbeat\n\n');
