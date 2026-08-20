@@ -1,6 +1,7 @@
 import {
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { Interval } from '@nestjs/schedule';
@@ -66,6 +67,7 @@ const HOST_GRACE_MS = 90_000;
 
 @Injectable()
 export class StreamingService {
+  private readonly logger = new Logger(StreamingService.name);
   private readonly streams = new Map<string, Stream>();
   private readonly tickets = new Map<string, { streamId: string; peerId: string; expiresAt: number }>();
 
@@ -123,6 +125,7 @@ export class StreamingService {
       peers: new Map(),
     };
     this.streams.set(stream.id, stream);
+    this.logger.log(`Live created stream=${stream.id} visibility=${stream.visibility}`);
     return this.toSummary(stream);
   }
 
@@ -150,7 +153,7 @@ export class StreamingService {
     if (stream.hostUserId !== user.id && user.role !== Role.ADMIN) {
       throw new ForbiddenException('Apenas o dono da transmissão pode encerrá-la.');
     }
-    this.destroy(stream);
+    this.destroy(stream, 'manual_end');
     return { ended: true };
   }
 
@@ -186,6 +189,7 @@ export class StreamingService {
     if (!stream.broadcasting) {
       stream.broadcasting = true;
       stream.startedAt = Date.now();
+      this.logger.log(`Live started stream=${stream.id}`);
       await this.announceToDiscord(stream).catch(() => {});
     }
 
@@ -268,6 +272,7 @@ export class StreamingService {
       }
       stream.hostPeerId = peerId;
       stream.peers.set(peerId, peer);
+      this.logger.log(`Live peer joined stream=${stream.id} peer=${peerId} role=host`);
       this.broadcastToViewers(stream, { type: 'host_ready', from: peerId });
     } else {
       // A refresh creates a new browser peer before the old page can finish
@@ -281,6 +286,7 @@ export class StreamingService {
         }
       }
       stream.peers.set(peerId, peer);
+      this.logger.log(`Live peer joined stream=${stream.id} peer=${peerId} role=viewer`);
     }
 
     return {
@@ -319,6 +325,7 @@ export class StreamingService {
       lastSeen: Date.now(),
     };
     stream.peers.set(peerId, peer);
+    this.logger.log(`Live peer joined stream=${stream.id} peer=${peerId} role=guest`);
     return { peerId, guestToken, hostPeerId: stream.hostPeerId, stream: this.toSummary(stream) };
   }
 
@@ -332,7 +339,7 @@ export class StreamingService {
     }
 
     if (stream.hostPeerId === peerId) {
-      this.destroy(stream);
+      this.destroy(stream, 'host_leave');
       return { left: true, ended: true };
     }
 
@@ -387,6 +394,7 @@ export class StreamingService {
     peer.attached = true;
     peer.listening = false;
     peer.lastSeen = Date.now();
+    this.logger.log(`Live events attached stream=${stream.id} peer=${peer.id} role=${peer.id === stream.hostPeerId ? 'host' : 'viewer'}`);
     return peer.subject;
   }
 
@@ -411,7 +419,7 @@ export class StreamingService {
       // Viewers that arrived before this channel opened would be invisible to
       // the host, so replay them now.
       for (const viewer of stream.peers.values()) {
-        if (viewer.id !== peerId && viewer.attached) this.deliver(viewer, this.viewerJoinedEvent(viewer));
+        if (viewer.id !== peerId && viewer.attached) this.sendToHost(stream, this.viewerJoinedEvent(viewer));
       }
       return;
     }
@@ -454,6 +462,9 @@ export class StreamingService {
 
     from.lastSeen = Date.now();
     this.deliver(target, { type: dto.type, from: dto.from, payload: dto.data });
+    if (dto.type === 'offer' || dto.type === 'answer') {
+      this.logger.log(`Live signal stream=${stream.id} type=${dto.type} from=${dto.from} to=${dto.to}`);
+    }
     return { sent: true };
   }
 
@@ -467,6 +478,9 @@ export class StreamingService {
 
     from.lastSeen = Date.now();
     this.deliver(target, { type: dto.type, from: dto.from, payload: dto.data });
+    if (dto.type === 'offer' || dto.type === 'answer') {
+      this.logger.log(`Live signal stream=${stream.id} type=${dto.type} from=${dto.from} to=${dto.to}`);
+    }
     return { sent: true };
   }
 
@@ -483,7 +497,7 @@ export class StreamingService {
     for (const stream of [...this.streams.values()]) {
       // Created but never opened a signaling channel: the host gave up.
       if (!stream.hostPeerId && now - stream.startedAt > HOST_GRACE_MS) {
-        this.destroy(stream);
+        this.destroy(stream, 'host_never_connected');
         continue;
       }
 
@@ -492,7 +506,7 @@ export class StreamingService {
         const grace = peer.id === stream.hostPeerId ? HOST_GRACE_MS : PEER_STALE_MS;
         if (now - peer.lastSeen < grace) continue;
 
-        if (peer.id === stream.hostPeerId) this.destroy(stream);
+        if (peer.id === stream.hostPeerId) this.destroy(stream, 'host_events_timeout');
         else this.dropPeer(stream, peer.id);
       }
     }
@@ -565,7 +579,8 @@ export class StreamingService {
     }
   }
 
-  private destroy(stream: Stream) {
+  private destroy(stream: Stream, reason: 'manual_end' | 'host_leave' | 'host_never_connected' | 'host_events_timeout') {
+    this.logger.warn(`Live destroyed stream=${stream.id} reason=${reason} viewers=${this.viewerList(stream).length}`);
     const hostPeerId = stream.hostPeerId;
     for (const peer of stream.peers.values()) {
       if (peer.id !== hostPeerId) this.deliver(peer, { type: 'stream_ended' });
