@@ -59,6 +59,23 @@ describe('StreamingService host sessions', () => {
     });
   });
 
+  it('mantém a live por 90 segundos quando o host fecha ou atualiza a aba', async () => {
+    const service = createService();
+    const stream = await service.create(host, 'Live', 'guild-1', 'MEMBERS');
+    const current = service.join(stream.id, host, 'studio-tab');
+    service.attach(stream.id, current.peerId);
+    await service.start(stream.id, host);
+
+    await expect(service.leave(stream.id, current.peerId, host)).resolves.toEqual({
+      left: true,
+      ended: false,
+    });
+    expect(service.findOne(stream.id)).toEqual(
+      expect.objectContaining({ id: stream.id, live: true }),
+    );
+    expect(service.join(stream.id, host, 'reopened-tab').role).toBe('host');
+  });
+
   it('restaura uma transmissão ativa depois que a API reinicia', async () => {
     const startedAt = new Date('2026-08-20T23:00:00.000Z');
     const service = createService([

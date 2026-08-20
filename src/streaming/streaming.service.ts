@@ -467,8 +467,15 @@ export class StreamingService implements OnModuleInit {
     }
 
     if (stream.hostPeerId === peerId) {
-      await this.destroy(stream, 'host_leave');
-      return { left: true, ended: true };
+      stream.peers.delete(peerId);
+      peer?.subject.complete();
+      stream.hostPeerId = null;
+      stream.hostMissingSince = Date.now();
+      this.broadcastToViewers(stream, { type: 'host_unavailable' });
+      this.logger.log(
+        `Live host temporarily disconnected stream=${stream.id} grace=${HOST_GRACE_MS}ms`,
+      );
+      return { left: true, ended: false };
     }
 
     this.dropPeer(stream, peerId);
@@ -581,9 +588,15 @@ export class StreamingService implements OnModuleInit {
     peer.listening = false;
     peer.lastSeen = Date.now();
 
+    if (peerId === stream.hostPeerId) {
+      stream.hostMissingSince = peer.lastSeen;
+      this.broadcastToViewers(stream, { type: 'host_unavailable' });
+      return;
+    }
+
     // The SSE connection is the viewer's live presence. This runs when a tab
     // refreshes or closes, so the count never accumulates stale viewers.
-    if (wasAttached && peerId !== stream.hostPeerId) {
+    if (wasAttached) {
       this.sendToHost(stream, { type: 'viewer_left', from: peerId });
       this.broadcastViewerCount(stream);
     }
@@ -639,7 +652,7 @@ export class StreamingService implements OnModuleInit {
 
   // ─── CLEANUP ──────────────────────────────────────────────────────────────
 
-  @Interval(30_000)
+  @Interval(5_000)
   async cleanup() {
     const now = Date.now();
 
