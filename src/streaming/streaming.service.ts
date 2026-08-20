@@ -4,6 +4,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  OnModuleInit,
 } from '@nestjs/common';
 import { Interval } from '@nestjs/schedule';
 import { randomUUID } from 'crypto';
@@ -48,6 +49,7 @@ interface Stream {
   broadcasting: boolean;
   announced: boolean;
   hostPeerId: string | null;
+  hostMissingSince: number | null;
   peers: Map<string, Peer>;
 }
 
@@ -67,7 +69,7 @@ const PEER_STALE_MS = 60_000;
 const HOST_GRACE_MS = 90_000;
 
 @Injectable()
-export class StreamingService {
+export class StreamingService implements OnModuleInit {
   private readonly logger = new Logger(StreamingService.name);
   private readonly streams = new Map<string, Stream>();
   private readonly tickets = new Map<
@@ -80,6 +82,35 @@ export class StreamingService {
     private readonly prisma: PrismaService,
     private readonly client: Client,
   ) {}
+
+  async onModuleInit() {
+    const persisted = await this.prisma.activeStream.findMany();
+    const restoredAt = Date.now();
+
+    for (const row of persisted) {
+      const stream: Stream = {
+        id: row.id,
+        title: row.title,
+        hostUserId: row.hostUserId,
+        hostName: row.hostName,
+        hostAvatar: row.hostAvatar,
+        hostDiscordId: row.hostDiscordId,
+        guildId: row.guildId,
+        visibility: row.visibility === 'PUBLIC' ? 'PUBLIC' : 'MEMBERS',
+        startedAt: row.startedAt.getTime(),
+        broadcasting: row.broadcasting,
+        announced: row.announced,
+        hostPeerId: null,
+        hostMissingSince: restoredAt,
+        peers: new Map(),
+      };
+      this.streams.set(stream.id, stream);
+    }
+
+    if (persisted.length) {
+      this.logger.log(`Restored ${persisted.length} active live stream(s)`);
+    }
+  }
 
   // ─── PERMISSION ───────────────────────────────────────────────────────────
 
@@ -115,7 +146,7 @@ export class StreamingService {
   // ─── STREAM LIFECYCLE ─────────────────────────────────────────────────────
 
   // Permission is enforced by PermissionGuard on the controller.
-  create(
+  async create(
     user: RequestUser,
     title: string | undefined,
     guildId: string,
@@ -139,8 +170,22 @@ export class StreamingService {
       broadcasting: false,
       announced: false,
       hostPeerId: null,
+      hostMissingSince: Date.now(),
       peers: new Map(),
     };
+    await this.prisma.activeStream.create({
+      data: {
+        id: stream.id,
+        title: stream.title,
+        hostUserId: stream.hostUserId,
+        hostName: stream.hostName,
+        hostAvatar: stream.hostAvatar,
+        hostDiscordId: stream.hostDiscordId,
+        guildId: stream.guildId,
+        visibility: stream.visibility,
+        startedAt: new Date(stream.startedAt),
+      },
+    });
     this.streams.set(stream.id, stream);
     this.logger.log(
       `Live created stream=${stream.id} visibility=${stream.visibility}`,
@@ -169,18 +214,18 @@ export class StreamingService {
     return this.viewerList(stream);
   }
 
-  end(id: string, user: RequestUser) {
+  async end(id: string, user: RequestUser) {
     const stream = this.getStream(id);
     if (stream.hostUserId !== user.id && user.role !== Role.ADMIN) {
       throw new ForbiddenException(
         'Apenas o dono da transmissão pode encerrá-la.',
       );
     }
-    this.destroy(stream, 'manual_end');
+    await this.destroy(stream, 'manual_end');
     return { ended: true };
   }
 
-  updateVisibility(
+  async updateVisibility(
     id: string,
     user: RequestUser,
     visibility: 'MEMBERS' | 'PUBLIC',
@@ -194,6 +239,10 @@ export class StreamingService {
 
     if (stream.visibility === visibility) return this.toSummary(stream);
     stream.visibility = visibility;
+    await this.prisma.activeStream.update({
+      where: { id: stream.id },
+      data: { visibility },
+    });
 
     // Guests do not have an authenticated Timbas session. Remove them as soon
     // as the host makes the stream private.
@@ -220,8 +269,18 @@ export class StreamingService {
     if (!stream.broadcasting) {
       stream.broadcasting = true;
       stream.startedAt = Date.now();
+      await this.prisma.activeStream.update({
+        where: { id: stream.id },
+        data: { broadcasting: true, startedAt: new Date(stream.startedAt) },
+      });
       this.logger.log(`Live started stream=${stream.id}`);
       await this.announceToDiscord(stream).catch(() => {});
+      if (stream.announced) {
+        await this.prisma.activeStream.update({
+          where: { id: stream.id },
+          data: { announced: true },
+        });
+      }
     }
 
     return this.toSummary(stream);
@@ -322,6 +381,7 @@ export class StreamingService {
         previous.subject.complete();
       }
       stream.hostPeerId = peerId;
+      stream.hostMissingSince = null;
       stream.peers.set(peerId, peer);
       this.logger.log(
         `Live peer joined stream=${stream.id} peer=${peerId} role=host`,
@@ -393,7 +453,7 @@ export class StreamingService {
     };
   }
 
-  leave(id: string, peerId: string, user: RequestUser) {
+  async leave(id: string, peerId: string, user: RequestUser) {
     const stream = this.streams.get(id);
     if (!stream) return { left: true };
 
@@ -403,7 +463,7 @@ export class StreamingService {
     }
 
     if (stream.hostPeerId === peerId) {
-      this.destroy(stream, 'host_leave');
+      await this.destroy(stream, 'host_leave');
       return { left: true, ended: true };
     }
 
@@ -576,7 +636,7 @@ export class StreamingService {
   // ─── CLEANUP ──────────────────────────────────────────────────────────────
 
   @Interval(30_000)
-  cleanup() {
+  async cleanup() {
     const now = Date.now();
 
     for (const [ticket, entry] of this.tickets) {
@@ -585,8 +645,12 @@ export class StreamingService {
 
     for (const stream of [...this.streams.values()]) {
       // Created but never opened a signaling channel: the host gave up.
-      if (!stream.hostPeerId && now - stream.startedAt > HOST_GRACE_MS) {
-        this.destroy(stream, 'host_never_connected');
+      if (
+        !stream.hostPeerId &&
+        stream.hostMissingSince !== null &&
+        now - stream.hostMissingSince > HOST_GRACE_MS
+      ) {
+        await this.destroy(stream, 'host_never_connected');
         continue;
       }
 
@@ -596,9 +660,11 @@ export class StreamingService {
           peer.id === stream.hostPeerId ? HOST_GRACE_MS : PEER_STALE_MS;
         if (now - peer.lastSeen < grace) continue;
 
-        if (peer.id === stream.hostPeerId)
-          this.destroy(stream, 'host_events_timeout');
-        else this.dropPeer(stream, peer.id);
+        if (peer.id === stream.hostPeerId) {
+          await this.destroy(stream, 'host_events_timeout');
+          break;
+        }
+        this.dropPeer(stream, peer.id);
       }
     }
   }
@@ -677,7 +743,7 @@ export class StreamingService {
     }
   }
 
-  private destroy(
+  private async destroy(
     stream: Stream,
     reason:
       | 'manual_end'
@@ -696,6 +762,7 @@ export class StreamingService {
     stream.peers.clear();
     stream.hostPeerId = null;
     this.streams.delete(stream.id);
+    await this.prisma.activeStream.deleteMany({ where: { id: stream.id } });
   }
 
   private async announceToDiscord(stream: Stream) {

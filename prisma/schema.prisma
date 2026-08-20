@@ -26,6 +26,21 @@ model StreamAnnouncementChannel {
   dateUpdated DateTime @updatedAt
 }
 
+model ActiveStream {
+  id            String   @id
+  title         String
+  hostUserId    Int      @unique
+  hostName      String
+  hostAvatar    String?
+  hostDiscordId String?
+  guildId       String
+  visibility    String   @default("MEMBERS")
+  startedAt     DateTime
+  broadcasting  Boolean  @default(false)
+  announced     Boolean  @default(false)
+  dateUpdated   DateTime @updatedAt
+}
+
 model DoorMessages {
   id               Int            @id @default(autoincrement())
   welcomeMsg       Message?       @relation("WelcomeMessage", fields: [welcomeMessageId], references: [id])

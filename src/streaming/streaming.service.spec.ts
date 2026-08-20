@@ -14,16 +14,25 @@ describe('StreamingService host sessions', () => {
     discordId: 'host-discord',
   };
 
-  const createService = () =>
-    new StreamingService(
+  const createService = (persisted: object[] = []) => {
+    const prisma = {
+      activeStream: {
+        findMany: jest.fn().mockResolvedValue(persisted),
+        create: jest.fn().mockResolvedValue(undefined),
+        update: jest.fn().mockResolvedValue(undefined),
+        deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
+    } as unknown as PrismaService;
+    return new StreamingService(
       {} as AccessService,
-      {} as PrismaService,
+      prisma,
       {} as Client,
     );
+  };
 
-  it('mantém o host atual quando o estúdio é aberto em outra aba', () => {
+  it('mantém o host atual quando o estúdio é aberto em outra aba', async () => {
     const service = createService();
-    const stream = service.create(host, 'Live', 'guild-1', 'MEMBERS');
+    const stream = await service.create(host, 'Live', 'guild-1', 'MEMBERS');
     const current = service.join(stream.id, host, 'first-tab');
     service.attach(stream.id, current.peerId);
 
@@ -35,9 +44,9 @@ describe('StreamingService host sessions', () => {
     });
   });
 
-  it('permite que o dono assista sem substituir o peer do estúdio', () => {
+  it('permite que o dono assista sem substituir o peer do estúdio', async () => {
     const service = createService();
-    const stream = service.create(host, 'Live', 'guild-1', 'MEMBERS');
+    const stream = await service.create(host, 'Live', 'guild-1', 'MEMBERS');
     const current = service.join(stream.id, host, 'studio-tab');
     service.attach(stream.id, current.peerId);
 
@@ -48,5 +57,35 @@ describe('StreamingService host sessions', () => {
     expect(service.createTicket(stream.id, current.peerId, host)).toEqual({
       ticket: expect.any(String),
     });
+  });
+
+  it('restaura uma transmissão ativa depois que a API reinicia', async () => {
+    const startedAt = new Date('2026-08-20T23:00:00.000Z');
+    const service = createService([
+      {
+        id: 'persisted-live',
+        title: 'Live persistida',
+        hostUserId: host.id,
+        hostName: host.name,
+        hostAvatar: null,
+        hostDiscordId: host.discordId,
+        guildId: 'guild-1',
+        visibility: 'PUBLIC',
+        startedAt,
+        broadcasting: true,
+        announced: true,
+      },
+    ]);
+
+    await service.onModuleInit();
+
+    expect(service.list()).toEqual([
+      expect.objectContaining({
+        id: 'persisted-live',
+        live: true,
+        startedAt: startedAt.toISOString(),
+      }),
+    ]);
+    expect(service.join('persisted-live', host, 'studio').role).toBe('host');
   });
 });
