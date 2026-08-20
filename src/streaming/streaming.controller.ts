@@ -20,7 +20,8 @@ import { FeatureFlagsService } from '../feature-flags/feature-flags.service';
 import { CreateStreamDto } from './dto/create-stream.dto';
 import { PeerDto } from './dto/peer.dto';
 import { SignalDto } from './dto/signal.dto';
-import { RequestUser, STREAM_PERMISSION, StreamingService } from './streaming.service';
+import { UpdateAnnouncementChannelDto } from './dto/update-announcement-channel.dto';
+import { RequestUser, STREAM_MANAGE_PERMISSION, STREAM_PERMISSION, StreamingService } from './streaming.service';
 
 function toRequestUser(req: any): RequestUser {
   const payload = req.tokenPayload;
@@ -62,7 +63,31 @@ export class StreamingController {
   @RequirePermissions(STREAM_PERMISSION)
   @Post('streams')
   create(@Body() dto: CreateStreamDto, @Req() req: any) {
-    return this.streaming.create(toRequestUser(req), dto.title);
+    return this.streaming.create(toRequestUser(req), dto.title, dto.guildId, dto.visibility);
+  }
+
+  @RequirePermissions(STREAM_PERMISSION)
+  @Post('streams/:id/start')
+  start(@Param('id') id: string, @Req() req: any) {
+    return this.streaming.start(id, toRequestUser(req));
+  }
+
+  @RequirePermissions(STREAM_MANAGE_PERMISSION)
+  @Get('admin/announcement-channels')
+  announcementGuilds() {
+    return this.streaming.announcementGuilds();
+  }
+
+  @RequirePermissions(STREAM_PERMISSION)
+  @Get('announcement-targets')
+  announcementTargets() {
+    return this.streaming.announcementTargets();
+  }
+
+  @RequirePermissions(STREAM_MANAGE_PERMISSION)
+  @Post('admin/announcement-channels')
+  setAnnouncementChannel(@Body() dto: UpdateAnnouncementChannelDto) {
+    return this.streaming.setAnnouncementChannel(dto.guildId, dto.channelId);
   }
 
   @Get('streams/:id')

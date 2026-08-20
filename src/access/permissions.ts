@@ -31,6 +31,7 @@ export const PERMISSION_CATEGORIES = [
       { key: 'demo.manage', label: 'Laboratório', hint: 'Gera e apaga dados de teste' },
       { key: 'features.manage', label: 'Gerir recursos', hint: 'Liga e desliga funcionalidades da plataforma' },
       { key: 'stream.broadcast', label: 'Transmitir tela', hint: 'Abre transmissão ao vivo para quem tiver o link' },
+      { key: 'stream.manage', label: 'Configurar transmissões', hint: 'Escolhe onde o bot anuncia as lives' },
     ],
   },
 ] as const;

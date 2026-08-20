@@ -20,6 +20,12 @@ model DiscordServer {
   @@index([discordServerId])
 }
 
+model StreamAnnouncementChannel {
+  guildId     String   @id
+  channelId   String
+  dateUpdated DateTime @updatedAt
+}
+
 model DoorMessages {
   id               Int            @id @default(autoincrement())
   welcomeMsg       Message?       @relation("WelcomeMessage", fields: [welcomeMessageId], references: [id])
