@@ -62,8 +62,7 @@ export const STREAM_MANAGE_PERMISSION = 'stream.manage';
 
 const TICKET_TTL_MS = 30_000;
 const PEER_STALE_MS = 60_000;
-const UNSTARTED_STREAM_TTL_MS = 90_000;
-const HOST_RECONNECT_GRACE_MS = 10 * 60_000;
+const HOST_GRACE_MS = 90_000;
 
 @Injectable()
 export class StreamingService {
@@ -136,6 +135,14 @@ export class StreamingService {
 
   findOne(id: string) {
     return this.toSummary(this.getStream(id));
+  }
+
+  viewers(id: string, user: RequestUser) {
+    const stream = this.getStream(id);
+    if (stream.hostUserId !== user.id && user.role !== Role.ADMIN) {
+      throw new ForbiddenException('Apenas o dono da transmissão pode consultar os espectadores.');
+    }
+    return this.viewerList(stream);
   }
 
   end(id: string, user: RequestUser) {
@@ -475,16 +482,14 @@ export class StreamingService {
 
     for (const stream of [...this.streams.values()]) {
       // Created but never opened a signaling channel: the host gave up.
-      if (!stream.hostPeerId && !stream.broadcasting && now - stream.startedAt > UNSTARTED_STREAM_TTL_MS) {
+      if (!stream.hostPeerId && now - stream.startedAt > HOST_GRACE_MS) {
         this.destroy(stream);
         continue;
       }
 
       for (const peer of [...stream.peers.values()]) {
         if (peer.attached) continue;
-        const grace = peer.id === stream.hostPeerId
-          ? stream.broadcasting ? HOST_RECONNECT_GRACE_MS : UNSTARTED_STREAM_TTL_MS
-          : PEER_STALE_MS;
+        const grace = peer.id === stream.hostPeerId ? HOST_GRACE_MS : PEER_STALE_MS;
         if (now - peer.lastSeen < grace) continue;
 
         if (peer.id === stream.hostPeerId) this.destroy(stream);

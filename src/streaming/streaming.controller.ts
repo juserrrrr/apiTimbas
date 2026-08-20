@@ -104,6 +104,12 @@ export class StreamingController {
     return this.streaming.findOne(id);
   }
 
+  @RequirePermissions(STREAM_PERMISSION)
+  @Get('streams/:id/viewers')
+  viewers(@Param('id') id: string, @Req() req: any) {
+    return this.streaming.viewers(id, toRequestUser(req));
+  }
+
   @Delete('streams/:id')
   end(@Param('id') id: string, @Req() req: any) {
     return this.streaming.end(id, toRequestUser(req));
