@@ -1,4 +1,14 @@
-import { Body, Controller, Get, Param, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  Query,
+  Req,
+  Res,
+  UseGuards,
+} from '@nestjs/common';
 import { Response } from 'express';
 import { RequireFeature } from '../decorators/feature.decorator';
 import { FEATURE_SCREEN_SHARE } from '../feature-flags/feature-flags.constants';
@@ -15,8 +25,8 @@ export class PublicStreamingController {
   constructor(private readonly streaming: StreamingService) {}
 
   @Get('ice')
-  ice() {
-    return { iceServers: this.streaming.iceServers() };
+  async ice() {
+    return { iceServers: await this.streaming.iceServers() };
   }
 
   @Post('streams/:id/join')

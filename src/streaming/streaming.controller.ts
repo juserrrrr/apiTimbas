@@ -62,8 +62,8 @@ export class StreamingController {
   }
 
   @Get('ice')
-  ice() {
-    return { iceServers: this.streaming.iceServers() };
+  async ice() {
+    return { iceServers: await this.streaming.iceServers() };
   }
 
   @Get('streams')

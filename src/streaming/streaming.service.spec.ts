@@ -23,11 +23,7 @@ describe('StreamingService host sessions', () => {
         deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
     } as unknown as PrismaService;
-    return new StreamingService(
-      {} as AccessService,
-      prisma,
-      {} as Client,
-    );
+    return new StreamingService({} as AccessService, prisma, {} as Client);
   };
 
   it('mantém o host atual quando o estúdio é aberto em outra aba', async () => {
@@ -66,7 +62,9 @@ describe('StreamingService host sessions', () => {
     service.attach(stream.id, current.peerId);
     await service.start(stream.id, host);
 
-    await expect(service.leave(stream.id, current.peerId, host)).resolves.toEqual({
+    await expect(
+      service.leave(stream.id, current.peerId, host),
+    ).resolves.toEqual({
       left: true,
       ended: false,
     });
@@ -121,5 +119,49 @@ describe('StreamingService host sessions', () => {
     expect(service.findOne('joao.player')).toEqual(
       expect.objectContaining({ id: stream.id, slug: 'joao.player' }),
     );
+  });
+
+  it('gera credenciais TURN temporárias pela Cloudflare', async () => {
+    process.env.CLOUDFLARE_TURN_KEY_ID = 'turn-key-id';
+    process.env.CLOUDFLARE_TURN_API_TOKEN = 'turn-api-token';
+    const request = jest.spyOn(global, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        iceServers: [
+          {
+            urls: ['turn:turn.cloudflare.com:3478?transport=udp'],
+            username: 'temporary-user',
+            credential: 'temporary-credential',
+          },
+        ],
+      }),
+    } as Response);
+
+    try {
+      const servers = await createService().iceServers();
+
+      expect(servers).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            urls: ['turn:turn.cloudflare.com:3478?transport=udp'],
+          }),
+        ]),
+      );
+      expect(request).toHaveBeenCalledWith(
+        expect.stringContaining(
+          '/turn/keys/turn-key-id/credentials/generate-ice-servers',
+        ),
+        expect.objectContaining({
+          method: 'POST',
+          headers: expect.objectContaining({
+            Authorization: 'Bearer turn-api-token',
+          }),
+        }),
+      );
+    } finally {
+      request.mockRestore();
+      delete process.env.CLOUDFLARE_TURN_KEY_ID;
+      delete process.env.CLOUDFLARE_TURN_API_TOKEN;
+    }
   });
 });
