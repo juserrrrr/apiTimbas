@@ -15,7 +15,6 @@ import { FEATURE_SCREEN_SHARE } from '../feature-flags/feature-flags.constants';
 import { FeatureFlagGuard } from '../feature-flags/guards/feature-flag.guard';
 import { JoinPublicStreamDto } from './dto/join-public-stream.dto';
 import { PublicPeerDto } from './dto/public-peer.dto';
-import { PublicSignalDto } from './dto/public-signal.dto';
 import { StreamingService } from './streaming.service';
 import { LivekitService } from './livekit.service';
 
@@ -27,11 +26,6 @@ export class PublicStreamingController {
     private readonly streaming: StreamingService,
     private readonly livekit: LivekitService,
   ) {}
-
-  @Get('ice')
-  async ice() {
-    return { iceServers: await this.streaming.iceServers() };
-  }
 
   @Post('streams/:id/rtc')
   async rtc(@Param('id') id: string, @Body() dto: PublicPeerDto) {
@@ -50,11 +44,6 @@ export class PublicStreamingController {
   @Post('streams/:id/leave')
   leave(@Param('id') id: string, @Body() dto: PublicPeerDto) {
     return this.streaming.leavePublic(id, dto.peerId, dto.guestToken);
-  }
-
-  @Post('streams/:id/signal')
-  signal(@Param('id') id: string, @Body() dto: PublicSignalDto) {
-    return this.streaming.publicSignal(id, dto);
   }
 
   @Post('streams/:id/events/ticket')

@@ -9,7 +9,6 @@ import { PublicStreamingController } from './public-streaming.controller';
 import { StreamingEventsController } from './streaming-events.controller';
 import { StreamingService } from './streaming.service';
 import { LivekitService } from './livekit.service';
-import { TurnService } from './turn.service';
 
 @Module({
   imports: [
@@ -24,6 +23,6 @@ import { TurnService } from './turn.service';
     StreamingEventsController,
     PublicStreamingController,
   ],
-  providers: [StreamingService, LivekitService, TurnService],
+  providers: [StreamingService, LivekitService],
 })
 export class StreamingModule {}

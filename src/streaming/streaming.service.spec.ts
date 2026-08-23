@@ -4,7 +4,6 @@ import { AccessService } from '../access/access.service';
 import { Role } from '../enums/role.enum';
 import { PrismaService } from '../prisma/prisma.service';
 import { LivekitService } from './livekit.service';
-import { TurnService } from './turn.service';
 import { RequestUser, StreamingService } from './streaming.service';
 
 describe('StreamingService host sessions', () => {
@@ -30,15 +29,11 @@ describe('StreamingService host sessions', () => {
       isEnabled: jest.fn().mockResolvedValue(false),
       closeRoom: jest.fn().mockResolvedValue(undefined),
     } as unknown as LivekitService;
-    const turn = {
-      iceServers: jest.fn().mockResolvedValue([]),
-    } as unknown as TurnService;
     return new StreamingService(
       {} as AccessService,
       prisma,
       {} as Client,
       livekit,
-      turn,
     );
   };
 

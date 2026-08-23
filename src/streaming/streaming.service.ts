@@ -13,9 +13,7 @@ import { Subject } from 'rxjs';
 import { AccessService } from '../access/access.service';
 import { Role } from '../enums/role.enum';
 import { PrismaService } from '../prisma/prisma.service';
-import { SignalDto } from './dto/signal.dto';
 import { LivekitService, type RtcGrant } from './livekit.service';
-import { TurnService, type IceServer } from './turn.service';
 
 export interface SignalEvent {
   type: string;
@@ -85,7 +83,6 @@ export class StreamingService implements OnModuleInit {
     private readonly prisma: PrismaService,
     private readonly client: Client,
     private readonly livekit: LivekitService,
-    private readonly turn: TurnService,
   ) {}
 
   async onModuleInit() {
@@ -122,12 +119,6 @@ export class StreamingService implements OnModuleInit {
 
   async getPermission(userId: number) {
     return { canStream: await this.access.has(userId, [STREAM_PERMISSION]) };
-  }
-
-  // ─── ICE ──────────────────────────────────────────────────────────────────
-
-  iceServers(): Promise<IceServer[]> {
-    return this.turn.iceServers();
   }
 
   // ─── STREAM LIFECYCLE ─────────────────────────────────────────────────────
@@ -593,54 +584,6 @@ export class StreamingService implements OnModuleInit {
       this.sendToHost(stream, { type: 'viewer_left', from: peerId });
       this.broadcastViewerCount(stream);
     }
-  }
-
-  signal(streamId: string, dto: SignalDto, user: RequestUser) {
-    const stream = this.getStream(streamId);
-    const from = stream.peers.get(dto.from);
-    if (!from) throw new NotFoundException('Peer de origem não encontrado.');
-    if (from.userId !== user.id)
-      throw new ForbiddenException('Peer não pertence a este usuário.');
-
-    const target = stream.peers.get(dto.to);
-    if (!target)
-      throw new NotFoundException('Destinatário não está mais na transmissão.');
-
-    // Viewers only talk to the host; the host talks to anyone in the room.
-    if (dto.from !== stream.hostPeerId && dto.to !== stream.hostPeerId) {
-      throw new ForbiddenException('Viewers só podem sinalizar para o host.');
-    }
-
-    from.lastSeen = Date.now();
-    this.deliver(target, { type: dto.type, from: dto.from, payload: dto.data });
-    if (dto.type === 'offer' || dto.type === 'answer') {
-      this.logger.log(
-        `Live signal stream=${stream.id} type=${dto.type} from=${dto.from} to=${dto.to}`,
-      );
-    }
-    return { sent: true };
-  }
-
-  publicSignal(streamId: string, dto: SignalDto & { guestToken: string }) {
-    const stream = this.getStream(streamId);
-    this.assertPublic(stream);
-    const from = this.guestPeer(stream, dto.from, dto.guestToken);
-    const target = stream.peers.get(dto.to);
-    if (!target)
-      throw new NotFoundException('Destinatário não está mais na transmissão.');
-    if (dto.to !== stream.hostPeerId)
-      throw new ForbiddenException(
-        'Convidados só podem sinalizar para o host.',
-      );
-
-    from.lastSeen = Date.now();
-    this.deliver(target, { type: dto.type, from: dto.from, payload: dto.data });
-    if (dto.type === 'offer' || dto.type === 'answer') {
-      this.logger.log(
-        `Live signal stream=${stream.id} type=${dto.type} from=${dto.from} to=${dto.to}`,
-      );
-    }
-    return { sent: true };
   }
 
   // ─── SFU ──────────────────────────────────────────────────────────────────
