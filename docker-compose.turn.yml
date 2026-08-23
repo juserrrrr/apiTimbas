@@ -51,8 +51,11 @@ services:
       - --total-quota=200
       - --max-bps=2000000
       - --stale-nonce=600
-      # Um relay que alcança a rede interna do VPS deixa qualquer pessoa com a
-      # credencial sondar os outros containers do Coolify e o Postgres.
+      # O cliente escolhe para onde o relay envia, então sem lista de bloqueio
+      # qualquer pessoa com a credencial alcança a rede interna do VPS a partir
+      # de dentro dela. Loopback já é negado por padrão desde o 4.5.2, mas as
+      # faixas privadas não são, e o truque do 0.0.0.0 da CVE-2020-26262 furava
+      # até o padrão.
       - --denied-peer-ip=0.0.0.0-0.255.255.255
       - --denied-peer-ip=10.0.0.0-10.255.255.255
       - --denied-peer-ip=127.0.0.0-127.255.255.255
@@ -62,6 +65,9 @@ services:
       - --denied-peer-ip=::1
       - --denied-peer-ip=fc00::-fdff:ffff:ffff:ffff:ffff:ffff:ffff:ffff
       - --denied-peer-ip=fe80::-febf:ffff:ffff:ffff:ffff:ffff:ffff:ffff
+      # Escrever 10.0.0.5 como ::ffff:10.0.0.5 escapa das regras IPv4 acima
+      # (GHSA-j8mm-mpf8-gvjg), então a faixa mapeada inteira também é negada.
+      - --denied-peer-ip=::ffff:0:0-::ffff:ffff:ffff
       # WebRTC só aloca relay UDP, e a CLI de administração não tem por que
       # existir aqui.
       - --no-tcp-relay
