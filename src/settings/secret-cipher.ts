@@ -6,6 +6,7 @@ import {
   scryptSync,
   timingSafeEqual,
 } from 'crypto';
+import { readFileSync } from 'fs';
 
 const PREFIX = 'enc:';
 const ALGORITHM = 'aes-256-gcm';
@@ -33,6 +34,11 @@ let cachedKeys: EncryptionKey[] | undefined;
  * acontece sem perder nada, do mesmo jeito que o Rails faz com a lista de
  * chaves do Active Record Encryption.
  *
+ * `SETTINGS_ENCRYPTION_KEY_FILE` aponta para um arquivo com o mesmo conteúdo e
+ * tem prioridade. Serve para a chave não ficar na lista de variáveis do painel,
+ * onde ela aparece em print de tela e em `docker inspect`. Não protege contra
+ * quem tem acesso ao servidor, porque o processo precisa conseguir ler.
+ *
  * A chave derivada do `JWT_SECRET` entra sempre no fim da lista. Ela é o que
  * deixa a criptografia ligada sem configuração nenhuma, e continua abrindo o
  * que foi salvo antes de alguém definir uma chave dedicada.
@@ -42,7 +48,7 @@ export function encryptionKeys(): EncryptionKey[] {
 
   const keys: EncryptionKey[] = [];
 
-  for (const raw of process.env.SETTINGS_ENCRYPTION_KEY?.split(',') ?? []) {
+  for (const raw of readConfiguredKeys().split(',')) {
     const decoded = decodeKey(raw.trim());
     if (decoded) keys.push({ id: fingerprint(decoded), key: decoded, source: 'explicit' });
   }
@@ -64,6 +70,22 @@ export function primaryKey(): EncryptionKey | null {
 /** Só para os testes: o cache guarda o env lido na primeira chamada. */
 export function resetEncryptionKeyCache() {
   cachedKeys = undefined;
+}
+
+function readConfiguredKeys() {
+  const path = process.env.SETTINGS_ENCRYPTION_KEY_FILE?.trim();
+  if (path) {
+    try {
+      return readFileSync(path, 'utf8').trim();
+    } catch {
+      // Cair para a variável é melhor do que subir sem criptografia nenhuma.
+      // eslint-disable-next-line no-console
+      console.warn(
+        `SETTINGS_ENCRYPTION_KEY_FILE aponta para "${path}", que não pôde ser lido.`,
+      );
+    }
+  }
+  return process.env.SETTINGS_ENCRYPTION_KEY?.trim() ?? '';
 }
 
 function fingerprint(key: Buffer) {

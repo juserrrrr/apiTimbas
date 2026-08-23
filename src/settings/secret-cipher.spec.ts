@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync, writeFileSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
 import {
   decryptSecret,
   encryptSecret,
@@ -17,6 +20,7 @@ describe('secret cipher', () => {
   beforeEach(() => {
     resetEncryptionKeyCache();
     delete process.env.SETTINGS_ENCRYPTION_KEY;
+    delete process.env.SETTINGS_ENCRYPTION_KEY_FILE;
     delete process.env.JWT_SECRET;
   });
 
@@ -102,6 +106,35 @@ describe('secret cipher', () => {
     expect(keys).toHaveLength(2);
     expect(keys[0].source).toBe('explicit');
     expect(keys[1].source).toBe('derived');
+  });
+
+  it('lê a chave de um arquivo, fora da lista de variáveis', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'timbas-key-'));
+    const file = join(dir, 'settings.key');
+    writeFileSync(file, `${KEY_A}
+`);
+    process.env.SETTINGS_ENCRYPTION_KEY_FILE = file;
+
+    try {
+      const keys = encryptionKeys();
+      expect(keys).toHaveLength(1);
+      expect(keys[0].key).toEqual(Buffer.from(KEY_A, 'hex'));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('volta para a variável quando o arquivo não existe', () => {
+    process.env.SETTINGS_ENCRYPTION_KEY_FILE = join(tmpdir(), 'nao-existe.key');
+    process.env.SETTINGS_ENCRYPTION_KEY = KEY_A;
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+
+    try {
+      // Subir sem criptografia nenhuma seria pior do que usar a variável.
+      expect(encryptionKeys()).toHaveLength(1);
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it('fica sem chave quando não há nada configurado', () => {
