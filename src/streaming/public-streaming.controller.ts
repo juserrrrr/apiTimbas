@@ -17,21 +17,34 @@ import { JoinPublicStreamDto } from './dto/join-public-stream.dto';
 import { PublicPeerDto } from './dto/public-peer.dto';
 import { PublicSignalDto } from './dto/public-signal.dto';
 import { StreamingService } from './streaming.service';
+import { LivekitService } from './livekit.service';
 
 @UseGuards(FeatureFlagGuard)
 @RequireFeature(FEATURE_SCREEN_SHARE)
 @Controller('streaming/public')
 export class PublicStreamingController {
-  constructor(private readonly streaming: StreamingService) {}
+  constructor(
+    private readonly streaming: StreamingService,
+    private readonly livekit: LivekitService,
+  ) {}
 
   @Get('ice')
   async ice() {
     return { iceServers: await this.streaming.iceServers() };
   }
 
+  @Post('streams/:id/rtc')
+  async rtc(@Param('id') id: string, @Body() dto: PublicPeerDto) {
+    const grant = this.streaming.publicRtcGrant(id, dto.peerId, dto.guestToken);
+    const credentials = await this.livekit.credentials(id, grant);
+    if (!credentials) return { enabled: false };
+    return { enabled: true, role: grant.role, ...credentials };
+  }
+
   @Post('streams/:id/join')
-  join(@Param('id') id: string, @Body() dto: JoinPublicStreamDto) {
-    return this.streaming.joinPublic(id, dto?.clientId);
+  async join(@Param('id') id: string, @Body() dto: JoinPublicStreamDto) {
+    const session = this.streaming.joinPublic(id, dto?.clientId);
+    return { ...session, sfu: await this.livekit.isEnabled() };
   }
 
   @Post('streams/:id/leave')

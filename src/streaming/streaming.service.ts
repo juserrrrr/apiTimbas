@@ -14,6 +14,7 @@ import { AccessService } from '../access/access.service';
 import { Role } from '../enums/role.enum';
 import { PrismaService } from '../prisma/prisma.service';
 import { SignalDto } from './dto/signal.dto';
+import { LivekitService, type RtcGrant } from './livekit.service';
 
 export interface SignalEvent {
   type: string;
@@ -94,6 +95,7 @@ export class StreamingService implements OnModuleInit {
     private readonly access: AccessService,
     private readonly prisma: PrismaService,
     private readonly client: Client,
+    private readonly livekit: LivekitService,
   ) {}
 
   async onModuleInit() {
@@ -705,6 +707,37 @@ export class StreamingService implements OnModuleInit {
     return { sent: true };
   }
 
+  // ─── SFU ──────────────────────────────────────────────────────────────────
+
+  // Who a peer is inside the room is decided here, never by the browser: the
+  // host peer is the only identity allowed to publish media.
+  rtcGrant(streamId: string, peerId: string, user: RequestUser): RtcGrant {
+    const stream = this.getStream(streamId);
+    const peer = stream.peers.get(peerId);
+    if (!peer) throw new NotFoundException('Peer não encontrado na transmissão.');
+    if (peer.userId !== user.id)
+      throw new ForbiddenException('Peer não pertence a este usuário.');
+
+    peer.lastSeen = Date.now();
+    return {
+      role: peerId === stream.hostPeerId ? 'host' : 'viewer',
+      peerId,
+      name: peer.name,
+    };
+  }
+
+  publicRtcGrant(
+    streamId: string,
+    peerId: string,
+    guestToken: string,
+  ): RtcGrant {
+    const stream = this.getStream(streamId);
+    this.assertPublic(stream);
+    const peer = this.guestPeer(stream, peerId, guestToken);
+    peer.lastSeen = Date.now();
+    return { role: 'viewer', peerId, name: peer.name };
+  }
+
   // ─── CLEANUP ──────────────────────────────────────────────────────────────
 
   @Interval(5_000)
@@ -866,6 +899,7 @@ export class StreamingService implements OnModuleInit {
     stream.hostPeerId = null;
     this.streams.delete(stream.id);
     await this.prisma.activeStream.deleteMany({ where: { id: stream.id } });
+    await this.livekit.closeRoom(stream.id);
   }
 
   private async announceToDiscord(stream: Stream) {

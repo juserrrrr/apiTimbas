@@ -216,6 +216,14 @@ model FeatureFlag {
   updatedAt   DateTime @updatedAt
 }
 
+/// Configuração de integrações editada pelo painel admin. Guarda segredo, então
+/// o valor nunca volta inteiro para o navegador.
+model IntegrationSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
 model LeagueAccount {
   id        Int      @id @default(autoincrement())
   puuid     String   @unique

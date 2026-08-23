@@ -1,0 +1,53 @@
+# LiveKit SFU para as transmissões do Timbas.
+#
+# Suba como um recurso Docker Compose separado no Coolify, apontando um domínio
+# (ex.: livekit.seudominio.com) para a porta 7880. O Traefik do Coolify termina
+# o TLS e o navegador conecta em wss://.
+#
+# Portas que precisam estar liberadas no firewall da Contabo:
+#   7881/tcp  fallback de WebRTC sobre TCP (rede que bloqueia UDP)
+#   7882/udp  mídia (porta única via UDP mux, por isso não precisa de faixa)
+#   3478/udp  TURN embutido, usado por quem está atrás de NAT simétrico
+#
+# Variáveis obrigatórias no Coolify:
+#   LIVEKIT_API_KEY      qualquer string, ex.: timbas
+#   LIVEKIT_API_SECRET   segredo longo e aleatório (openssl rand -hex 32)
+#   LIVEKIT_PUBLIC_IP    IP público do VPS
+#   LIVEKIT_TURN_DOMAIN  domínio apontado para o VPS, ex.: livekit.seudominio.com
+
+services:
+  livekit:
+    image: livekit/livekit-server:v1.8
+    container_name: timbas-livekit
+    restart: unless-stopped
+    ports:
+      - "7880:7880"
+      - "7881:7881"
+      - "7882:7882/udp"
+      - "3478:3478/udp"
+    environment:
+      LIVEKIT_KEYS: "${LIVEKIT_API_KEY:?LIVEKIT_API_KEY is required}: ${LIVEKIT_API_SECRET:?LIVEKIT_API_SECRET is required}"
+      # Uma porta UDP só, com mux, em vez da faixa 50000-60000 padrão. É o que
+      # deixa o SFU rodar em bridge network sem mapear milhares de portas.
+      LIVEKIT_CONFIG: |
+        port: 7880
+        log_level: info
+        rtc:
+          tcp_port: 7881
+          udp_port: 7882
+          use_external_ip: true
+          enable_loopback_candidate: false
+        turn:
+          enabled: true
+          domain: ${LIVEKIT_TURN_DOMAIN:?LIVEKIT_TURN_DOMAIN is required}
+          udp_port: 3478
+        room:
+          auto_create: true
+          empty_timeout: 120
+          departure_timeout: 20
+      NODE_IP: ${LIVEKIT_PUBLIC_IP:?LIVEKIT_PUBLIC_IP is required}
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:7880/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3

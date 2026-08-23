@@ -3,6 +3,7 @@ import { Client } from 'discord.js';
 import { AccessService } from '../access/access.service';
 import { Role } from '../enums/role.enum';
 import { PrismaService } from '../prisma/prisma.service';
+import { LivekitService } from './livekit.service';
 import { RequestUser, StreamingService } from './streaming.service';
 
 describe('StreamingService host sessions', () => {
@@ -23,7 +24,17 @@ describe('StreamingService host sessions', () => {
         deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
     } as unknown as PrismaService;
-    return new StreamingService({} as AccessService, prisma, {} as Client);
+    const livekit = {
+      isConfigured: jest.fn().mockResolvedValue(false),
+      isEnabled: jest.fn().mockResolvedValue(false),
+      closeRoom: jest.fn().mockResolvedValue(undefined),
+    } as unknown as LivekitService;
+    return new StreamingService(
+      {} as AccessService,
+      prisma,
+      {} as Client,
+      livekit,
+    );
   };
 
   it('mantém o host atual quando o estúdio é aberto em outra aba', async () => {
