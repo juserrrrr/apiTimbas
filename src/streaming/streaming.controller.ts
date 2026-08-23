@@ -108,8 +108,8 @@ export class StreamingController {
   }
 
   @Get('streams')
-  list() {
-    return this.streaming.list();
+  list(@Req() req: any) {
+    return this.streaming.list(toRequestUser(req));
   }
 
   @RequirePermissions(STREAM_PERMISSION)

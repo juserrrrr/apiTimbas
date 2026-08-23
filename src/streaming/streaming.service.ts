@@ -254,11 +254,16 @@ export class StreamingService implements OnModuleInit {
     return this.toSummary(stream);
   }
 
-  list() {
+  list(user?: RequestUser) {
     return [...this.streams.values()]
       .filter((stream) => stream.broadcasting)
       .sort((a, b) => b.startedAt - a.startedAt)
-      .map((stream) => this.toSummary(stream));
+      .map((stream) => ({
+        ...this.toSummary(stream),
+        // Sem isso a lista mandaria o dono para a página de espectador da
+        // própria live, sem caminho de volta para o estúdio.
+        isHost: user ? stream.hostUserId === user.id : false,
+      }));
   }
 
   findOne(id: string) {
@@ -472,6 +477,9 @@ export class StreamingService implements OnModuleInit {
       hostPeerId: stream.hostPeerId,
       viewers: isHost ? this.viewerList(stream) : [],
       stream: this.toSummary(stream),
+      // Verdadeiro mesmo quando a pessoa entrou como espectador, para a tela de
+      // quem assiste conseguir oferecer a volta ao estúdio.
+      owner: stream.hostUserId === user.id,
     };
   }
 
