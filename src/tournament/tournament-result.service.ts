@@ -37,6 +37,11 @@ export class TournamentResultService {
 
     return this.prisma.$transaction(
       async (tx) => {
+        const claimed = await tx.tournamentMatch.updateMany({
+          where: { id: matchId, status: { in: OPEN_STATUSES } },
+          data: { status: TournamentMatchStatus.FINISHED },
+        });
+        if (claimed.count === 0) throw new BadRequestException('Esta partida já foi encerrada.');
         const winnerTeamId =
           homeScore === awayScore ? null : homeScore > awayScore ? match.homeTeamId! : match.awayTeamId!;
         const loserTeamId =
@@ -67,7 +72,7 @@ export class TournamentResultService {
 
         return updated;
       },
-      { timeout: 30000 },
+      { timeout: 30000, isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
     );
   }
 
@@ -92,6 +97,11 @@ export class TournamentResultService {
 
     return this.prisma.$transaction(
       async (tx) => {
+        const claimed = await tx.tournamentMatch.updateMany({
+          where: { id: matchId, status: { in: OPEN_STATUSES } },
+          data: { status: TournamentMatchStatus.WALKOVER },
+        });
+        if (claimed.count === 0) throw new BadRequestException('Esta partida já foi encerrada.');
         const updated = await tx.tournamentMatch.update({
           where: { id: matchId },
           data: {
@@ -113,7 +123,7 @@ export class TournamentResultService {
 
         return updated;
       },
-      { timeout: 30000 },
+      { timeout: 30000, isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
     );
   }
 

@@ -17,6 +17,7 @@ import {
   CompetitionGame,
   CompetitionRole,
   TournamentFormat,
+  TournamentAccessMode,
   TournamentStatus,
 } from '@prisma/client';
 
@@ -173,6 +174,18 @@ export class CreateTournamentDto {
   @Min(50)
   @Max(100)
   autoApproveMinConfidence?: number;
+
+  @IsOptional()
+  @IsEnum(TournamentAccessMode)
+  accessMode?: TournamentAccessMode;
+
+  @IsOptional()
+  @IsArray()
+  @Transform(({ value }) => Array.isArray(value) ? value.map((item) => typeof item === 'string' ? item.trim() : item) : value)
+  @IsString({ each: true })
+  @MinLength(2, { each: true })
+  @MaxLength(48, { each: true })
+  invitedUsernames?: string[];
 
   @IsOptional()
   @IsUrl({ require_tld: false, protocols: ['http', 'https'] })
@@ -362,6 +375,14 @@ export class ClaimResultDto {
 export class RespondClaimDto {
   @IsBoolean()
   agree: boolean;
+}
+
+export class JoinByInviteDto {
+  @Transform(trim)
+  @IsString()
+  @MinLength(16)
+  @MaxLength(80)
+  code: string;
 }
 
 export class ScheduleMatchDto {

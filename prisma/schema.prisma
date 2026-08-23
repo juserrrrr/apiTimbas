@@ -163,6 +163,8 @@ model User {
   leagueAccounts         LeagueAccount[]
   tournamentTeams        TournamentTeamMember[]
   tournamentStaff        TournamentStaff[]
+  tournamentInvites      TournamentInvite[] @relation("TournamentInvitee")
+  sentTournamentInvites  TournamentInvite[] @relation("TournamentInviter")
   wallet                 Wallet?
   draftRosters           DraftRoster[]
   draftStaff             DraftStaff[]
@@ -565,6 +567,11 @@ enum CompetitionRole {
   MODERATOR
 }
 
+enum TournamentAccessMode {
+  PUBLIC
+  INVITE_ONLY
+}
+
 model Tournament {
   id                       String            @id @default(cuid())
   name                     String
@@ -595,7 +602,9 @@ model Tournament {
   requireOpponentConfirm   Boolean           @default(true)
   woAfterHours             Int               @default(72)
   autoApproveProof         Boolean           @default(true)
-  autoApproveMinConfidence Int               @default(80)
+  autoApproveMinConfidence Int               @default(90)
+  accessMode               TournamentAccessMode @default(PUBLIC)
+  inviteCode               String?           @unique
   registrationEndsAt       DateTime?
   autoStartOnClose         Boolean           @default(false)
   createdByDiscordId       String
@@ -610,11 +619,27 @@ model Tournament {
   groups                   TournamentGroup[]
   matches                  TournamentMatch[]
   staff                    TournamentStaff[]
+  invites                  TournamentInvite[]
 
   @@index([status])
   @@index([game])
   @@index([status, startsAt])
   @@index([status, registrationEndsAt])
+}
+
+model TournamentInvite {
+  id           String     @id @default(cuid())
+  tournamentId String
+  tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  userId       Int
+  user         User       @relation("TournamentInvitee", fields: [userId], references: [id], onDelete: Cascade)
+  invitedById  Int?
+  invitedBy    User?      @relation("TournamentInviter", fields: [invitedById], references: [id], onDelete: SetNull)
+  acceptedAt   DateTime?
+  createdAt    DateTime   @default(now())
+
+  @@unique([tournamentId, userId])
+  @@index([userId])
 }
 
 model TournamentStaff {
@@ -897,6 +922,7 @@ model MatchProof {
   submittedByDiscordId String
   image                Bytes
   mimeType             String
+  imageSha256          String           @unique
   claimedHomeScore     Int
   claimedAwayScore     Int
   aiProvider           String?
@@ -907,6 +933,9 @@ model MatchProof {
   aiAgrees             Boolean?
   aiNotes              String?
   aiRaw                Json?
+  processingAt         DateTime?
+  processedAt          DateTime?
+  processingAttempts   Int              @default(0)
   status               MatchProofStatus @default(PENDING)
   reviewedByDiscordId  String?
   reviewedAt           DateTime?

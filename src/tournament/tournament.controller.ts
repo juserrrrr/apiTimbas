@@ -26,6 +26,7 @@ import {
   RespondScheduleDto,
   CreateTournamentDto,
   ListTournamentsDto,
+  JoinByInviteDto,
   ReportResultDto,
   ReviewProofDto,
   ScheduleMatchDto,
@@ -55,8 +56,13 @@ export class TournamentController {
   ) {}
 
   @Get()
-  list(@Query() query: ListTournamentsDto) {
-    return this.tournaments.list(query);
+  async list(@Req() req: AuthedRequest, @Query() query: ListTournamentsDto) {
+    return this.tournaments.list(query, await this.me(req));
+  }
+
+  @Post('join-by-invite')
+  async joinByInvite(@Req() req: AuthedRequest, @Body() dto: JoinByInviteDto) {
+    return this.tournaments.joinByInvite(dto.code, await this.me(req));
   }
 
   @Post()
@@ -236,8 +242,13 @@ export class TournamentController {
   }
 
   @Get(':id/proofs/:proofId/image')
-  async proofImage(@Param('proofId') proofId: string, @Res() res: Response) {
-    const proof = await this.proofs.image(proofId);
+  async proofImage(
+    @Req() req: AuthedRequest,
+    @Param('id') id: string,
+    @Param('proofId') proofId: string,
+    @Res() res: Response,
+  ) {
+    const proof = await this.proofs.image(id, proofId, await this.me(req));
     res.setHeader('Content-Type', proof.mimeType);
     res.setHeader('Cache-Control', 'private, max-age=3600');
     res.send(Buffer.from(proof.image));

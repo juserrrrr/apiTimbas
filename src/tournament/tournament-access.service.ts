@@ -10,6 +10,8 @@ export interface TournamentAccess {
   isModerator: boolean;
   canManage: boolean;
   canModerate: boolean;
+  canView: boolean;
+  isInvited: boolean;
   teamIds: string[];
 }
 
@@ -18,7 +20,8 @@ export class TournamentAccessService {
   constructor(private readonly prisma: PrismaService) {}
 
   async of(tournamentId: string, actor: Actor): Promise<TournamentAccess> {
-    const [staff, memberships, ownedTeams] = await Promise.all([
+    const [tournament, staff, memberships, ownedTeams, invite] = await Promise.all([
+      this.prisma.tournament.findUnique({ where: { id: tournamentId }, select: { accessMode: true } }),
       this.prisma.tournamentStaff.findUnique({
         where: { tournamentId_userId: { tournamentId, userId: actor.id } },
       }),
@@ -30,11 +33,17 @@ export class TournamentAccessService {
         where: { tournamentId, ownerDiscordId: actor.discordId },
         select: { id: true },
       }),
+      this.prisma.tournamentInvite.findUnique({
+        where: { tournamentId_userId: { tournamentId, userId: actor.id } },
+      }),
     ]);
+    if (!tournament) throw new NotFoundException('Campeonato não encontrado.');
 
     const isPlatformAdmin = actor.role === Role.ADMIN;
     const isOwner = staff?.role === CompetitionRole.OWNER;
     const isModerator = staff?.role === CompetitionRole.MODERATOR;
+    const isInvited = Boolean(invite);
+    const canView = tournament.accessMode === 'PUBLIC' || isPlatformAdmin || Boolean(staff) || isInvited || memberships.length > 0 || ownedTeams.length > 0;
 
     return {
       isPlatformAdmin,
@@ -42,8 +51,16 @@ export class TournamentAccessService {
       isModerator,
       canManage: isPlatformAdmin || isOwner,
       canModerate: isPlatformAdmin || isOwner || isModerator,
+      canView,
+      isInvited,
       teamIds: [...new Set([...memberships.map((m) => m.teamId), ...ownedTeams.map((t) => t.id)])],
     };
+  }
+
+  async requireView(tournamentId: string, actor: Actor): Promise<TournamentAccess> {
+    const access = await this.of(tournamentId, actor);
+    if (!access.canView) throw new ForbiddenException('Este campeonato é fechado e exige convite.');
+    return access;
   }
 
   async requireManage(tournamentId: string, actor: Actor): Promise<TournamentAccess> {

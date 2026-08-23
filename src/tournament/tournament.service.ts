@@ -7,6 +7,7 @@ import {
   TournamentPhase,
   TournamentStatus,
 } from '@prisma/client';
+import { randomBytes } from 'crypto';
 import { Actor } from '../common/actor.service';
 import { PrismaService } from '../prisma/prisma.service';
 import {
@@ -59,6 +60,17 @@ export class TournamentService {
     this.assertWindow(dto.registrationEndsAt, dto.autoStartOnClose);
 
     const slug = await this.uniqueSlug(dto.name);
+    const invitedUsers = dto.invitedUsernames?.length
+      ? await this.prisma.user.findMany({
+          where: { OR: dto.invitedUsernames.map((name) => ({ name: { equals: name, mode: 'insensitive' } })) },
+          select: { id: true, name: true },
+        })
+      : [];
+    if (invitedUsers.length !== new Set(dto.invitedUsernames ?? []).size) {
+      const found = new Set(invitedUsers.map((user) => user.name.toLocaleLowerCase('pt-BR')));
+      const missing = (dto.invitedUsernames ?? []).filter((name) => !found.has(name.toLocaleLowerCase('pt-BR')));
+      throw new BadRequestException(`Usuário não encontrado: ${missing.join(', ')}.`);
+    }
     return this.prisma.tournament.create({
       data: {
         ...this.settingsFrom(dto),
@@ -66,16 +78,28 @@ export class TournamentService {
         slug,
         createdByDiscordId: actor.discordId,
         status: TournamentStatus.REGISTRATION,
+        inviteCode: dto.accessMode === 'INVITE_ONLY' ? randomBytes(24).toString('base64url') : null,
         staff: { create: { userId: actor.id, role: CompetitionRole.OWNER } },
+        invites: {
+          create: invitedUsers.filter((user) => user.id !== actor.id).map((user) => ({ userId: user.id, invitedById: actor.id })),
+        },
       },
       include: { staff: { include: { user: { select: { id: true, name: true, avatar: true } } } } },
     });
   }
 
-  async list(query: ListTournamentsDto) {
+  async list(query: ListTournamentsDto, actor: Actor) {
     const where: Prisma.TournamentWhereInput = {
       ...(query.status ? { status: query.status } : {}),
       ...(query.game ? { game: query.game } : {}),
+      ...(actor.role === 'ADMIN' ? {} : {
+        OR: [
+          { accessMode: 'PUBLIC' as const },
+          { staff: { some: { userId: actor.id } } },
+          { teams: { some: { members: { some: { userId: actor.id } } } } },
+          { invites: { some: { userId: actor.id } } },
+        ],
+      }),
     };
 
     const [items, total] = await Promise.all([
@@ -109,6 +133,7 @@ export class TournamentService {
   }
 
   async detail(id: string, actor: Actor) {
+    await this.access.requireView(id, actor);
     const tournament = await this.prisma.tournament.findUnique({
       where: { id },
       include: {
@@ -187,6 +212,10 @@ export class TournamentService {
         ...settings,
         ...(dto.name ? { name: dto.name } : {}),
         ...(dto.status ? { status: dto.status } : {}),
+        ...(dto.accessMode === 'INVITE_ONLY' && tournament.accessMode !== 'INVITE_ONLY'
+          ? { inviteCode: randomBytes(24).toString('base64url') }
+          : {}),
+        ...(dto.accessMode === 'PUBLIC' ? { inviteCode: null } : {}),
       },
     });
   }
@@ -200,6 +229,7 @@ export class TournamentService {
   async addTeam(id: string, dto: AddTeamDto, actor: Actor) {
     const tournament = await this.access.requireExists(id);
     const access = await this.access.of(id, actor);
+    if (!access.canView) throw new ForbiddenException('Este campeonato é fechado e exige convite.');
 
     if (!access.canModerate) {
       if (tournament.status !== TournamentStatus.REGISTRATION) {
@@ -245,6 +275,19 @@ export class TournamentService {
       },
       include: { members: { include: { user: { select: { id: true, name: true, avatar: true } } } } },
     });
+  }
+
+  async joinByInvite(code: string, actor: Actor) {
+    const tournament = await this.prisma.tournament.findUnique({ where: { inviteCode: code } });
+    if (!tournament || tournament.accessMode !== 'INVITE_ONLY') {
+      throw new NotFoundException('Convite inválido ou expirado.');
+    }
+    await this.prisma.tournamentInvite.upsert({
+      where: { tournamentId_userId: { tournamentId: tournament.id, userId: actor.id } },
+      update: { acceptedAt: new Date() },
+      create: { tournamentId: tournament.id, userId: actor.id, invitedById: null, acceptedAt: new Date() },
+    });
+    return { tournamentId: tournament.id };
   }
 
   async updateTeam(id: string, teamId: string, dto: UpdateTeamDto, actor: Actor) {
@@ -618,7 +661,7 @@ export class TournamentService {
   }
 
   private settingsFrom(dto: CreateTournamentDto | UpdateTournamentDto) {
-    const { name, status, ...settings } = dto as UpdateTournamentDto;
+    const { name, status, invitedUsernames, ...settings } = dto as UpdateTournamentDto;
     return Object.fromEntries(Object.entries(settings).filter(([, value]) => value !== undefined));
   }
 

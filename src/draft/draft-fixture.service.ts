@@ -7,6 +7,7 @@ import {
   Prisma,
 } from '@prisma/client';
 import { Actor } from '../common/actor.service';
+import { createHash } from 'crypto';
 import { DraftBudgetService } from './draft-budget.service';
 import { overallFromAttributes } from '../football/attributes';
 import { applyChange, attributeChange, nextForm, nextRatingAvg } from '../football/development';
@@ -130,6 +131,7 @@ export class DraftFixtureService {
           submittedByDiscordId: actor.discordId,
           image: image.buffer,
           mimeType: image.mimeType,
+          imageSha256: createHash('sha256').update(image.buffer).digest('hex'),
           claimedHomeScore: dto.homeScore,
           claimedAwayScore: dto.awayScore,
           aiProvider: reading.provider,
@@ -140,6 +142,7 @@ export class DraftFixtureService {
           aiAgrees: reading.available ? agrees : null,
           aiNotes: reading.notes,
           aiRaw: reading.raw === null ? undefined : (reading.raw as object),
+          processedAt: new Date(),
         },
       });
       await tx.draftMatch.update({
