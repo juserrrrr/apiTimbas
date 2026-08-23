@@ -15,6 +15,7 @@ import { Role } from '../enums/role.enum';
 import { PrismaService } from '../prisma/prisma.service';
 import { SignalDto } from './dto/signal.dto';
 import { LivekitService, type RtcGrant } from './livekit.service';
+import { TurnService, type IceServer } from './turn.service';
 
 export interface SignalEvent {
   type: string;
@@ -69,14 +70,6 @@ export const STREAM_MANAGE_PERMISSION = 'stream.manage';
 const TICKET_TTL_MS = 30_000;
 const PEER_STALE_MS = 60_000;
 const HOST_GRACE_MS = 90_000;
-const CLOUDFLARE_TURN_TTL_SECONDS = 3_600;
-const CLOUDFLARE_TURN_CACHE_MS = 5 * 60_000;
-
-export interface IceServer {
-  urls: string | string[];
-  username?: string;
-  credential?: string;
-}
 
 @Injectable()
 export class StreamingService implements OnModuleInit {
@@ -86,16 +79,13 @@ export class StreamingService implements OnModuleInit {
     string,
     { streamId: string; peerId: string; expiresAt: number }
   >();
-  private cloudflareIceCache: {
-    servers: IceServer[];
-    expiresAt: number;
-  } | null = null;
 
   constructor(
     private readonly access: AccessService,
     private readonly prisma: PrismaService,
     private readonly client: Client,
     private readonly livekit: LivekitService,
+    private readonly turn: TurnService,
   ) {}
 
   async onModuleInit() {
@@ -136,70 +126,8 @@ export class StreamingService implements OnModuleInit {
 
   // ─── ICE ──────────────────────────────────────────────────────────────────
 
-  // Long-term TURN secrets stay server side. Browsers only receive either the
-  // configured Coturn credentials or short-lived Cloudflare credentials.
-  async iceServers(): Promise<IceServer[]> {
-    const servers: IceServer[] = [
-      {
-        urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'],
-      },
-    ];
-
-    const turnUrls = process.env.TURN_URLS;
-    if (turnUrls) {
-      servers.push({
-        urls: turnUrls.split(',').map((url) => url.trim()),
-        username: process.env.TURN_USERNAME,
-        credential: process.env.TURN_CREDENTIAL,
-      });
-      return servers;
-    }
-
-    const keyId = process.env.CLOUDFLARE_TURN_KEY_ID;
-    const apiToken = process.env.CLOUDFLARE_TURN_API_TOKEN;
-    if (!keyId || !apiToken) return servers;
-
-    if (
-      this.cloudflareIceCache?.expiresAt &&
-      this.cloudflareIceCache.expiresAt > Date.now()
-    ) {
-      return [...servers, ...this.cloudflareIceCache.servers];
-    }
-
-    try {
-      const response = await fetch(
-        `https://rtc.live.cloudflare.com/v1/turn/keys/${encodeURIComponent(keyId)}/credentials/generate-ice-servers`,
-        {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${apiToken}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ ttl: CLOUDFLARE_TURN_TTL_SECONDS }),
-          signal: AbortSignal.timeout(5_000),
-        },
-      );
-      if (!response.ok)
-        throw new Error(`Cloudflare returned ${response.status}`);
-
-      const payload = (await response.json()) as { iceServers?: IceServer[] };
-      const managed = Array.isArray(payload.iceServers)
-        ? payload.iceServers.filter((server) => server && server.urls)
-        : [];
-      if (!managed.length)
-        throw new Error('Cloudflare returned no ICE servers');
-
-      this.cloudflareIceCache = {
-        servers: managed,
-        expiresAt: Date.now() + CLOUDFLARE_TURN_CACHE_MS,
-      };
-      return [...servers, ...managed];
-    } catch (error) {
-      this.logger.warn(
-        `Could not generate managed TURN credentials: ${error instanceof Error ? error.message : 'unknown error'}`,
-      );
-    }
-    return servers;
+  iceServers(): Promise<IceServer[]> {
+    return this.turn.iceServers();
   }
 
   // ─── STREAM LIFECYCLE ─────────────────────────────────────────────────────

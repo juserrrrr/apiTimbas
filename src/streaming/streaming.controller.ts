@@ -33,6 +33,7 @@ import {
   StreamingService,
 } from './streaming.service';
 import { LivekitService } from './livekit.service';
+import { TurnService } from './turn.service';
 
 function toRequestUser(req: any): RequestUser {
   const payload = req.tokenPayload;
@@ -53,6 +54,7 @@ export class StreamingController {
     private readonly streaming: StreamingService,
     private readonly featureFlags: FeatureFlagsService,
     private readonly livekit: LivekitService,
+    private readonly turn: TurnService,
   ) {}
 
   @Get('permission')
@@ -90,91 +92,6 @@ export class StreamingController {
   @Post('admin/sfu/test')
   testSfu() {
     return this.livekit.test();
-  }
-
-  // Credentials for the SFU. Returning `enabled: false` instead of an error
-  // lets the browser fall back to the peer to peer transport untouched.
-  @Post('streams/:id/rtc')
-  async rtc(@Param('id') id: string, @Body() dto: PeerDto, @Req() req: any) {
-    const grant = this.streaming.rtcGrant(id, dto.peerId, toRequestUser(req));
-    const credentials = await this.livekit.credentials(id, grant);
-    if (!credentials) return { enabled: false };
-    return { enabled: true, role: grant.role, ...credentials };
-  }
-
-  @Get('ice')
-  async ice() {
-    return { iceServers: await this.streaming.iceServers() };
-  }
-
-  @Get('streams')
-  list(@Req() req: any) {
-    return this.streaming.list(toRequestUser(req));
-  }
-
-  @RequirePermissions(STREAM_PERMISSION)
-  @Post('streams')
-  create(@Body() dto: CreateStreamDto, @Req() req: any) {
-    return this.streaming.create(
-      toRequestUser(req),
-      dto.title,
-      dto.guildId,
-      dto.visibility,
-    );
-  }
-
-  @RequirePermissions(STREAM_PERMISSION)
-  @Post('streams/:id/start')
-  start(@Param('id') id: string, @Req() req: any) {
-    return this.streaming.start(id, toRequestUser(req));
-  }
-
-  @RequirePermissions(STREAM_PERMISSION)
-  @Patch('streams/:id')
-  update(
-    @Param('id') id: string,
-    @Body() dto: UpdateStreamDto,
-    @Req() req: any,
-  ) {
-    return this.streaming.updateVisibility(
-      id,
-      toRequestUser(req),
-      dto.visibility,
-    );
-  }
-
-  @RequirePermissions(STREAM_MANAGE_PERMISSION)
-  @Get('admin/announcement-channels')
-  announcementGuilds() {
-    return this.streaming.announcementGuilds();
-  }
-
-  @RequirePermissions(STREAM_PERMISSION)
-  @Get('announcement-targets')
-  announcementTargets() {
-    return this.streaming.announcementTargets();
-  }
-
-  @RequirePermissions(STREAM_MANAGE_PERMISSION)
-  @Post('admin/announcement-channels')
-  setAnnouncementChannel(@Body() dto: UpdateAnnouncementChannelDto) {
-    return this.streaming.setAnnouncementChannel(dto.guildId, dto.channelId);
-  }
-
-  @Get('streams/:id')
-  findOne(@Param('id') id: string) {
-    return this.streaming.findOne(id);
-  }
-
-  @RequirePermissions(STREAM_PERMISSION)
-  @Get('streams/:id/viewers')
-  viewers(@Param('id') id: string, @Req() req: any) {
-    return this.streaming.viewers(id, toRequestUser(req));
-  }
-
-  @Delete('streams/:id')
-  end(@Param('id') id: string, @Req() req: any) {
-    return this.streaming.end(id, toRequestUser(req));
   }
 
   @Post('streams/:id/join')

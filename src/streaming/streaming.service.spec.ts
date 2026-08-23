@@ -4,6 +4,7 @@ import { AccessService } from '../access/access.service';
 import { Role } from '../enums/role.enum';
 import { PrismaService } from '../prisma/prisma.service';
 import { LivekitService } from './livekit.service';
+import { TurnService } from './turn.service';
 import { RequestUser, StreamingService } from './streaming.service';
 
 describe('StreamingService host sessions', () => {
@@ -29,11 +30,15 @@ describe('StreamingService host sessions', () => {
       isEnabled: jest.fn().mockResolvedValue(false),
       closeRoom: jest.fn().mockResolvedValue(undefined),
     } as unknown as LivekitService;
+    const turn = {
+      iceServers: jest.fn().mockResolvedValue([]),
+    } as unknown as TurnService;
     return new StreamingService(
       {} as AccessService,
       prisma,
       {} as Client,
       livekit,
+      turn,
     );
   };
 
@@ -130,49 +135,5 @@ describe('StreamingService host sessions', () => {
     expect(service.findOne('joao.player')).toEqual(
       expect.objectContaining({ id: stream.id, slug: 'joao.player' }),
     );
-  });
-
-  it('gera credenciais TURN temporárias pela Cloudflare', async () => {
-    process.env.CLOUDFLARE_TURN_KEY_ID = 'turn-key-id';
-    process.env.CLOUDFLARE_TURN_API_TOKEN = 'turn-api-token';
-    const request = jest.spyOn(global, 'fetch').mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        iceServers: [
-          {
-            urls: ['turn:turn.cloudflare.com:3478?transport=udp'],
-            username: 'temporary-user',
-            credential: 'temporary-credential',
-          },
-        ],
-      }),
-    } as Response);
-
-    try {
-      const servers = await createService().iceServers();
-
-      expect(servers).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            urls: ['turn:turn.cloudflare.com:3478?transport=udp'],
-          }),
-        ]),
-      );
-      expect(request).toHaveBeenCalledWith(
-        expect.stringContaining(
-          '/turn/keys/turn-key-id/credentials/generate-ice-servers',
-        ),
-        expect.objectContaining({
-          method: 'POST',
-          headers: expect.objectContaining({
-            Authorization: 'Bearer turn-api-token',
-          }),
-        }),
-      );
-    } finally {
-      request.mockRestore();
-      delete process.env.CLOUDFLARE_TURN_KEY_ID;
-      delete process.env.CLOUDFLARE_TURN_API_TOKEN;
-    }
   });
 });
