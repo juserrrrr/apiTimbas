@@ -1,5 +1,4 @@
 import {
-  ConflictException,
   ForbiddenException,
   Injectable,
   Logger,
@@ -356,11 +355,6 @@ export class StreamingService implements OnModuleInit {
       const previous = stream.hostPeerId
         ? stream.peers.get(stream.hostPeerId)
         : null;
-      if (previous?.attached) {
-        throw new ConflictException(
-          'A transmissão já está aberta em outra aba. Feche a outra aba antes de abrir o estúdio aqui.',
-        );
-      }
       if (previous) {
         stream.peers.delete(previous.id);
         previous.subject.complete();

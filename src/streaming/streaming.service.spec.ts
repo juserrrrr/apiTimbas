@@ -1,4 +1,3 @@
-import { ConflictException } from '@nestjs/common';
 import { Client } from 'discord.js';
 import { AccessService } from '../access/access.service';
 import { Role } from '../enums/role.enum';
@@ -37,16 +36,17 @@ describe('StreamingService host sessions', () => {
     );
   };
 
-  it('mantém o host atual quando o estúdio é aberto em outra aba', async () => {
+  it('transfere o host para o estúdio aberto por último', async () => {
     const service = createService();
     const stream = await service.create(host, 'Live', 'guild-1', 'MEMBERS');
     const current = service.join(stream.id, host, 'first-tab');
     service.attach(stream.id, current.peerId);
 
-    expect(() => service.join(stream.id, host, 'second-tab')).toThrow(
-      ConflictException,
-    );
-    expect(service.createTicket(stream.id, current.peerId, host)).toEqual({
+    const replacement = service.join(stream.id, host, 'second-tab');
+
+    expect(replacement.role).toBe('host');
+    expect(replacement.peerId).not.toBe(current.peerId);
+    expect(service.createTicket(stream.id, replacement.peerId, host)).toEqual({
       ticket: expect.any(String),
     });
   });
