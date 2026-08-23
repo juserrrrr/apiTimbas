@@ -131,4 +131,23 @@ describe('StreamingService host sessions', () => {
       expect.objectContaining({ id: stream.id, slug: 'joao.player' }),
     );
   });
+
+  it('usa o slug como sala do LiveKit para host e viewer', async () => {
+    const service = createService();
+    const stream = await service.create(host, 'Live', 'guild-1', 'PUBLIC');
+    const hostSession = service.join(stream.id, host, 'studio');
+    await service.start(stream.id, host);
+    const viewerSession = service.joinPublic(stream.slug, 'viewer');
+
+    expect(service.rtcGrant(stream.id, hostSession.peerId, host).roomSlug).toBe(
+      stream.slug,
+    );
+    expect(
+      service.publicRtcGrant(
+        stream.slug,
+        viewerSession.peerId,
+        viewerSession.guestToken,
+      ).roomSlug,
+    ).toBe(stream.slug);
+  });
 });

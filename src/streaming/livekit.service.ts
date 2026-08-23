@@ -2,7 +2,10 @@ import { Injectable, Logger } from '@nestjs/common';
 import { AccessToken, RoomServiceClient } from 'livekit-server-sdk';
 import { FEATURE_LIVE_SFU } from '../feature-flags/feature-flags.constants';
 import { FeatureFlagsService } from '../feature-flags/feature-flags.service';
-import { SettingsService, type EncryptionStatus } from '../settings/settings.service';
+import {
+  SettingsService,
+  type EncryptionStatus,
+} from '../settings/settings.service';
 
 const TOKEN_TTL = '4h';
 const SETTINGS_CACHE_MS = 15_000;
@@ -15,6 +18,7 @@ export interface RtcGrant {
   role: 'host' | 'viewer';
   peerId: string;
   name: string;
+  roomSlug: string;
 }
 
 export interface RtcCredentials {
@@ -58,7 +62,11 @@ export interface SfuStatus {
 export class LivekitService {
   private readonly logger = new Logger(LivekitService.name);
   private roomServices = new Map<string, RoomServiceClient>();
-  private cache: { settings: SfuSettings; source: SfuStatus['source']; at: number } | null = null;
+  private cache: {
+    settings: SfuSettings;
+    source: SfuStatus['source'];
+    at: number;
+  } | null = null;
 
   constructor(
     private readonly settings: SettingsService,
@@ -77,7 +85,10 @@ export class LivekitService {
     return Boolean(settings.url && settings.apiKey && settings.apiSecret);
   }
 
-  private async load(): Promise<{ settings: SfuSettings; source: SfuStatus['source'] }> {
+  private async load(): Promise<{
+    settings: SfuSettings;
+    source: SfuStatus['source'];
+  }> {
     if (this.cache && Date.now() - this.cache.at < SETTINGS_CACHE_MS) {
       return { settings: this.cache.settings, source: this.cache.source };
     }
@@ -169,7 +180,11 @@ export class LivekitService {
   }
 
   async clear() {
-    await this.settings.remove([SETTING_URL, SETTING_API_KEY, SETTING_API_SECRET]);
+    await this.settings.remove([
+      SETTING_URL,
+      SETTING_API_KEY,
+      SETTING_API_SECRET,
+    ]);
     this.cache = null;
     this.roomServices.clear();
     return this.status();
@@ -179,7 +194,10 @@ export class LivekitService {
   async test(): Promise<{ ok: boolean; message: string }> {
     const service = await this.getRoomService();
     if (!service) {
-      return { ok: false, message: 'Preencha a URL, a chave e o segredo antes de testar.' };
+      return {
+        ok: false,
+        message: 'Preencha a URL, a chave e o segredo antes de testar.',
+      };
     }
     try {
       const rooms = await service.listRooms();
@@ -198,14 +216,11 @@ export class LivekitService {
     }
   }
 
-  async credentials(
-    streamId: string,
-    grant: RtcGrant,
-  ): Promise<RtcCredentials | null> {
+  async credentials(grant: RtcGrant): Promise<RtcCredentials | null> {
     if (!(await this.isEnabled())) return null;
     const { settings } = await this.load();
 
-    const room = this.roomName(streamId);
+    const room = this.roomName(grant.roomSlug);
     const token = new AccessToken(settings.apiKey, settings.apiSecret, {
       identity: grant.peerId,
       name: grant.name,
@@ -231,14 +246,14 @@ export class LivekitService {
    * clients to notice. Failures are logged and swallowed: the room expires on
    * its own once the last participant leaves.
    */
-  async closeRoom(streamId: string) {
+  async closeRoom(roomSlug: string) {
     const service = await this.getRoomService();
     if (!service) return;
     try {
-      await service.deleteRoom(this.roomName(streamId));
+      await service.deleteRoom(this.roomName(roomSlug));
     } catch (error) {
       this.logger.warn(
-        `Could not delete LiveKit room for stream ${streamId}: ${
+        `Could not delete LiveKit room for stream ${roomSlug}: ${
           error instanceof Error ? error.message : 'unknown error'
         }`,
       );

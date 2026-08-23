@@ -30,7 +30,7 @@ export class PublicStreamingController {
   @Post('streams/:id/rtc')
   async rtc(@Param('id') id: string, @Body() dto: PublicPeerDto) {
     const grant = this.streaming.publicRtcGrant(id, dto.peerId, dto.guestToken);
-    const credentials = await this.livekit.credentials(id, grant);
+    const credentials = await this.livekit.credentials(grant);
     if (!credentials) return { enabled: false };
     return { enabled: true, role: grant.role, ...credentials };
   }

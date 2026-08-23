@@ -593,7 +593,8 @@ export class StreamingService implements OnModuleInit {
   rtcGrant(streamId: string, peerId: string, user: RequestUser): RtcGrant {
     const stream = this.getStream(streamId);
     const peer = stream.peers.get(peerId);
-    if (!peer) throw new NotFoundException('Peer não encontrado na transmissão.');
+    if (!peer)
+      throw new NotFoundException('Peer não encontrado na transmissão.');
     if (peer.userId !== user.id)
       throw new ForbiddenException('Peer não pertence a este usuário.');
 
@@ -602,6 +603,7 @@ export class StreamingService implements OnModuleInit {
       role: peerId === stream.hostPeerId ? 'host' : 'viewer',
       peerId,
       name: peer.name,
+      roomSlug: stream.slug,
     };
   }
 
@@ -614,7 +616,7 @@ export class StreamingService implements OnModuleInit {
     this.assertPublic(stream);
     const peer = this.guestPeer(stream, peerId, guestToken);
     peer.lastSeen = Date.now();
-    return { role: 'viewer', peerId, name: peer.name };
+    return { role: 'viewer', peerId, name: peer.name, roomSlug: stream.slug };
   }
 
   // ─── CLEANUP ──────────────────────────────────────────────────────────────
@@ -778,7 +780,7 @@ export class StreamingService implements OnModuleInit {
     stream.hostPeerId = null;
     this.streams.delete(stream.id);
     await this.prisma.activeStream.deleteMany({ where: { id: stream.id } });
-    await this.livekit.closeRoom(stream.id);
+    await this.livekit.closeRoom(stream.slug);
   }
 
   private async announceToDiscord(stream: Stream) {
