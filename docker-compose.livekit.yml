@@ -17,7 +17,10 @@
 
 services:
   livekit:
-    image: livekit/livekit-server:v1.8
+    # Versão fixa de propósito: atualizar é decisão sua, não surpresa de um
+    # redeploy. Para ver se saiu coisa nova:
+    #   curl -s https://hub.docker.com/v2/repositories/livekit/livekit-server/tags?ordering=last_updated
+    image: livekit/livekit-server:v1.13.5
     container_name: timbas-livekit
     restart: unless-stopped
     ports:
