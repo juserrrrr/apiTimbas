@@ -24,6 +24,9 @@ export class PermissionGuard implements CanActivate {
     if (!required || required.length === 0) return true;
 
     const request = context.switchToHttp().getRequest();
+    if (request.tokenPayload?.impersonatedBy) {
+      throw new ForbiddenException('Ações administrativas ficam bloqueadas durante a visualização como usuário.');
+    }
     const actor = await this.actor.require(request.tokenPayload?.discordId);
     if (await this.access.has(actor.id, required)) return true;
 

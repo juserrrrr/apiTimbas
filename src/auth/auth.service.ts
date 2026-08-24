@@ -1,5 +1,6 @@
 import {
   Injectable,
+  Logger,
   UnauthorizedException,
   ForbiddenException,
 } from '@nestjs/common';
@@ -17,6 +18,7 @@ import { UserStatus } from '@prisma/client';
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
   constructor(
     private readonly jwtService: JwtService,
     private readonly prisma: PrismaService,
@@ -58,6 +60,28 @@ export class AuthService {
     );
 
     return { acessToken, refreshToken };
+  }
+
+  async createImpersonationToken(adminId: number, targetUserId: number) {
+    const [admin, target] = await Promise.all([
+      this.prisma.user.findUnique({ where: { id: adminId } }),
+      this.prisma.user.findUnique({ where: { id: targetUserId } }),
+    ]);
+    if (!admin || admin.role !== Role.ADMIN) throw new ForbiddenException('Apenas administradores podem entrar como usuário.');
+    if (!target) throw new UnauthorizedException('Usuário não encontrado.');
+    if (target.status !== UserStatus.APPROVED) throw new ForbiddenException('Só é possível entrar como usuário aprovado.');
+    if (target.id === admin.id || target.role === Role.ADMIN || target.role === Role.BOT) {
+      throw new ForbiddenException('Não é permitido entrar como administrador ou bot.');
+    }
+    const token = this.jwtService.sign({
+      id: String(target.id), name: target.name, email: target.email ?? '', role: target.role,
+      ...(target.discordId && { discordId: target.discordId }),
+      ...(target.avatar && { avatar: target.avatar }),
+      impersonatedBy: admin.id,
+      impersonatorName: admin.name,
+    }, { expiresIn: '30m', subject: String(target.id), issuer: 'ApiTimbasSignature' });
+    this.logger.warn(`Admin ${admin.id} started impersonating user ${target.id} for up to 30 minutes`);
+    return { token, user: { id: target.id, name: target.name }, expiresInSeconds: 1800 };
   }
 
   async refresh(refreshToken: string) {
