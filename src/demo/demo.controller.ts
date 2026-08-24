@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Delete, Get, Post, Req, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
 import { Request } from 'express';
 import { AuthGuard } from '../auth/guards/auth.guard';
 import { PermissionGuard, RequirePermissions } from '../access/permission.guard';
@@ -6,7 +6,7 @@ import { ActorService } from '../common/actor.service';
 import { DemoService } from './demo.service';
 import { EaFcClubsService } from '../ea-fc-clubs/ea-fc-clubs.service';
 import { TournamentMatchService } from '../tournament/tournament-match.service';
-import { BuildDemoDraftDto, BuildDemoTournamentDto, BuildRealEaTournamentDto, DemoEaClubDto, DemoEaHistoryDto, DemoEaSyncDto, PrepareDemoEaMatchDto } from './dto/demo.dto';
+import { AssignLiveEaGroupsDto, BuildDemoDraftDto, BuildDemoTournamentDto, BuildRealEaTournamentDto, CreateLiveEaTournamentDto, DemoEaClubDto, DemoEaHistoryDto, DemoEaSyncDto, PrepareDemoEaMatchDto } from './dto/demo.dto';
 import { AwardCardSettingsService } from '../settings/award-card-settings.service';
 
 type AuthedRequest = Request & { tokenPayload?: { discordId?: string } };
@@ -62,6 +62,26 @@ export class DemoController {
   @Post('ea/tournament')
   async realEaTournament(@Req() req: AuthedRequest, @Body() dto: BuildRealEaTournamentDto) {
     return this.demo.buildRealEaTournament(dto, await this.actor.require(req.tokenPayload?.discordId));
+  }
+
+  @Post('ea/live')
+  async createLiveEaTournament(@Req() req: AuthedRequest, @Body() dto: CreateLiveEaTournamentDto) {
+    return this.demo.createLiveEaTournament(dto, await this.actor.require(req.tokenPayload?.discordId));
+  }
+
+  @Get('ea/live/:id')
+  liveEaTournament(@Param('id') id: string) {
+    return this.demo.liveEaWorkspace(id);
+  }
+
+  @Post('ea/live/:id/groups')
+  async assignLiveEaGroups(@Req() req: AuthedRequest, @Param('id') id: string, @Body() dto: AssignLiveEaGroupsDto) {
+    return this.demo.assignLiveEaGroups(id, dto, await this.actor.require(req.tokenPayload?.discordId));
+  }
+
+  @Post('ea/live/:id/knockout')
+  buildLiveEaKnockout(@Param('id') id: string) {
+    return this.demo.buildLiveEaKnockout(id);
   }
 
   @Post('ea/sync')

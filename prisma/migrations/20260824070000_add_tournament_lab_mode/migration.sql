@@ -1,0 +1,2 @@
+ALTER TABLE "Tournament"
+ADD COLUMN "labMode" BOOLEAN NOT NULL DEFAULT false;

@@ -233,7 +233,11 @@ export class TournamentMatchService {
     // Nunca aceita amistoso anterior à liberação deste confronto. O Club ID e o
     // EA Match ID evitam troca de times; este corte impede reaproveitar resultado antigo.
     const earliest = searchAnchor.getTime();
-    const latest = searchAnchor.getTime() + 4 * 60 * 60 * 1000;
+    // Live Lab operations are followed manually by an admin and may run all night.
+    // Keep the lower bound to prevent old result reuse, but do not expire the search.
+    const latest = match.tournament.labMode
+      ? Number.POSITIVE_INFINITY
+      : searchAnchor.getTime() + 4 * 60 * 60 * 1000;
     if (Date.now() < earliest) {
       throw new BadRequestException('A checagem na EA só fica disponível quando o confronto começar.');
     }

@@ -66,6 +66,17 @@ export class TournamentResultService {
 
         if (winnerTeamId && isKnockout(match.phase)) {
           await propagate(tx, updated, winnerTeamId, loserTeamId);
+          if (match.tournament.labMode) {
+            await tx.tournamentMatch.updateMany({
+              where: {
+                tournamentId: match.tournamentId,
+                phase: { not: TournamentPhase.GROUP },
+                status: TournamentMatchStatus.READY,
+                scheduledAt: null,
+              },
+              data: { scheduledAt: new Date() },
+            });
+          }
         }
 
         await this.qualifyFromGroups(tx, match.tournament);
@@ -191,7 +202,33 @@ export class TournamentResultService {
     });
   }
 
-  private async qualifyFromGroups(tx: Prisma.TransactionClient, tournament: Tournament) {
+  async buildLabKnockout(tournamentId: string) {
+    const tournament = await this.prisma.tournament.findUnique({ where: { id: tournamentId } });
+    if (!tournament || !tournament.labMode) throw new BadRequestException('Campeonato de laboratório não encontrado.');
+    const openGroupMatches = await this.prisma.tournamentMatch.count({
+      where: { tournamentId, phase: TournamentPhase.GROUP, status: { in: OPEN_STATUSES } },
+    });
+    if (openGroupMatches > 0) {
+      throw new BadRequestException(`Ainda existem ${openGroupMatches} partidas da fase de grupos sem resultado.`);
+    }
+    const publishedKnockout = await this.prisma.tournamentMatch.count({
+      where: {
+        tournamentId,
+        phase: { not: TournamentPhase.GROUP },
+        OR: [{ homeTeamId: { not: null } }, { awayTeamId: { not: null } }],
+      },
+    });
+    if (publishedKnockout > 0) throw new BadRequestException('O mata-mata deste campeonato já foi publicado.');
+    await this.prisma.$transaction((tx) => this.qualifyFromGroups(tx, tournament, true));
+    return this.prisma.tournamentMatch.findMany({
+      where: { tournamentId, phase: { not: TournamentPhase.GROUP } },
+      include: { homeTeam: true, awayTeam: true },
+      orderBy: [{ round: 'asc' }, { position: 'asc' }],
+    });
+  }
+
+  private async qualifyFromGroups(tx: Prisma.TransactionClient, tournament: Tournament, force = false) {
+    if (tournament.labMode && !force) return;
     const groups = await tx.tournamentGroup.findMany({
       where: { tournamentId: tournament.id },
       orderBy: { order: 'asc' },

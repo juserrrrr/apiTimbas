@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsBoolean, IsEnum, IsIn, IsInt, IsOptional, IsString, Max, Min, MinLength } from 'class-validator';
+import { ArrayMaxSize, ArrayMinSize, IsArray, IsBoolean, IsEnum, IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min, MinLength, ValidateNested } from 'class-validator';
 import { DraftResultMode, TournamentFormat } from '@prisma/client';
 
 export const TOURNAMENT_STAGES = ['REGISTRATION', 'STARTED', 'PARTIAL', 'FINISHED'] as const;
@@ -15,6 +15,51 @@ export class DemoEaHistoryDto {
   @IsString()
   @MinLength(1)
   clubId!: string;
+}
+
+export class CreateLiveEaTournamentDto {
+  @IsString()
+  @MinLength(3)
+  @MaxLength(80)
+  name!: string;
+
+  @IsArray()
+  @ArrayMinSize(4)
+  @ArrayMaxSize(32)
+  @IsString({ each: true })
+  clubNames!: string[];
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(2)
+  @Max(8)
+  groupCount!: number;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(4)
+  advancePerGroup!: number;
+}
+
+export class LiveEaGroupAssignmentDto {
+  @IsString()
+  teamId!: string;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(7)
+  group!: number;
+}
+
+export class AssignLiveEaGroupsDto {
+  @IsArray()
+  @ArrayMinSize(4)
+  @ArrayMaxSize(32)
+  @ValidateNested({ each: true })
+  @Type(() => LiveEaGroupAssignmentDto)
+  assignments!: LiveEaGroupAssignmentDto[];
 }
 
 export class BuildRealEaTournamentDto {

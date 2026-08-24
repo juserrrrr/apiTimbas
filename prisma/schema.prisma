@@ -604,6 +604,7 @@ model Tournament {
   inviteCode               String?           @unique
   registrationEndsAt       DateTime?
   autoStartOnClose         Boolean           @default(false)
+  labMode                  Boolean           @default(false)
   createdByDiscordId       String
   bannerUrl                String?
   startsAt                 DateTime?

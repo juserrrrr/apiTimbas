@@ -25,6 +25,7 @@ import { EaFcClubsService } from '../ea-fc-clubs/ea-fc-clubs.service';
 import { EaClubMatch } from '../ea-fc-clubs/ea-fc-clubs.types';
 import { TournamentResultService } from '../tournament/tournament-result.service';
 import { TournamentService } from '../tournament/tournament.service';
+import { distributeIntoGroups } from '../tournament/bracket.builder';
 import {
   DEMO_DISCORD_PREFIX,
   DEMO_FIRST_NAMES,
@@ -33,7 +34,7 @@ import {
   DEMO_PREFIX,
   DEMO_TEAM_NAMES,
 } from './demo.constants';
-import { BuildDemoDraftDto, BuildDemoTournamentDto, BuildRealEaTournamentDto, PrepareDemoEaMatchDto } from './dto/demo.dto';
+import { AssignLiveEaGroupsDto, BuildDemoDraftDto, BuildDemoTournamentDto, BuildRealEaTournamentDto, CreateLiveEaTournamentDto, PrepareDemoEaMatchDto } from './dto/demo.dto';
 
 @Injectable()
 export class DemoService {
@@ -48,6 +49,146 @@ export class DemoService {
     private readonly fixtures: DraftFixtureService,
     private readonly simulation: DraftSimulationService,
   ) {}
+
+  async createLiveEaTournament(dto: CreateLiveEaTournamentDto, actor: Actor) {
+    const normalizedNames = dto.clubNames.map((name) => name.trim()).filter(Boolean);
+    if (normalizedNames.length !== dto.clubNames.length) throw new BadRequestException('Remova linhas vazias da lista de clubes.');
+    const clubs = [];
+    for (const name of normalizedNames) {
+      clubs.push(await this.eaClubs.resolveTournamentClub(name, 'common-gen5'));
+    }
+    const uniqueClubIds = new Set(clubs.map((club) => club.externalClubId));
+    if (uniqueClubIds.size !== clubs.length) throw new BadRequestException('A lista contém o mesmo clube da EA mais de uma vez.');
+
+    const tournament = await this.tournaments.create({
+      name: `${DEMO_PREFIX} AO VIVO · ${dto.name.trim()}`,
+      description: 'Operação manual do Laboratório com clubes reais da EA, grupos controlados pelo admin e sincronização ao vivo.',
+      game: CompetitionGame.EA_FC,
+      format: TournamentFormat.GROUPS_KNOCKOUT,
+      maxTeams: clubs.length,
+      groupCount: dto.groupCount,
+      advancePerGroup: dto.advancePerGroup,
+      thirdPlace: true,
+      allowDraws: true,
+      requireProof: false,
+      requireOpponentConfirm: false,
+      woAfterHours: 0,
+      matchWindowMinutes: 0,
+      graceMinutes: 0,
+    }, actor);
+    await this.prisma.tournament.update({ where: { id: tournament.id }, data: { labMode: true } });
+
+    const usedNames = new Set<string>();
+    for (const [index, club] of clubs.entries()) {
+      const base = club.name.slice(0, 72);
+      let name = base;
+      for (let suffix = 2; usedNames.has(name.toLocaleLowerCase('pt-BR')); suffix++) name = `${base.slice(0, 70)} ${suffix}`;
+      usedNames.add(name.toLocaleLowerCase('pt-BR'));
+      await this.prisma.tournamentTeam.create({
+        data: {
+          tournamentId: tournament.id,
+          name,
+          tag: club.name.replace(/[^a-z0-9]/gi, '').slice(0, 3).toUpperCase() || `EA${index + 1}`,
+          seed: index + 1,
+          eaClubId: club.externalClubId,
+          eaPlatform: club.platform,
+        },
+      });
+    }
+    return this.liveEaWorkspace(tournament.id);
+  }
+
+  async liveEaWorkspace(tournamentId: string) {
+    const tournament = await this.prisma.tournament.findFirst({
+      where: { id: tournamentId, labMode: true },
+      include: {
+        teams: { orderBy: [{ seed: 'asc' }, { name: 'asc' }] },
+        groups: { orderBy: { order: 'asc' } },
+        matches: {
+          include: { homeTeam: true, awayTeam: true },
+          orderBy: [{ phase: 'asc' }, { round: 'asc' }, { position: 'asc' }],
+        },
+      },
+    });
+    if (!tournament) throw new BadRequestException('Campeonato ao vivo do Laboratório não encontrado.');
+    const groupMatches = tournament.matches.filter((match) => match.phase === TournamentPhase.GROUP);
+    return {
+      id: tournament.id,
+      name: tournament.name,
+      status: tournament.status,
+      groupCount: tournament.groupCount,
+      advancePerGroup: tournament.advancePerGroup,
+      teams: tournament.teams.map((team) => ({ id: team.id, name: team.name, tag: team.tag, eaClubId: team.eaClubId, groupId: team.groupId })),
+      groups: tournament.groups,
+      matches: tournament.matches.map((match) => ({
+        id: match.id,
+        phase: match.phase,
+        status: match.status,
+        label: match.label,
+        homeTeam: match.homeTeam ? { id: match.homeTeam.id, name: match.homeTeam.name } : null,
+        awayTeam: match.awayTeam ? { id: match.awayTeam.id, name: match.awayTeam.name } : null,
+        homeScore: match.homeScore,
+        awayScore: match.awayScore,
+        eaMatchId: match.eaMatchId,
+      })),
+      groupProgress: {
+        finished: groupMatches.filter((match) => match.status === TournamentMatchStatus.FINISHED).length,
+        total: groupMatches.length,
+      },
+      url: `/dashboard/tournaments/${tournament.id}`,
+    };
+  }
+
+  async assignLiveEaGroups(tournamentId: string, dto: AssignLiveEaGroupsDto, actor: Actor) {
+    const tournament = await this.prisma.tournament.findFirst({
+      where: { id: tournamentId, labMode: true },
+      include: { teams: true },
+    });
+    if (!tournament) throw new BadRequestException('Campeonato ao vivo do Laboratório não encontrado.');
+    if (tournament.status !== TournamentStatus.DRAFT && tournament.status !== TournamentStatus.REGISTRATION) {
+      throw new BadRequestException('Os grupos deste campeonato já foram publicados.');
+    }
+    if (dto.assignments.length !== tournament.teams.length) throw new BadRequestException('Todos os clubes precisam estar em exatamente um grupo.');
+    const teamIds = new Set(tournament.teams.map((team) => team.id));
+    const assignedIds = new Set(dto.assignments.map((assignment) => assignment.teamId));
+    if (assignedIds.size !== teamIds.size || [...assignedIds].some((id) => !teamIds.has(id))) {
+      throw new BadRequestException('A distribuição possui clube repetido ou desconhecido.');
+    }
+    const groups = Array.from({ length: tournament.groupCount }, (_, group) =>
+      dto.assignments.filter((assignment) => assignment.group === group).map((assignment) => assignment.teamId),
+    );
+    if (dto.assignments.some((assignment) => assignment.group >= tournament.groupCount) || groups.some((group) => group.length < 2)) {
+      throw new BadRequestException('Cada grupo precisa ter pelo menos dois clubes.');
+    }
+
+    const seedSlots = distributeIntoGroups(tournament.teams.length, tournament.groupCount);
+    await this.prisma.$transaction(async (tx) => {
+      for (const [groupIndex, ids] of groups.entries()) {
+        if (ids.length !== seedSlots[groupIndex].length) throw new BadRequestException('Os grupos precisam ter os tamanhos definidos na criação.');
+        for (const [position, teamId] of ids.entries()) {
+          await tx.tournamentTeam.update({ where: { id: teamId }, data: { seed: seedSlots[groupIndex][position] + 1 } });
+        }
+      }
+    });
+
+    await this.tournaments.start(tournamentId, actor);
+    const now = new Date();
+    await this.prisma.tournamentMatch.updateMany({
+      where: { tournamentId, phase: TournamentPhase.GROUP },
+      data: { scheduledAt: now, readyAt: now },
+    });
+    return this.liveEaWorkspace(tournamentId);
+  }
+
+  async buildLiveEaKnockout(tournamentId: string) {
+    await this.results.buildLabKnockout(tournamentId);
+    const now = new Date();
+    await this.prisma.tournamentMatch.updateMany({
+      where: { tournamentId, phase: { not: TournamentPhase.GROUP }, status: TournamentMatchStatus.READY },
+      data: { scheduledAt: now, readyAt: now },
+    });
+    return this.liveEaWorkspace(tournamentId);
+  }
 
   async buildRealEaTournament(dto: BuildRealEaTournamentDto, actor: Actor) {
     try {
