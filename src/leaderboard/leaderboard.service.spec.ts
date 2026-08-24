@@ -289,4 +289,40 @@ describe('LeaderboardService', () => {
       expect(prismaMock.customLeagueMatch.findMany).toHaveBeenCalledTimes(1);
     });
   });
+
+  describe('getMatchHistoryForServer pagination', () => {
+    const historyMatch = {
+      id: 7,
+      gameMode: GameMode.SUMMONERS_RIFT,
+      matchType: MatchType.ALEATORIO,
+      playersPerTeam: 5,
+      dateCreated: new Date('2026-08-20T12:00:00Z'),
+      winnerId: null,
+      Teams: [],
+    };
+
+    it('fetches only the requested database page', async () => {
+      prismaMock.customLeagueMatch.count.mockResolvedValue(42);
+      prismaMock.customLeagueMatch.findMany.mockResolvedValue([historyMatch] as any);
+
+      const result = await service.getMatchHistoryForServer(serverId, undefined, 2, 5);
+
+      expect(prismaMock.customLeagueMatch.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ take: 5, skip: 5 }),
+      );
+      expect(result).toEqual(expect.objectContaining({ total: 42, page: 2, pages: 9, hasNext: true }));
+      expect(result.data).toHaveLength(1);
+    });
+
+    it('reuses the cache for the same page', async () => {
+      prismaMock.customLeagueMatch.count.mockResolvedValue(1);
+      prismaMock.customLeagueMatch.findMany.mockResolvedValue([historyMatch] as any);
+
+      await service.getMatchHistoryForServer(serverId, undefined, 1, 5);
+      await service.getMatchHistoryForServer(serverId, undefined, 1, 5);
+
+      expect(prismaMock.customLeagueMatch.count).toHaveBeenCalledTimes(1);
+      expect(prismaMock.customLeagueMatch.findMany).toHaveBeenCalledTimes(1);
+    });
+  });
 });

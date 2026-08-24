@@ -493,16 +493,22 @@ export class LeaderboardService {
     page: number = 1,
     limit: number = 20,
   ): Promise<PaginatedMatches> {
-    const cacheKey = `history:${discordServerId}:${playersPerTeam ?? 'all'}`;
-    let allMatches = this.fromCache<MatchHistoryEntry[]>(cacheKey);
+    const requestedPage = Math.max(1, page);
+    const safeLimit = Math.min(100, Math.max(1, limit));
+    const cacheKey = `history:${discordServerId}:${playersPerTeam ?? 'all'}:${requestedPage}:${safeLimit}`;
+    const cached = this.fromCache<PaginatedMatches>(cacheKey);
+    if (cached) return cached;
 
-    if (!allMatches) {
-      const matches = await this.prisma.customLeagueMatch.findMany({
-        where: {
-          ServerDiscordId: discordServerId,
-          status: 'FINISHED',
-          ...(playersPerTeam ? { playersPerTeam } : {}),
-        },
+    const where: Prisma.CustomLeagueMatchWhereInput = {
+      ServerDiscordId: discordServerId,
+      status: 'FINISHED',
+      ...(playersPerTeam ? { playersPerTeam } : {}),
+    };
+    const queryPage = (currentPage: number) =>
+      this.prisma.customLeagueMatch.findMany({
+        where,
+        take: safeLimit,
+        skip: (currentPage - 1) * safeLimit,
         include: {
           Teams: {
             include: {
@@ -515,47 +521,49 @@ export class LeaderboardService {
         orderBy: { dateCreated: 'desc' },
       });
 
-      allMatches = matches.map((match) => {
-        const blueTeamRaw = match.Teams.find((t) => t.side === 'BLUE');
-        const redTeamRaw = match.Teams.find((t) => t.side === 'RED');
+    let [total, matches] = await Promise.all([
+      this.prisma.customLeagueMatch.count({ where }),
+      queryPage(requestedPage),
+    ]);
+    const pages = Math.max(1, Math.ceil(total / safeLimit));
+    const safePage = Math.min(requestedPage, pages);
+    if (safePage !== requestedPage) matches = await queryPage(safePage);
 
-        const mapPlayers = (team: typeof blueTeamRaw) =>
-          team
-            ? team.players.map((p) => ({
-                userId: p.user.id,
-                name: p.user.name,
-                discordId: p.user.discordId,
-                avatar: p.user.avatar ?? null,
-                position: p.position,
-              }))
-            : [];
+    const data = matches.map((match) => {
+      const blueTeamRaw = match.Teams.find((t) => t.side === 'BLUE');
+      const redTeamRaw = match.Teams.find((t) => t.side === 'RED');
 
-        return {
-          id: match.id,
-          matchType: match.matchType,
-          gameMode: match.gameMode,
-          playersPerTeam: match.playersPerTeam,
-          dateCreated: match.dateCreated,
-          winnerId: match.winnerId,
-          blueTeam: { id: blueTeamRaw?.id ?? 0, players: mapPlayers(blueTeamRaw) },
-          redTeam: { id: redTeamRaw?.id ?? 0, players: mapPlayers(redTeamRaw) },
-        };
-      });
+      const mapPlayers = (team: typeof blueTeamRaw) =>
+        team
+          ? team.players.map((p) => ({
+              userId: p.user.id,
+              name: p.user.name,
+              discordId: p.user.discordId,
+              avatar: p.user.avatar ?? null,
+              position: p.position,
+            }))
+          : [];
 
-      this.toCache(cacheKey, allMatches);
-    }
+      return {
+        id: match.id,
+        matchType: match.matchType,
+        gameMode: match.gameMode,
+        playersPerTeam: match.playersPerTeam,
+        dateCreated: match.dateCreated,
+        winnerId: match.winnerId,
+        blueTeam: { id: blueTeamRaw?.id ?? 0, players: mapPlayers(blueTeamRaw) },
+        redTeam: { id: redTeamRaw?.id ?? 0, players: mapPlayers(redTeamRaw) },
+      };
+    });
 
-    const total = allMatches.length;
-    const pages = Math.max(1, Math.ceil(total / limit));
-    const safePage = Math.min(Math.max(1, page), pages);
-    const start = (safePage - 1) * limit;
-
-    return {
-      data: allMatches.slice(start, start + limit),
+    const result: PaginatedMatches = {
+      data,
       total,
       page: safePage,
       pages,
       hasNext: safePage < pages,
     };
+    this.toCache(cacheKey, result);
+    return result;
   }
 }
