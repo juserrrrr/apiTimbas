@@ -4,7 +4,7 @@ import { CompetitionGame, Prisma, TournamentMatch, TournamentMatchStatus } from 
 import { Actor } from '../common/actor.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { EaFcClubsService } from '../ea-fc-clubs/ea-fc-clubs.service';
-import { FEATURE_TOURNAMENT_EA_RESULTS } from '../feature-flags/feature-flags.constants';
+import { FEATURE_TOURNAMENT_AI_RESULTS, FEATURE_TOURNAMENT_EA_RESULTS } from '../feature-flags/feature-flags.constants';
 import { FeatureFlagsService } from '../feature-flags/feature-flags.service';
 import { EaClubMatch, EaClubMatchPlayer } from '../ea-fc-clubs/ea-fc-clubs.types';
 import { TournamentAccessService } from './tournament-access.service';
@@ -40,7 +40,7 @@ export class TournamentMatchService {
       throw new ForbiddenException('Só quem joga a partida ou a organização vê esta conversa.');
     }
 
-    const [messages, tournament] = await Promise.all([
+    const [messages, tournament, eaEnabled, aiEnabled] = await Promise.all([
       this.prisma.tournamentMatchMessage.findMany({
         where: { matchId },
         orderBy: { createdAt: 'asc' },
@@ -48,6 +48,8 @@ export class TournamentMatchService {
         include: { user: { select: { id: true, name: true, avatar: true } } },
       }),
       this.access.requireExists(tournamentId),
+      this.featureFlags.isEnabled(FEATURE_TOURNAMENT_EA_RESULTS),
+      this.featureFlags.isEnabled(FEATURE_TOURNAMENT_AI_RESULTS),
     ]);
 
     return {
@@ -57,6 +59,7 @@ export class TournamentMatchService {
       canModerate: access.canModerate,
       deadlineAt: this.deadlineOf(match, tournament.woAfterHours),
       requireOpponentConfirm: tournament.requireOpponentConfirm,
+      resultMode: tournament.game === CompetitionGame.EA_FC && eaEnabled ? 'EA_API' : aiEnabled ? 'AI_IMAGE' : 'MANUAL',
     };
   }
 
@@ -127,6 +130,13 @@ export class TournamentMatchService {
   /// fica esperando o adversário; senão fecha na hora.
   async claimResult(tournamentId: string, matchId: string, dto: ClaimResultDto, actor: Actor) {
     const tournament = await this.access.requireExists(tournamentId);
+    const [eaEnabled, aiEnabled] = await Promise.all([
+      this.featureFlags.isEnabled(FEATURE_TOURNAMENT_EA_RESULTS),
+      this.featureFlags.isEnabled(FEATURE_TOURNAMENT_AI_RESULTS),
+    ]);
+    if ((tournament.game === CompetitionGame.EA_FC && eaEnabled) || aiEnabled) {
+      throw new BadRequestException('O placar manual só fica disponível quando API da EA e IA estão desligadas.');
+    }
     const match = await this.requireMatch(tournamentId, matchId);
     const { side } = await this.requireParticipant(tournamentId, match, actor);
     if (!side) throw new ForbiddenException('Só quem joga a partida informa o placar.');

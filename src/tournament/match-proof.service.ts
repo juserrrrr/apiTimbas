@@ -28,6 +28,10 @@ export class MatchProofService {
   ) {}
 
   async report(tournamentId: string, matchId: string, dto: ReportResultDto, actor: Actor) {
+    if (!(await this.featureFlags.isEnabled(FEATURE_TOURNAMENT_AI_RESULTS))) {
+      throw new BadRequestException('O envio por imagem só fica disponível quando a IA está ativada.');
+    }
+    if (!dto.imageBase64) throw new BadRequestException('Envie uma imagem do placar para análise.');
     const match = await this.prisma.tournamentMatch.findFirst({
       where: { id: matchId, tournamentId },
       include: { tournament: true, homeTeam: true, awayTeam: true },
@@ -38,12 +42,6 @@ export class MatchProofService {
     if (!access.canModerate && !participant) throw new ForbiddenException('Só quem joga ou a organização pode lançar o resultado.');
     if (!OPEN.includes(match.status)) throw new BadRequestException('Esta partida já foi encerrada.');
     this.results.assertScoreIsValid(match, match.tournament, dto.homeScore, dto.awayScore);
-
-    if (!dto.imageBase64) {
-      if (match.tournament.requireProof && !access.canModerate) throw new BadRequestException('Este campeonato exige uma foto do placar.');
-      const settled = await this.results.settle(matchId, dto.homeScore, dto.awayScore, actor.discordId);
-      return { match: settled, proof: null, autoApproved: true, processing: false };
-    }
 
     const image = this.decodeImage(dto.imageBase64, dto.mimeType);
     const imageSha256 = createHash('sha256').update(image.buffer).digest('hex');
