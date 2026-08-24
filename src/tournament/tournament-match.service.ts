@@ -227,10 +227,12 @@ export class TournamentMatchService {
       this.eaClubs.friendlyMatches(match.awayTeam.eaClubId, platform),
     ]);
     const awayById = new Map(awayHistory.map((item) => [item.externalMatchId, item]));
-    const earliest = searchAnchor.getTime() - 30 * 60 * 1000;
+    // Nunca aceita amistoso anterior à liberação deste confronto. O Club ID e o
+    // EA Match ID evitam troca de times; este corte impede reaproveitar resultado antigo.
+    const earliest = searchAnchor.getTime();
     const latest = searchAnchor.getTime() + 4 * 60 * 60 * 1000;
     if (Date.now() < earliest) {
-      throw new BadRequestException('A checagem na EA fica disponível 30 minutos antes do horário marcado.');
+      throw new BadRequestException('A checagem na EA só fica disponível quando o confronto começar.');
     }
     const candidates = homeHistory.filter((item) => {
       const clubs = new Set([item.homeClubId, item.awayClubId]);
