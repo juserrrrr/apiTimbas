@@ -103,13 +103,40 @@ export class DemoService {
     }
 
     const selectedIds = new Set(clubs.keys());
-    const matches = Array.from(discoveredMatches.values())
+    let matches = Array.from(discoveredMatches.values())
       .filter((match) => selectedIds.has(match.homeClubId) && selectedIds.has(match.awayClubId))
       .sort((a, b) => a.playedAt.getTime() - b.playedAt.getTime())
       .slice(-maxMatches);
     if (matches.length === 0) {
       throw new BadRequestException('Nenhum amistoso entre os clubes descobertos pôde ser aproveitado.');
     }
+
+    const previousUses = await this.prisma.tournamentMatch.findMany({
+      where: { eaMatchId: { in: matches.map((match) => match.externalMatchId) } },
+      select: { id: true, eaMatchId: true, tournament: { select: { name: true } } },
+    });
+    const reusableDemoIds = previousUses
+      .filter((match) => match.tournament.name.startsWith(DEMO_PREFIX))
+      .map((match) => match.id);
+    if (reusableDemoIds.length) {
+      await this.prisma.tournamentMatch.updateMany({
+        where: { id: { in: reusableDemoIds } },
+        data: { eaMatchId: null },
+      });
+    }
+    const blockedIds = new Set(
+      previousUses
+        .filter((match) => !match.tournament.name.startsWith(DEMO_PREFIX))
+        .flatMap((match) => match.eaMatchId ? [match.eaMatchId] : []),
+    );
+    matches = matches.filter((match) => !blockedIds.has(match.externalMatchId));
+    if (matches.length < 2) {
+      throw new BadRequestException('Não há partidas EA únicas suficientes. Alguns EA Match IDs já pertencem a campeonatos reais.');
+    }
+
+    const knockoutReserve = Math.min(matches.length - 1, Math.max(4, Math.ceil(matches.length * 0.4)));
+    const groupSources = matches.slice(0, matches.length - knockoutReserve);
+    const knockoutSources = matches.slice(matches.length - knockoutReserve);
 
     const now = Date.now();
     const tournament = await this.tournaments.create(
@@ -168,15 +195,8 @@ export class DemoService {
       })).flatMap((team) => team.eaClubId ? [[team.eaClubId, team.groupId] as const] : []),
     );
 
-    const usedEaIds = new Set(
-      (await this.prisma.tournamentMatch.findMany({
-        where: { eaMatchId: { in: matches.map((match) => match.externalMatchId) } },
-        select: { eaMatchId: true },
-      })).flatMap((match) => match.eaMatchId ? [match.eaMatchId] : []),
-    );
-
     const createdMatches: Array<{ id: string; source: EaClubMatch }> = [];
-    for (const [index, source] of matches.entries()) {
+    for (const [index, source] of groupSources.entries()) {
       const homeTeamId = teamByClub.get(source.homeClubId);
       const awayTeamId = teamByClub.get(source.awayClubId);
       if (!homeTeamId || !awayTeamId) continue;
@@ -211,7 +231,7 @@ export class DemoService {
           where: { id: item.id },
           data: {
             playedAt: source.playedAt,
-            eaMatchId: usedEaIds.has(source.externalMatchId) ? null : source.externalMatchId,
+            eaMatchId: source.externalMatchId,
             eaVerifiedAt: new Date(),
             eaRaw: source.rawData as Prisma.InputJsonValue,
             eaTags: matchTags,
@@ -251,9 +271,13 @@ export class DemoService {
       });
     }
 
-    // Os amistosos reais formam a campanha da fase de grupos. A chave usa essa
-    // campanha para avançar os classificados; quando existe confronto direto no
-    // histórico, o placar real também é reaproveitado no mata-mata.
+    const usedSourceIds = new Set(groupSources.map((source) => source.externalMatchId));
+    const knockoutImported: EaClubMatch[] = [];
+    let knockoutAfter = groupSources.at(-1)?.playedAt.getTime() ?? 0;
+
+    // Cada confronto da chave consome outro amistoso real, posterior à fase
+    // anterior. Sem um EA Match ID único e cronologicamente válido, o demo falha
+    // em vez de fabricar ou repetir um resultado.
     for (let guard = 0; guard < 20; guard++) {
       const knockout = await this.prisma.tournamentMatch.findMany({
         where: {
@@ -266,49 +290,80 @@ export class DemoService {
       });
       if (knockout.length === 0) break;
 
+      let roundLatest = knockoutAfter;
       for (const match of knockout) {
         if (!match.homeTeam?.eaClubId || !match.awayTeam?.eaClubId) continue;
-        const direct = [...matches].reverse().find((source) => {
+        const direct = knockoutSources.find((source) => {
           const ids = new Set([source.homeClubId, source.awayClubId]);
-          return ids.has(match.homeTeam!.eaClubId!) && ids.has(match.awayTeam!.eaClubId!);
+          return !usedSourceIds.has(source.externalMatchId) &&
+            source.playedAt.getTime() > knockoutAfter &&
+            source.homeScore !== source.awayScore &&
+            ids.has(match.homeTeam!.eaClubId!) && ids.has(match.awayTeam!.eaClubId!);
         });
-        const compareCampaign = () => {
-          const home = match.homeTeam!;
-          const away = match.awayTeam!;
-          return home.points - away.points ||
-            (home.scoreFor - home.scoreAgainst) - (away.scoreFor - away.scoreAgainst) ||
-            home.scoreFor - away.scoreFor ||
-            (away.seed ?? 999) - (home.seed ?? 999);
-        };
-        let homeScore: number;
-        let awayScore: number;
-        let sourceLabel: string;
-        if (direct) {
-          const sameOrder = direct.homeClubId === match.homeTeam.eaClubId;
-          homeScore = sameOrder ? direct.homeScore : direct.awayScore;
-          awayScore = sameOrder ? direct.awayScore : direct.homeScore;
-          sourceLabel = `placar do amistoso EA ${direct.externalMatchId}`;
-        } else {
-          homeScore = Math.max(0, Math.round(match.homeTeam.scoreFor / Math.max(1, match.homeTeam.played)));
-          awayScore = Math.max(0, Math.round(match.awayTeam.scoreFor / Math.max(1, match.awayTeam.played)));
-          sourceLabel = 'desempate pela campanha real na EA';
+        if (!direct) {
+          await this.prisma.tournament.delete({ where: { id: tournament.id } });
+          throw new BadRequestException(
+            `Histórico insuficiente: falta um amistoso posterior e único entre ${match.homeTeam.name} e ${match.awayTeam.name} para ${match.label ?? 'o mata-mata'}. Aumente o máximo de amistosos ou escolha outro clube inicial.`,
+          );
         }
-        if (homeScore === awayScore) {
-          if (compareCampaign() >= 0) homeScore++;
-          else awayScore++;
-          sourceLabel += ' · desempate por campanha';
-        }
-        await this.prisma.tournamentMatch.update({
-          where: { id: match.id },
-          data: { label: `${match.label ?? 'Mata-mata'} · ${sourceLabel}`, eaTags: ['LAB_EA_KNOCKOUT'] },
+        usedSourceIds.add(direct.externalMatchId);
+        knockoutImported.push(direct);
+        roundLatest = Math.max(roundLatest, direct.playedAt.getTime());
+        const sameOrder = direct.homeClubId === match.homeTeam.eaClubId;
+        const homeScore = sameOrder ? direct.homeScore : direct.awayScore;
+        const awayScore = sameOrder ? direct.awayScore : direct.homeScore;
+        await this.results.settle(match.id, homeScore, awayScore, 'demo-ea-knockout', async (tx) => {
+          await tx.tournamentMatch.update({
+            where: { id: match.id },
+            data: {
+              label: `${match.label ?? 'Mata-mata'} · EA ${direct.externalMatchId}`,
+              scheduledAt: direct.playedAt,
+              playedAt: direct.playedAt,
+              eaMatchId: direct.externalMatchId,
+              eaVerifiedAt: new Date(),
+              eaRaw: direct.rawData as Prisma.InputJsonValue,
+              eaTags: ['LAB_EA_REAL', 'LAB_EA_KNOCKOUT'],
+            },
+          });
+          const rows = [direct.homeClubId, direct.awayClubId].flatMap((clubId) => {
+            const teamId = teamByClub.get(clubId)!;
+            return (direct.playersByClub[clubId] ?? []).map((player) => ({
+              matchId: match.id,
+              teamId,
+              externalPlayerId: player.externalPlayerId,
+              playerName: player.playerName,
+              position: player.position,
+              rating: player.rating,
+              goals: player.goals,
+              assists: player.assists,
+              shots: player.shots,
+              passesAttempted: player.passesAttempted,
+              passesCompleted: player.passesCompleted,
+              tacklesAttempted: player.tacklesAttempted,
+              tacklesCompleted: player.tacklesCompleted,
+              saves: player.saves,
+              yellowCards: player.yellowCards,
+              redCards: player.redCards,
+              manOfTheMatch: player.manOfTheMatch,
+              tags: [
+                ...(player.manOfTheMatch ? ['MVP'] : []),
+                ...(player.goals >= 3 ? ['HAT_TRICK'] : []),
+                ...(player.goals >= 2 ? ['DOIS_GOLS'] : []),
+                ...(player.assists >= 3 ? ['MAESTRO'] : []),
+                ...((player.saves ?? 0) >= 5 ? ['PAREDAO'] : []),
+                ...((player.rating ?? 0) >= 9 ? ['NOTA_9_PLUS'] : []),
+              ],
+            }));
+          });
+          if (rows.length) await tx.tournamentEaPlayerStat.createMany({ data: rows });
         });
-        await this.results.settle(match.id, homeScore, awayScore, 'demo-ea-knockout');
       }
+      knockoutAfter = roundLatest;
     }
 
     const summary = await this.tournamentSummary(
       tournament.id,
-      `${clubs.size} clubes reais e ${createdMatches.length} amistosos da EA reconstruídos em grupos + mata-mata até o campeão.`,
+      `${clubs.size} clubes reais e ${createdMatches.length + knockoutImported.length} amistosos únicos da EA reconstruídos em grupos + mata-mata até o campeão.`,
     );
     return {
       ...summary,
@@ -317,6 +372,9 @@ export class DemoService {
         clubesDescobertos: Array.from(clubs.values()).map((club) => `${club.name} · ${club.externalId}`),
         amistososImportados: createdMatches.map(({ source }) =>
           `${source.homeClubName} ${source.homeScore} x ${source.awayScore} ${source.awayClubName}`,
+        ),
+        mataMataEA: knockoutImported.map((source) =>
+          `${source.homeClubName} ${source.homeScore} x ${source.awayScore} ${source.awayClubName} · ${source.externalMatchId}`,
         ),
       },
     };
