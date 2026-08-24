@@ -591,11 +591,6 @@ model Tournament {
   pointsWin                Int               @default(3)
   pointsDraw               Int               @default(1)
   pointsLoss               Int               @default(0)
-  coinsWin                 Int               @default(50)
-  coinsDraw                Int               @default(20)
-  coinsLoss                Int               @default(5)
-  coinsChampion            Int               @default(500)
-  coinsRunnerUp            Int               @default(200)
   requireProof             Boolean           @default(true)
   // Confirmação do adversário: um time informa o placar e o outro confirma. Sem
   // resposta até o prazo, quem não apareceu perde por W.O.

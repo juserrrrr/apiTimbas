@@ -146,9 +146,6 @@ export class DemoService {
         legs: dto.legs ?? 1,
         thirdPlace: dto.thirdPlace ?? format === TournamentFormat.SINGLE_ELIMINATION,
         requireProof: false,
-        coinsWin: 0,
-        coinsDraw: 0,
-        coinsLoss: 0,
       },
       actor,
     );

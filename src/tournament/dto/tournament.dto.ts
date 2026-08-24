@@ -117,27 +117,6 @@ export class CreateTournamentDto {
   pointsLoss?: number;
 
   @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(0)
-  @Max(100000)
-  coinsWin?: number;
-
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(0)
-  @Max(100000)
-  coinsDraw?: number;
-
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(0)
-  @Max(100000)
-  coinsLoss?: number;
-
-  @IsOptional()
   @IsBoolean()
   requireProof?: boolean;
 

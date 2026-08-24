@@ -53,6 +53,9 @@ export class TournamentService {
   ) {}
 
   async create(dto: CreateTournamentDto, actor: Actor) {
+    if (!dto.startsAt) {
+      throw new BadRequestException('Defina o horário de início do campeonato.');
+    }
     this.assertPlan(dto.format ?? TournamentFormat.SINGLE_ELIMINATION, {
       teamCount: dto.maxTeams ?? DEFAULTS.maxTeams,
       groupCount: dto.groupCount ?? DEFAULTS.groupCount,
@@ -124,7 +127,7 @@ export class TournamentService {
 
     return {
       total,
-      items: items.map(({ coinsChampion: _coinsChampion, coinsRunnerUp: _coinsRunnerUp, ...tournament }) => ({
+      items: items.map((tournament) => ({
         ...tournament,
         owner: tournament.staff[0]?.user ?? null,
         teamCount: tournament._count.teams,
@@ -181,7 +184,7 @@ export class TournamentService {
 
     const access = await this.access.of(id, actor);
     const matches = tournament.matches.map(({ eaRaw: _eaRaw, ...match }) => match);
-    const { coinsChampion: _coinsChampion, coinsRunnerUp: _coinsRunnerUp, ...publicTournament } = tournament;
+    const publicTournament = tournament;
     return {
       ...publicTournament,
       matches,

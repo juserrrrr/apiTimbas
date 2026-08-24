@@ -6,10 +6,8 @@ import {
   TournamentMatchStatus,
   TournamentPhase,
   TournamentStatus,
-  WalletTxType,
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { WalletService } from '../economy/wallet.service';
 import { bracketSizeFor, compareStandings, orderGroupQualifiers, seedSlots } from './bracket.builder';
 import { isKnockout, placeTeam, propagate, resolveWalkovers } from './bracket-advance';
 
@@ -22,10 +20,7 @@ const OPEN_STATUSES: TournamentMatchStatus[] = [
 
 @Injectable()
 export class TournamentResultService {
-  constructor(
-    private readonly prisma: PrismaService,
-    private readonly wallet: WalletService,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   async settle(
     matchId: string,
@@ -68,7 +63,6 @@ export class TournamentResultService {
         if (onSettled) await onSettled(tx, updated);
         await this.applyTeamStats(tx, match.tournament, match.phase, match.homeTeamId!, homeScore, awayScore);
         await this.applyTeamStats(tx, match.tournament, match.phase, match.awayTeamId!, awayScore, homeScore);
-        await this.payMatch(tx, match.tournament, match.homeTeamId!, match.awayTeamId!, homeScore, awayScore, matchId);
 
         if (winnerTeamId && isKnockout(match.phase)) {
           await propagate(tx, updated, winnerTeamId, loserTeamId);
@@ -195,65 +189,6 @@ export class TournamentResultService {
         },
       },
     });
-  }
-
-  private async payMatch(
-    tx: Prisma.TransactionClient,
-    tournament: Tournament,
-    homeTeamId: string,
-    awayTeamId: string,
-    homeScore: number,
-    awayScore: number,
-    matchId: string,
-  ) {
-    const isDraw = homeScore === awayScore;
-    const winnerTeamId = isDraw ? null : homeScore > awayScore ? homeTeamId : awayTeamId;
-    const loserTeamId = isDraw ? null : homeScore > awayScore ? awayTeamId : homeTeamId;
-
-    if (isDraw) {
-      await this.payTeam(tx, tournament, homeTeamId, tournament.coinsDraw, WalletTxType.MATCH_DRAW, 'Empate', matchId);
-      await this.payTeam(tx, tournament, awayTeamId, tournament.coinsDraw, WalletTxType.MATCH_DRAW, 'Empate', matchId);
-      return;
-    }
-
-    await this.payTeam(tx, tournament, winnerTeamId!, tournament.coinsWin, WalletTxType.MATCH_WIN, 'Vitória', matchId);
-    await this.payTeam(tx, tournament, loserTeamId!, tournament.coinsLoss, WalletTxType.MATCH_LOSS, 'Participação', matchId);
-  }
-
-  private async payTeam(
-    tx: Prisma.TransactionClient,
-    tournament: Tournament,
-    teamId: string,
-    amount: number,
-    type: WalletTxType,
-    label: string,
-    referenceId: string,
-  ) {
-    if (amount <= 0) return;
-    const userIds = await this.teamUserIds(tx, teamId);
-    for (const userId of userIds) {
-      await this.wallet.credit(
-        {
-          userId,
-          amount,
-          type,
-          description: `${label} em ${tournament.name}`,
-          referenceType: 'tournamentMatch',
-          referenceId,
-        },
-        tx,
-      );
-    }
-  }
-
-  private async teamUserIds(tx: Prisma.TransactionClient, teamId: string): Promise<number[]> {
-    const members = await tx.tournamentTeamMember.findMany({ where: { teamId }, select: { userId: true } });
-    if (members.length > 0) return members.map((member) => member.userId);
-
-    const team = await tx.tournamentTeam.findUnique({ where: { id: teamId }, select: { ownerDiscordId: true } });
-    if (!team?.ownerDiscordId) return [];
-    const owner = await tx.user.findUnique({ where: { discordId: team.ownerDiscordId }, select: { id: true } });
-    return owner ? [owner.id] : [];
   }
 
   private async qualifyFromGroups(tx: Prisma.TransactionClient, tournament: Tournament) {
