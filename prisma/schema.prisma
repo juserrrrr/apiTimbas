@@ -760,6 +760,9 @@ model TournamentMatch {
   messages                 TournamentMatchMessage[]
   eaPlayerStats            TournamentEaPlayerStat[]
   eaTags                   String[]                 @default([])
+  reviewRequestedAt        DateTime?
+  reviewRequestedById      Int?
+  reviewReason             String?
 
   @@unique([tournamentId, phase, round, position, leg])
   @@index([tournamentId, status])
@@ -973,6 +976,8 @@ model TournamentEaPlayerStat {
   tacklesAttempted   Int?
   tacklesCompleted   Int?
   saves              Int?
+  yellowCards        Int?
+  redCards           Int?
   manOfTheMatch      Boolean?
   tags               String[]        @default([])
 

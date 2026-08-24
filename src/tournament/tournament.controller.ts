@@ -29,6 +29,7 @@ import {
   JoinByInviteDto,
   ReportResultDto,
   ReviewProofDto,
+  RequestMatchReviewDto,
   ScheduleMatchDto,
   SetSeedsDto,
   StaffDto,
@@ -238,6 +239,21 @@ export class TournamentController {
     @Param('matchId') matchId: string,
   ) {
     return this.matches.checkEaResult(id, matchId, await this.me(req));
+  }
+
+  @Post(':id/matches/:matchId/request-review')
+  async requestMatchReview(@Req() req: AuthedRequest, @Param('id') id: string, @Param('matchId') matchId: string, @Body() dto: RequestMatchReviewDto) {
+    return this.matches.requestReview(id, matchId, dto, await this.me(req));
+  }
+
+  @Get(':id/reviews/pending')
+  async pendingMatchReviews(@Req() req: AuthedRequest, @Param('id') id: string) {
+    return this.matches.pendingReviews(id, await this.me(req));
+  }
+
+  @Post(':id/matches/:matchId/resolve-review')
+  async resolveMatchReview(@Req() req: AuthedRequest, @Param('id') id: string, @Param('matchId') matchId: string, @Body() dto: ClaimResultDto) {
+    return this.matches.resolveReview(id, matchId, dto, await this.me(req));
   }
 
   @Post(':id/matches/:matchId/claim/respond')

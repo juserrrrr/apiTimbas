@@ -118,6 +118,8 @@ function mapPlayer(
     tacklesAttempted: asInteger(value.tackleattempts),
     tacklesCompleted: asInteger(value.tacklesmade),
     saves: asInteger(value.saves),
+    yellowCards: asInteger(value.yellowcards ?? value.yellowCards ?? value.yellow_cards),
+    redCards: asInteger(value.redcards ?? value.redCards ?? value.red_cards),
     manOfTheMatch: asBoolean(value.man_of_the_match ?? value.mom),
   };
 }

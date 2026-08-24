@@ -382,6 +382,16 @@ export class RespondClaimDto {
   agree: boolean;
 }
 
+export class RequestMatchReviewDto {
+  @Transform(trim)
+  @IsString()
+  @MinLength(3)
+  @MaxLength(240)
+  reason: string;
+}
+
+export class ResolveMatchReviewDto extends ClaimResultDto {}
+
 export class ValidateTournamentEaClubDto {
   @Transform(trim)
   @IsString()

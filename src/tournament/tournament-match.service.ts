@@ -9,7 +9,7 @@ import { FeatureFlagsService } from '../feature-flags/feature-flags.service';
 import { EaClubMatch, EaClubMatchPlayer } from '../ea-fc-clubs/ea-fc-clubs.types';
 import { TournamentAccessService } from './tournament-access.service';
 import { TournamentResultService } from './tournament-result.service';
-import { ClaimResultDto, MatchMessageDto, ProposeScheduleDto, RespondClaimDto, RespondScheduleDto } from './dto/tournament.dto';
+import { ClaimResultDto, MatchMessageDto, ProposeScheduleDto, RequestMatchReviewDto, RespondClaimDto, RespondScheduleDto } from './dto/tournament.dto';
 
 const OPEN_STATUSES: TournamentMatchStatus[] = [
   TournamentMatchStatus.READY,
@@ -270,6 +270,36 @@ export class TournamentMatchService {
     return settled;
   }
 
+  async requestReview(tournamentId: string, matchId: string, dto: RequestMatchReviewDto, actor: Actor) {
+    const match = await this.requireMatch(tournamentId, matchId);
+    const { side } = await this.requireParticipant(tournamentId, match, actor);
+    if (!side) throw new ForbiddenException('Só quem joga a partida pode pedir análise da organização.');
+    this.assertOpen(match);
+    const updated = await this.prisma.tournamentMatch.update({
+      where: { id: matchId },
+      data: { status: TournamentMatchStatus.DISPUTED, reviewRequestedAt: new Date(), reviewRequestedById: actor.id, reviewReason: dto.reason },
+    });
+    await this.systemMessage(matchId, side === 'HOME' ? match.homeTeamId : match.awayTeamId, `Solicitou análise da organização: ${dto.reason}`);
+    return updated;
+  }
+
+  async pendingReviews(tournamentId: string, actor: Actor) {
+    await this.access.requireManage(tournamentId, actor);
+    return this.prisma.tournamentMatch.findMany({
+      where: { tournamentId, status: TournamentMatchStatus.DISPUTED, reviewRequestedAt: { not: null } },
+      orderBy: { reviewRequestedAt: 'asc' },
+      include: { homeTeam: true, awayTeam: true },
+    });
+  }
+
+  async resolveReview(tournamentId: string, matchId: string, dto: ClaimResultDto, actor: Actor) {
+    await this.access.requireManage(tournamentId, actor);
+    const match = await this.requireMatch(tournamentId, matchId);
+    const tournament = await this.access.requireExists(tournamentId);
+    this.results.assertScoreIsValid(match, tournament, dto.homeScore, dto.awayScore);
+    return this.results.settle(matchId, dto.homeScore, dto.awayScore, actor.discordId);
+  }
+
   private playerRows(matchId: string, match: EaClubMatch, clubId: string, teamId: string) {
     return (match.playersByClub[clubId] ?? []).map((player) => ({
       matchId,
@@ -286,6 +316,8 @@ export class TournamentMatchService {
       tacklesAttempted: player.tacklesAttempted,
       tacklesCompleted: player.tacklesCompleted,
       saves: player.saves,
+      yellowCards: player.yellowCards,
+      redCards: player.redCards,
       manOfTheMatch: player.manOfTheMatch,
       tags: this.playerTags(player),
     }));

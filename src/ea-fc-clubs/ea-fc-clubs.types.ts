@@ -58,6 +58,8 @@ export interface EaClubMatchPlayer {
   tacklesAttempted?: number;
   tacklesCompleted?: number;
   saves?: number;
+  yellowCards?: number;
+  redCards?: number;
   manOfTheMatch?: boolean;
 }
 
