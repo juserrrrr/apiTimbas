@@ -13,9 +13,10 @@ import { TournamentController } from './tournament.controller';
 import { TournamentResultService } from './tournament-result.service';
 import { TournamentMatchService } from './tournament-match.service';
 import { TournamentService } from './tournament.service';
+import { SettingsModule } from '../settings/settings.module';
 
 @Module({
-  imports: [PrismaModule, AuthModule, AccessModule, EconomyModule, ScoreReaderModule, EaFcClubsModule, FeatureFlagsModule],
+  imports: [PrismaModule, AuthModule, AccessModule, EconomyModule, ScoreReaderModule, EaFcClubsModule, FeatureFlagsModule, SettingsModule],
   controllers: [TournamentController],
   providers: [
     TournamentService,

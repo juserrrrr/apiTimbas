@@ -43,6 +43,7 @@ import { TournamentAccessService } from './tournament-access.service';
 import { TournamentResultService } from './tournament-result.service';
 import { TournamentMatchService } from './tournament-match.service';
 import { TournamentService } from './tournament.service';
+import { AwardCardSettingsService } from '../settings/award-card-settings.service';
 
 type AuthedRequest = Request & { tokenPayload?: { discordId?: string; role?: string } };
 
@@ -56,6 +57,7 @@ export class TournamentController {
     private readonly matches: TournamentMatchService,
     private readonly access: TournamentAccessService,
     private readonly actor: ActorService,
+    private readonly awardCards: AwardCardSettingsService,
   ) {}
 
   @Get()
@@ -97,6 +99,11 @@ export class TournamentController {
   @Post(':id/teams')
   async addTeam(@Req() req: AuthedRequest, @Param('id') id: string, @Body() dto: AddTeamDto) {
     return this.tournaments.addTeam(id, dto, await this.me(req));
+  }
+
+  @Get('award-cards/settings')
+  awardCardSettings() {
+    return this.awardCards.get();
   }
 
   @Post(':id/ea-club/validate')

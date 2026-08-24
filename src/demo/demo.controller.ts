@@ -7,6 +7,7 @@ import { DemoService } from './demo.service';
 import { EaFcClubsService } from '../ea-fc-clubs/ea-fc-clubs.service';
 import { TournamentMatchService } from '../tournament/tournament-match.service';
 import { BuildDemoDraftDto, BuildDemoTournamentDto, DemoEaClubDto, DemoEaHistoryDto, DemoEaSyncDto, PrepareDemoEaMatchDto } from './dto/demo.dto';
+import { AwardCardSettingsService } from '../settings/award-card-settings.service';
 
 type AuthedRequest = Request & { tokenPayload?: { discordId?: string } };
 
@@ -19,6 +20,7 @@ export class DemoController {
     private readonly actor: ActorService,
     private readonly eaClubs: EaFcClubsService,
     private readonly tournamentMatches: TournamentMatchService,
+    private readonly awardCards: AwardCardSettingsService,
   ) {}
 
   @Get()
@@ -34,6 +36,16 @@ export class DemoController {
   @Post('draft')
   async draft(@Req() req: AuthedRequest, @Body() dto: BuildDemoDraftDto) {
     return this.demo.buildDraftLeague(dto, await this.actor.require(req.tokenPayload?.discordId));
+  }
+
+  @Get('award-card-settings')
+  awardCardSettings() {
+    return this.awardCards.get();
+  }
+
+  @Post('award-card-settings')
+  saveAwardCardSettings(@Body() body: unknown) {
+    return this.awardCards.save(body);
   }
 
   @Post('ea/club')

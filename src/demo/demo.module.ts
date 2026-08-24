@@ -7,9 +7,10 @@ import { TournamentModule } from '../tournament/tournament.module';
 import { EaFcClubsModule } from '../ea-fc-clubs/ea-fc-clubs.module';
 import { DemoController } from './demo.controller';
 import { DemoService } from './demo.service';
+import { SettingsModule } from '../settings/settings.module';
 
 @Module({
-  imports: [PrismaModule, AuthModule, TournamentModule, DraftModule, AccessModule, EaFcClubsModule],
+  imports: [PrismaModule, AuthModule, TournamentModule, DraftModule, AccessModule, EaFcClubsModule, SettingsModule],
   controllers: [DemoController],
   providers: [DemoService],
 })
