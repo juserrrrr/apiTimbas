@@ -117,8 +117,11 @@ export class DemoService {
         name: `${DEMO_PREFIX} EA real · ${root.name}`,
         description: 'Campeonato reconstruído no Laboratório com amistosos, placares e jogadores reais retornados pela EA.',
         game: CompetitionGame.EA_FC,
-        format: TournamentFormat.ROUND_ROBIN,
+        format: TournamentFormat.GROUPS_KNOCKOUT,
         maxTeams: clubs.size,
+        groupCount: 2,
+        advancePerGroup: clubs.size === 4 ? 1 : 2,
+        thirdPlace: true,
         allowDraws: true,
         requireProof: false,
         registrationEndsAt: new Date(now + 5 * 60_000),
@@ -155,7 +158,15 @@ export class DemoService {
     }
 
     await this.tournaments.start(tournament.id, actor);
-    await this.prisma.tournamentMatch.deleteMany({ where: { tournamentId: tournament.id } });
+    await this.prisma.tournamentMatch.deleteMany({
+      where: { tournamentId: tournament.id, phase: TournamentPhase.GROUP },
+    });
+    const groupByClub = new Map(
+      (await this.prisma.tournamentTeam.findMany({
+        where: { tournamentId: tournament.id },
+        select: { eaClubId: true, groupId: true },
+      })).flatMap((team) => team.eaClubId ? [[team.eaClubId, team.groupId] as const] : []),
+    );
 
     const usedEaIds = new Set(
       (await this.prisma.tournamentMatch.findMany({
@@ -172,7 +183,8 @@ export class DemoService {
       const match = await this.prisma.tournamentMatch.create({
         data: {
           tournamentId: tournament.id,
-          phase: TournamentPhase.LEAGUE,
+          phase: TournamentPhase.GROUP,
+          groupId: groupByClub.get(source.homeClubId) ?? null,
           round: index + 1,
           position: 0,
           label: `[EA] ${source.homeClubName} x ${source.awayClubName}`,
@@ -239,9 +251,64 @@ export class DemoService {
       });
     }
 
+    // Os amistosos reais formam a campanha da fase de grupos. A chave usa essa
+    // campanha para avançar os classificados; quando existe confronto direto no
+    // histórico, o placar real também é reaproveitado no mata-mata.
+    for (let guard = 0; guard < 20; guard++) {
+      const knockout = await this.prisma.tournamentMatch.findMany({
+        where: {
+          tournamentId: tournament.id,
+          phase: { in: [TournamentPhase.WINNERS, TournamentPhase.GRAND_FINAL, TournamentPhase.THIRD_PLACE] },
+          status: TournamentMatchStatus.READY,
+        },
+        include: { homeTeam: true, awayTeam: true },
+        orderBy: [{ round: 'asc' }, { position: 'asc' }],
+      });
+      if (knockout.length === 0) break;
+
+      for (const match of knockout) {
+        if (!match.homeTeam?.eaClubId || !match.awayTeam?.eaClubId) continue;
+        const direct = [...matches].reverse().find((source) => {
+          const ids = new Set([source.homeClubId, source.awayClubId]);
+          return ids.has(match.homeTeam!.eaClubId!) && ids.has(match.awayTeam!.eaClubId!);
+        });
+        const compareCampaign = () => {
+          const home = match.homeTeam!;
+          const away = match.awayTeam!;
+          return home.points - away.points ||
+            (home.scoreFor - home.scoreAgainst) - (away.scoreFor - away.scoreAgainst) ||
+            home.scoreFor - away.scoreFor ||
+            (away.seed ?? 999) - (home.seed ?? 999);
+        };
+        let homeScore: number;
+        let awayScore: number;
+        let sourceLabel: string;
+        if (direct) {
+          const sameOrder = direct.homeClubId === match.homeTeam.eaClubId;
+          homeScore = sameOrder ? direct.homeScore : direct.awayScore;
+          awayScore = sameOrder ? direct.awayScore : direct.homeScore;
+          sourceLabel = `placar do amistoso EA ${direct.externalMatchId}`;
+        } else {
+          homeScore = Math.max(0, Math.round(match.homeTeam.scoreFor / Math.max(1, match.homeTeam.played)));
+          awayScore = Math.max(0, Math.round(match.awayTeam.scoreFor / Math.max(1, match.awayTeam.played)));
+          sourceLabel = 'desempate pela campanha real na EA';
+        }
+        if (homeScore === awayScore) {
+          if (compareCampaign() >= 0) homeScore++;
+          else awayScore++;
+          sourceLabel += ' · desempate por campanha';
+        }
+        await this.prisma.tournamentMatch.update({
+          where: { id: match.id },
+          data: { label: `${match.label ?? 'Mata-mata'} · ${sourceLabel}`, eaTags: ['LAB_EA_KNOCKOUT'] },
+        });
+        await this.results.settle(match.id, homeScore, awayScore, 'demo-ea-knockout');
+      }
+    }
+
     const summary = await this.tournamentSummary(
       tournament.id,
-      `${clubs.size} clubes reais e ${createdMatches.length} amistosos da EA reconstruídos até o campeão.`,
+      `${clubs.size} clubes reais e ${createdMatches.length} amistosos da EA reconstruídos em grupos + mata-mata até o campeão.`,
     );
     return {
       ...summary,
