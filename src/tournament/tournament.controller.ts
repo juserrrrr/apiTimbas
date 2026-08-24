@@ -15,6 +15,7 @@ import {
 import { Request, Response } from 'express';
 import { AuthGuard } from '../auth/guards/auth.guard';
 import { RoleGuard } from '../auth/guards/role.guard';
+import { PermissionGuard, RequirePermissions } from '../access/permission.guard';
 import { ActorService } from '../common/actor.service';
 import { MatchProofService } from './match-proof.service';
 import {
@@ -45,7 +46,7 @@ import { TournamentService } from './tournament.service';
 
 type AuthedRequest = Request & { tokenPayload?: { discordId?: string; role?: string } };
 
-@UseGuards(AuthGuard, RoleGuard)
+@UseGuards(AuthGuard, RoleGuard, PermissionGuard)
 @Controller('tournaments')
 export class TournamentController {
   constructor(
@@ -68,6 +69,7 @@ export class TournamentController {
   }
 
   @Post()
+  @RequirePermissions('tournament.create')
   async create(@Req() req: AuthedRequest, @Body() dto: CreateTournamentDto) {
     return this.tournaments.create(dto, await this.me(req));
   }

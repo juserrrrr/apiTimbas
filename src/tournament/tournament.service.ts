@@ -356,12 +356,16 @@ export class TournamentService {
     const players = new Map<string, {
       playerName: string; externalPlayerId: string | null; teamId: string; games: Set<string>;
       goals: number; assists: number; ratingTotal: number; ratedGames: number; mvps: number; tags: Set<string>;
+      passesAttempted: number; passesCompleted: number; tacklesAttempted: number; tacklesCompleted: number;
+      shots: number; saves: number; yellowCards: number; redCards: number;
     }>();
     for (const stat of stats) {
       const key = `${stat.teamId}:${stat.externalPlayerId ?? stat.playerName.normalize('NFKC').toLocaleLowerCase('pt-BR')}`;
       const row = players.get(key) ?? {
         playerName: stat.playerName, externalPlayerId: stat.externalPlayerId, teamId: stat.teamId,
         games: new Set<string>(), goals: 0, assists: 0, ratingTotal: 0, ratedGames: 0, mvps: 0, tags: new Set<string>(),
+        passesAttempted: 0, passesCompleted: 0, tacklesAttempted: 0, tacklesCompleted: 0,
+        shots: 0, saves: 0, yellowCards: 0, redCards: 0,
       };
       row.games.add(stat.matchId);
       row.goals += stat.goals;
@@ -369,6 +373,14 @@ export class TournamentService {
       row.ratingTotal += stat.rating ?? 0;
       row.ratedGames += stat.rating === null ? 0 : 1;
       row.mvps += stat.manOfTheMatch ? 1 : 0;
+      row.passesAttempted += stat.passesAttempted ?? 0;
+      row.passesCompleted += stat.passesCompleted ?? 0;
+      row.tacklesAttempted += stat.tacklesAttempted ?? 0;
+      row.tacklesCompleted += stat.tacklesCompleted ?? 0;
+      row.shots += stat.shots ?? 0;
+      row.saves += stat.saves ?? 0;
+      row.yellowCards += stat.yellowCards ?? 0;
+      row.redCards += stat.redCards ?? 0;
       stat.tags.forEach((tag) => row.tags.add(tag));
       players.set(key, row);
     }
@@ -382,6 +394,16 @@ export class TournamentService {
       goalContributions: player.goals + player.assists,
       averageRating: player.ratedGames ? player.ratingTotal / player.ratedGames : null,
       mvps: player.mvps,
+      passesAttempted: player.passesAttempted,
+      passesCompleted: player.passesCompleted,
+      passAccuracy: player.passesAttempted ? player.passesCompleted / player.passesAttempted * 100 : null,
+      tacklesAttempted: player.tacklesAttempted,
+      tacklesCompleted: player.tacklesCompleted,
+      tackleSuccess: player.tacklesAttempted ? player.tacklesCompleted / player.tacklesAttempted * 100 : null,
+      shots: player.shots,
+      saves: player.saves,
+      yellowCards: player.yellowCards,
+      redCards: player.redCards,
       tags: Array.from(player.tags),
     })).sort((a, b) => b.goalContributions - a.goalContributions || b.goals - a.goals);
   }
