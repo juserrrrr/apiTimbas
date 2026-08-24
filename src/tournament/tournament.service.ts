@@ -124,7 +124,7 @@ export class TournamentService {
 
     return {
       total,
-      items: items.map((tournament) => ({
+      items: items.map(({ coinsChampion: _coinsChampion, coinsRunnerUp: _coinsRunnerUp, ...tournament }) => ({
         ...tournament,
         owner: tournament.staff[0]?.user ?? null,
         teamCount: tournament._count.teams,
@@ -181,8 +181,9 @@ export class TournamentService {
 
     const access = await this.access.of(id, actor);
     const matches = tournament.matches.map(({ eaRaw: _eaRaw, ...match }) => match);
+    const { coinsChampion: _coinsChampion, coinsRunnerUp: _coinsRunnerUp, ...publicTournament } = tournament;
     return {
-      ...tournament,
+      ...publicTournament,
       matches,
       access,
       standings: this.buildStandings(tournament.teams, tournament.groups),

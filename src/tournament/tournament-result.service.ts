@@ -353,27 +353,5 @@ export class TournamentResultService {
       },
     });
 
-    if (championTeamId) {
-      await this.payTeam(
-        tx,
-        tournament,
-        championTeamId,
-        tournament.coinsChampion,
-        WalletTxType.TOURNAMENT_PRIZE,
-        'Campeão',
-        tournament.id,
-      );
-    }
-    if (runnerUpTeamId) {
-      await this.payTeam(
-        tx,
-        tournament,
-        runnerUpTeamId,
-        tournament.coinsRunnerUp,
-        WalletTxType.TOURNAMENT_PRIZE,
-        'Vice-campeão',
-        tournament.id,
-      );
-    }
   }
 }

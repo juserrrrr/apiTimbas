@@ -149,8 +149,6 @@ export class DemoService {
         coinsWin: 0,
         coinsDraw: 0,
         coinsLoss: 0,
-        coinsChampion: 0,
-        coinsRunnerUp: 0,
       },
       actor,
     );
