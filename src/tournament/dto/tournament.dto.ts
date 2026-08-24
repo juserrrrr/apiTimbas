@@ -370,6 +370,11 @@ export class RespondClaimDto {
   agree: boolean;
 }
 
+export class SetMatchReadyDto {
+  @IsBoolean()
+  ready!: boolean;
+}
+
 export class RequestMatchReviewDto {
   @Transform(trim)
   @IsString()

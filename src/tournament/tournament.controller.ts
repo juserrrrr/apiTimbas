@@ -32,6 +32,7 @@ import {
   ReviewProofDto,
   RequestMatchReviewDto,
   ScheduleMatchDto,
+  SetMatchReadyDto,
   SetSeedsDto,
   StaffDto,
   UpdateTeamDto,
@@ -118,6 +119,11 @@ export class TournamentController {
   @Get(':id/ea-stats')
   async eaStats(@Req() req: AuthedRequest, @Param('id') id: string) {
     return this.tournaments.eaStats(id, await this.me(req));
+  }
+
+  @Get(':id/ea-awards')
+  async eaAwards(@Req() req: AuthedRequest, @Param('id') id: string) {
+    return this.tournaments.eaAwards(id, await this.me(req));
   }
 
   @Patch(':id/teams/:teamId')
@@ -248,6 +254,16 @@ export class TournamentController {
     @Param('matchId') matchId: string,
   ) {
     return this.matches.requestGrace(id, matchId, await this.me(req));
+  }
+
+  @Post(':id/matches/:matchId/ready')
+  async setMatchReady(
+    @Req() req: AuthedRequest,
+    @Param('id') id: string,
+    @Param('matchId') matchId: string,
+    @Body() dto: SetMatchReadyDto,
+  ) {
+    return this.matches.setReady(id, matchId, dto.ready, await this.me(req));
   }
 
   @Post(':id/matches/:matchId/check-ea')

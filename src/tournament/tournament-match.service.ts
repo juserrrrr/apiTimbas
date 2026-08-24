@@ -209,10 +209,13 @@ export class TournamentMatchService {
     if (!side && !canModerate) throw new ForbiddenException('Só quem joga ou a organização pode checar o resultado.');
     this.assertOpen(match);
     if (match.tournament.game !== CompetitionGame.EA_FC) throw new BadRequestException('Esta partida não é de EA Sports FC.');
-    const automaticStart = match.readyAt
-      ? new Date(Math.max(match.readyAt.getTime(), match.tournament.startsAt?.getTime() ?? 0))
+    const checkedInAt = match.homeReadyAt && match.awayReadyAt
+      ? new Date(Math.max(match.homeReadyAt.getTime(), match.awayReadyAt.getTime()))
       : null;
-    const searchAnchor = match.scheduledAt ?? (match.tournament.matchWindowMinutes > 0 ? automaticStart : null);
+    if (match.tournament.matchWindowMinutes > 0 && !checkedInAt) {
+      throw new BadRequestException('Os dois times precisam marcar Pronto para jogar antes de buscar o resultado na EA.');
+    }
+    const searchAnchor = match.tournament.matchWindowMinutes > 0 ? checkedInAt : match.scheduledAt;
     if (!searchAnchor) throw new BadRequestException('Marque o horário da partida antes de procurar o resultado na EA.');
     if (!match.homeTeam?.eaClubId || !match.awayTeam?.eaClubId) {
       throw new BadRequestException('Os dois times precisam ter um clube validado na EA.');
@@ -285,6 +288,15 @@ export class TournamentMatchService {
     if (!side) throw new ForbiddenException('Só quem joga a partida pode pedir tolerância.');
     this.assertOpen(match);
     if (tournament.graceMinutes <= 0) throw new BadRequestException('Este campeonato não oferece tolerância.');
+    if (tournament.matchWindowMinutes > 0) {
+      const beginsAt = Math.max(match.readyAt?.getTime() ?? 0, tournament.startsAt?.getTime() ?? 0);
+      if (!beginsAt || Date.now() < beginsAt) throw new BadRequestException('A tolerância abre quando o confronto começar.');
+      const deadline = this.deadlineOf(match, tournament);
+      if (deadline && deadline.getTime() <= Date.now()) throw new BadRequestException('O prazo de check-in já terminou.');
+    }
+    if (match.homeReadyAt && match.awayReadyAt) {
+      throw new BadRequestException('Os dois times já confirmaram presença e a partida foi liberada.');
+    }
     if (side === 'HOME' ? match.homeGraceUsed : match.awayGraceUsed) {
       throw new BadRequestException('Seu time já usou a tolerância nesta partida.');
     }
@@ -294,6 +306,45 @@ export class TournamentMatchService {
       data: side === 'HOME' ? { homeGraceUsed: true } : { awayGraceUsed: true },
     });
     await this.systemMessage(matchId, teamId, `Pediu ${tournament.graceMinutes} minutos de tolerância.`);
+    return updated;
+  }
+
+  async setReady(tournamentId: string, matchId: string, ready: boolean, actor: Actor) {
+    const tournament = await this.access.requireExists(tournamentId);
+    const match = await this.requireMatch(tournamentId, matchId);
+    const { side } = await this.requireParticipant(tournamentId, match, actor);
+    if (!side) throw new ForbiddenException('Só quem joga a partida pode confirmar presença.');
+    this.assertOpen(match);
+    if (tournament.matchWindowMinutes <= 0) {
+      throw new BadRequestException('O check-in Pronto para jogar está disponível somente em confrontos rápidos.');
+    }
+
+    const beginsAt = Math.max(match.readyAt?.getTime() ?? 0, tournament.startsAt?.getTime() ?? 0);
+    if (!beginsAt || Date.now() < beginsAt) {
+      throw new BadRequestException('O check-in abre quando o confronto começar.');
+    }
+    const deadline = this.deadlineOf(match, tournament);
+    if (deadline && deadline.getTime() <= Date.now()) {
+      throw new BadRequestException('O prazo de check-in desta partida já terminou.');
+    }
+
+    const currentReadyAt = side === 'HOME' ? match.homeReadyAt : match.awayReadyAt;
+    if (Boolean(currentReadyAt) === ready) return match;
+    if (!ready && match.homeReadyAt && match.awayReadyAt) {
+      throw new BadRequestException('Os dois times já estão prontos e a partida foi iniciada.');
+    }
+
+    const teamId = side === 'HOME' ? match.homeTeamId! : match.awayTeamId!;
+    const updated = await this.prisma.tournamentMatch.update({
+      where: { id: matchId },
+      data: side === 'HOME'
+        ? { homeReadyAt: ready ? new Date() : null }
+        : { awayReadyAt: ready ? new Date() : null },
+    });
+    await this.systemMessage(matchId, teamId, ready ? 'Marcou Pronto para jogar.' : 'Desmarcou Pronto para jogar.');
+    if (updated.homeReadyAt && updated.awayReadyAt) {
+      await this.systemMessage(matchId, null, 'Os dois times estão prontos. Partida liberada para jogar e sincronizar na EA.');
+    }
     return updated;
   }
 
@@ -398,7 +449,7 @@ export class TournamentMatchService {
       });
       for (const match of late) {
         try {
-          await this.applyDeadline(match, tournament.name);
+          await this.applyDeadline(match, tournament);
         } catch (error) {
           this.logger.warn(`Falha no prazo da partida ${match.id}: ${(error as Error).message}`);
         }
@@ -411,8 +462,33 @@ export class TournamentMatchService {
       homeTeam: { id: string; name: string; seed: number | null } | null;
       awayTeam: { id: string; name: string; seed: number | null } | null;
     },
-    tournamentName: string,
+    tournament: { name: string; matchWindowMinutes: number },
   ) {
+    if (tournament.matchWindowMinutes > 0) {
+      const homeReady = match.homeReadyAt !== null;
+      const awayReady = match.awayReadyAt !== null;
+      if (homeReady && awayReady) return;
+      if (!homeReady && !awayReady) {
+        await this.systemMessage(match.id, null, 'Prazo de check-in encerrado sem nenhum time pronto. A organização vai decidir.');
+        await this.prisma.tournamentMatch.update({
+          where: { id: match.id },
+          data: {
+            status: TournamentMatchStatus.DISPUTED,
+            reviewRequestedAt: new Date(),
+            reviewReason: 'Nenhum time confirmou presença no prazo.',
+          },
+        });
+        return;
+      }
+
+      const winner = homeReady ? match.homeTeam! : match.awayTeam!;
+      const reason = 'adversário não confirmou presença no prazo';
+      await this.systemMessage(match.id, winner.id, `W.O. para ${winner.name}: ${reason}.`);
+      await this.results.walkover(match.tournamentId, match.id, winner.id, reason, 'prazo');
+      this.logger.log(`${tournament.name}: W.O. para ${winner.name} (${reason}).`);
+      return;
+    }
+
     const engaged = await this.engagedTeams(match);
     const homeEngaged = engaged.has(match.homeTeamId!);
     const awayEngaged = engaged.has(match.awayTeamId!);
@@ -421,7 +497,7 @@ export class TournamentMatchService {
       await this.systemMessage(match.id, null, 'Prazo estourado com os dois times ativos. A organização vai decidir.');
       await this.prisma.tournamentMatch.update({
         where: { id: match.id },
-        data: { status: TournamentMatchStatus.DISPUTED },
+        data: { status: TournamentMatchStatus.DISPUTED, reviewRequestedAt: new Date() },
       });
       return;
     }
@@ -438,7 +514,7 @@ export class TournamentMatchService {
     const reason = homeEngaged || awayEngaged ? 'adversário não respondeu no prazo' : 'nenhum time apareceu no prazo';
     await this.systemMessage(match.id, winner.id, `W.O. para ${winner.name}: ${reason}.`);
     await this.results.walkover(match.tournamentId, match.id, winner.id, reason, 'prazo');
-    this.logger.log(`${tournamentName}: W.O. para ${winner.name} (${reason}).`);
+    this.logger.log(`${tournament.name}: W.O. para ${winner.name} (${reason}).`);
   }
 
   /// Time "ativo" é o que fez algo pela partida: propôs horário, informou placar ou
@@ -467,6 +543,7 @@ export class TournamentMatchService {
   ): Date | null {
     if (!match.readyAt) return null;
     if (!OPEN_STATUSES.includes(match.status)) return null;
+    if (tournament.matchWindowMinutes > 0 && match.homeReadyAt && match.awayReadyAt) return null;
     const base = Math.max(match.readyAt.getTime(), tournament.startsAt?.getTime() ?? 0);
     const regularMinutes = tournament.matchWindowMinutes > 0
       ? tournament.matchWindowMinutes

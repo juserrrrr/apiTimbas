@@ -731,6 +731,8 @@ model TournamentMatch {
   winnerTeamId             String?
   status                   TournamentMatchStatus    @default(PENDING)
   readyAt                  DateTime?
+  homeReadyAt              DateTime?
+  awayReadyAt              DateTime?
   scheduledAt              DateTime?
   scheduleProposedAt       DateTime?
   scheduleProposedByTeamId String?

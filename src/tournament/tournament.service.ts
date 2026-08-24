@@ -408,6 +408,58 @@ export class TournamentService {
     })).sort((a, b) => b.goalContributions - a.goalContributions || b.goals - a.goals);
   }
 
+  async eaAwards(id: string, actor: Actor) {
+    await this.access.requireView(id, actor);
+    const tournament = await this.prisma.tournament.findUnique({ where: { id }, select: { status: true } });
+    if (!tournament) throw new NotFoundException('Campeonato não encontrado.');
+
+    const players = await this.eaStats(id, actor);
+    const rank = (
+      pool: typeof players,
+      score: (player: (typeof players)[number]) => number,
+    ) => [...pool].sort((a, b) =>
+      score(b) - score(a)
+      || b.appearances - a.appearances
+      || b.mvps - a.mvps
+      || b.goalContributions - a.goalContributions
+      || a.playerName.localeCompare(b.playerName, 'pt-BR'),
+    )[0];
+
+    const ratedPlayers = players.filter((player) => player.averageRating !== null);
+    const mostAppearances = Math.max(...players.map((player) => player.appearances), 0);
+    const minimumCraqueAppearances = mostAppearances <= 1
+      ? mostAppearances
+      : Math.max(2, Math.ceil(mostAppearances * 0.5));
+    const eligibleCraques = ratedPlayers.filter((player) => player.appearances >= minimumCraqueAppearances);
+    const definitions = [
+      { key: 'ARTILHEIRO', title: 'Artilheiro', subtitle: 'Maior goleador', player: rank(players, (player) => player.goals), value: (player: (typeof players)[number]) => `${player.goals} gols` },
+      { key: 'GARCOM', title: 'Garçom', subtitle: 'Líder de assistências', player: rank(players, (player) => player.assists), value: (player: (typeof players)[number]) => `${player.assists} assistências` },
+      { key: 'CRAQUE', title: 'Craque do Campeonato', subtitle: `Melhor nota média · mínimo ${minimumCraqueAppearances} ${minimumCraqueAppearances === 1 ? 'jogo' : 'jogos'}`, player: rank(eligibleCraques, (player) => player.averageRating ?? 0), value: (player: (typeof players)[number]) => `Nota ${player.averageRating?.toFixed(1) ?? '-'}` },
+      { key: 'MAESTRO', title: 'Maestro', subtitle: 'Mais passes certos', player: rank(players, (player) => player.passesCompleted), value: (player: (typeof players)[number]) => `${player.passesCompleted} passes · ${player.passAccuracy?.toFixed(0) ?? 0}%` },
+      { key: 'XERIFE', title: 'Xerife', subtitle: 'Mais desarmes certos', player: rank(players, (player) => player.tacklesCompleted), value: (player: (typeof players)[number]) => `${player.tacklesCompleted} desarmes · ${player.tackleSuccess?.toFixed(0) ?? 0}%` },
+      { key: 'MURALHA', title: 'Muralha', subtitle: 'Maior número de defesas', player: rank(players, (player) => player.saves), value: (player: (typeof players)[number]) => `${player.saves} defesas` },
+    ];
+
+    return {
+      source: 'EA_API',
+      finalized: tournament.status === TournamentStatus.FINISHED,
+      criteria: {
+        craqueMinimumAppearances: minimumCraqueAppearances,
+        craqueMinimumShare: 0.5,
+        tieBreakers: ['appearances', 'mvps', 'goalContributions', 'playerName'],
+      },
+      awards: tournament.status === TournamentStatus.FINISHED
+        ? definitions.filter((award) => award.player).map((award) => ({
+            key: award.key,
+            title: award.title,
+            subtitle: award.subtitle,
+            player: award.player!,
+            value: award.value(award.player!),
+          }))
+        : [],
+    };
+  }
+
   async joinByInvite(code: string, actor: Actor) {
     const tournament = await this.prisma.tournament.findUnique({ where: { inviteCode: code } });
     if (!tournament || tournament.accessMode !== 'INVITE_ONLY') {
