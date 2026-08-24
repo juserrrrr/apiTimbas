@@ -20,6 +20,8 @@ export interface AwardCardLayoutSetting {
   qrY: number;
   qrSize: number;
   textWidth: number;
+  nickAutoFit: boolean;
+  statAutoFit: boolean;
 }
 
 export type AwardCardLayoutSettings = Partial<Record<AwardCardCategory, AwardCardLayoutSetting>>;
@@ -74,6 +76,8 @@ export class AwardCardSettingsService {
         qrY: this.number(row.qrY, 0.5, 0.9, strict),
         qrSize: this.number(row.qrSize, 0.06, 0.22, strict),
         textWidth: this.number(row.textWidth, 0.2, 0.7, strict),
+        nickAutoFit: this.boolean(row.nickAutoFit, true, strict),
+        statAutoFit: this.boolean(row.statAutoFit, true, strict),
       };
     }
     return result;
@@ -86,5 +90,12 @@ export class AwardCardSettingsService {
       return minimum;
     }
     return Math.min(maximum, Math.max(minimum, parsed));
+  }
+
+  private boolean(value: unknown, fallback: boolean, strict: boolean) {
+    if (value === undefined) return fallback;
+    if (typeof value === 'boolean') return value;
+    if (strict) throw new BadRequestException('Uma opção de ajuste do card é inválida.');
+    return fallback;
   }
 }
