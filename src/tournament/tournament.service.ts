@@ -56,6 +56,9 @@ export class TournamentService {
     if (!dto.startsAt) {
       throw new BadRequestException('Defina o horário de início do campeonato.');
     }
+    if (!dto.registrationEndsAt) {
+      throw new BadRequestException('Defina quando as inscrições terminam.');
+    }
     this.assertPlan(dto.format ?? TournamentFormat.SINGLE_ELIMINATION, {
       teamCount: dto.maxTeams ?? DEFAULTS.maxTeams,
       groupCount: dto.groupCount ?? DEFAULTS.groupCount,
@@ -63,7 +66,7 @@ export class TournamentService {
       legs: dto.legs ?? DEFAULTS.legs,
       thirdPlace: dto.thirdPlace ?? false,
     });
-    this.assertWindow(dto.registrationEndsAt, dto.autoStartOnClose);
+    this.assertWindow(dto.registrationEndsAt, dto.autoStartOnClose, dto.startsAt);
 
     const slug = await this.uniqueSlug(dto.name);
     const invitedUsers = dto.invitedUsernames?.length
@@ -216,7 +219,11 @@ export class TournamentService {
         thirdPlace: (settings.thirdPlace as boolean) ?? tournament.thirdPlace,
       });
     }
-    this.assertWindow(dto.registrationEndsAt, dto.autoStartOnClose ?? tournament.autoStartOnClose);
+    this.assertWindow(
+      dto.registrationEndsAt ?? tournament.registrationEndsAt ?? undefined,
+      dto.autoStartOnClose ?? tournament.autoStartOnClose,
+      dto.startsAt ?? tournament.startsAt ?? undefined,
+    );
 
     return this.prisma.tournament.update({
       where: { id },
@@ -709,12 +716,19 @@ export class TournamentService {
     if (issue) throw new BadRequestException(issue);
   }
 
-  private assertWindow(registrationEndsAt: Date | undefined, autoStartOnClose: boolean | undefined) {
+  private assertWindow(
+    registrationEndsAt: Date | undefined,
+    autoStartOnClose: boolean | undefined,
+    startsAt?: Date,
+  ) {
     if (registrationEndsAt && registrationEndsAt.getTime() <= Date.now()) {
       throw new BadRequestException('O fim das inscrições precisa ser no futuro.');
     }
     if (autoStartOnClose && !registrationEndsAt) {
       throw new BadRequestException('Para começar sozinho, o campeonato precisa de uma data de fim das inscrições.');
+    }
+    if (registrationEndsAt && startsAt && startsAt.getTime() <= registrationEndsAt.getTime()) {
+      throw new BadRequestException('O início do campeonato precisa ser depois do fim das inscrições.');
     }
   }
 
