@@ -17,6 +17,26 @@ export class DemoEaHistoryDto {
   clubId!: string;
 }
 
+export class BuildRealEaTournamentDto {
+  @IsString()
+  @MinLength(2)
+  clubName!: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(2)
+  @Max(12)
+  teamCount?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(40)
+  maxMatches?: number;
+}
+
 export class DemoEaSyncDto {
   @IsString()
   tournamentId!: string;

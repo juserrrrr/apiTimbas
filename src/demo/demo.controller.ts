@@ -6,7 +6,7 @@ import { ActorService } from '../common/actor.service';
 import { DemoService } from './demo.service';
 import { EaFcClubsService } from '../ea-fc-clubs/ea-fc-clubs.service';
 import { TournamentMatchService } from '../tournament/tournament-match.service';
-import { BuildDemoDraftDto, BuildDemoTournamentDto, DemoEaClubDto, DemoEaHistoryDto, DemoEaSyncDto, PrepareDemoEaMatchDto } from './dto/demo.dto';
+import { BuildDemoDraftDto, BuildDemoTournamentDto, BuildRealEaTournamentDto, DemoEaClubDto, DemoEaHistoryDto, DemoEaSyncDto, PrepareDemoEaMatchDto } from './dto/demo.dto';
 import { AwardCardSettingsService } from '../settings/award-card-settings.service';
 
 type AuthedRequest = Request & { tokenPayload?: { discordId?: string } };
@@ -57,6 +57,11 @@ export class DemoController {
   async eaHistory(@Body() dto: DemoEaHistoryDto) {
     const matches = await this.eaClubs.friendlyMatches(dto.clubId, 'common-gen5');
     return { count: matches.length, latest: matches[0] ?? null, matches };
+  }
+
+  @Post('ea/tournament')
+  async realEaTournament(@Req() req: AuthedRequest, @Body() dto: BuildRealEaTournamentDto) {
+    return this.demo.buildRealEaTournament(dto, await this.actor.require(req.tokenPayload?.discordId));
   }
 
   @Post('ea/sync')

@@ -1,7 +1,9 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import {
+  CompetitionGame,
   DraftLeagueStatus,
   DraftResultMode,
+  Prisma,
   Role,
   TournamentFormat,
   TournamentMatchStatus,
@@ -19,6 +21,7 @@ import { DraftFixtureService } from '../draft/draft-fixture.service';
 import { DraftPickService } from '../draft/draft-pick.service';
 import { DraftSimulationService } from '../draft/draft-simulation.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { EaFcClubsService } from '../ea-fc-clubs/ea-fc-clubs.service';
 import { EaClubMatch } from '../ea-fc-clubs/ea-fc-clubs.types';
 import { TournamentResultService } from '../tournament/tournament-result.service';
 import { TournamentService } from '../tournament/tournament.service';
@@ -30,7 +33,7 @@ import {
   DEMO_PREFIX,
   DEMO_TEAM_NAMES,
 } from './demo.constants';
-import { BuildDemoDraftDto, BuildDemoTournamentDto, PrepareDemoEaMatchDto } from './dto/demo.dto';
+import { BuildDemoDraftDto, BuildDemoTournamentDto, BuildRealEaTournamentDto, PrepareDemoEaMatchDto } from './dto/demo.dto';
 
 @Injectable()
 export class DemoService {
@@ -40,10 +43,217 @@ export class DemoService {
     private readonly prisma: PrismaService,
     private readonly tournaments: TournamentService,
     private readonly results: TournamentResultService,
+    private readonly eaClubs: EaFcClubsService,
     private readonly picks: DraftPickService,
     private readonly fixtures: DraftFixtureService,
     private readonly simulation: DraftSimulationService,
   ) {}
+
+  async buildRealEaTournament(dto: BuildRealEaTournamentDto, actor: Actor) {
+    try {
+      return await this.buildRealEaTournamentInner(dto, actor);
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      this.logger.error(`Falha ao reconstruir campeonato com dados da EA: ${detail}`, (error as Error)?.stack);
+      if (error instanceof BadRequestException) throw error;
+      throw new BadRequestException(`Não foi possível montar o campeonato real da EA: ${detail}`);
+    }
+  }
+
+  private async buildRealEaTournamentInner(dto: BuildRealEaTournamentDto, actor: Actor) {
+    const targetTeams = dto.teamCount ?? 8;
+    const maxMatches = dto.maxMatches ?? 24;
+    const root = await this.eaClubs.resolveTournamentClub(dto.clubName.trim(), 'common-gen5');
+    const clubs = new Map<string, { externalId: string; name: string }>([
+      [root.externalClubId, { externalId: root.externalClubId, name: root.name }],
+    ]);
+    const queue = [root.externalClubId];
+    const processed = new Set<string>();
+    const discoveredMatches = new Map<string, EaClubMatch>();
+
+    while (queue.length > 0 && processed.size < targetTeams) {
+      const clubId = queue.shift()!;
+      if (processed.has(clubId)) continue;
+      processed.add(clubId);
+      let history: EaClubMatch[];
+      try {
+        history = await this.eaClubs.friendlyMatches(clubId, 'common-gen5');
+      } catch (error) {
+        if (clubId === root.externalClubId) throw error;
+        this.logger.warn(`Histórico EA indisponível para o clube ${clubId}; seguindo com os amistosos já descobertos.`);
+        continue;
+      }
+      let newlyQueued = 0;
+      for (const match of history) {
+        discoveredMatches.set(match.externalMatchId, match);
+        for (const club of [
+          { externalId: match.homeClubId, name: match.homeClubName },
+          { externalId: match.awayClubId, name: match.awayClubName },
+        ]) {
+          if (clubs.has(club.externalId) || clubs.size >= targetTeams || newlyQueued >= 2) continue;
+          clubs.set(club.externalId, club);
+          queue.push(club.externalId);
+          newlyQueued++;
+        }
+      }
+    }
+
+    if (clubs.size < 2) {
+      throw new BadRequestException('A EA não retornou adversários suficientes para montar o campeonato.');
+    }
+
+    const selectedIds = new Set(clubs.keys());
+    const matches = Array.from(discoveredMatches.values())
+      .filter((match) => selectedIds.has(match.homeClubId) && selectedIds.has(match.awayClubId))
+      .sort((a, b) => a.playedAt.getTime() - b.playedAt.getTime())
+      .slice(-maxMatches);
+    if (matches.length === 0) {
+      throw new BadRequestException('Nenhum amistoso entre os clubes descobertos pôde ser aproveitado.');
+    }
+
+    const now = Date.now();
+    const tournament = await this.tournaments.create(
+      {
+        name: `${DEMO_PREFIX} EA real · ${root.name}`,
+        description: 'Campeonato reconstruído no Laboratório com amistosos, placares e jogadores reais retornados pela EA.',
+        game: CompetitionGame.EA_FC,
+        format: TournamentFormat.ROUND_ROBIN,
+        maxTeams: clubs.size,
+        allowDraws: true,
+        requireProof: false,
+        registrationEndsAt: new Date(now + 5 * 60_000),
+        startsAt: new Date(now + 10 * 60_000),
+      },
+      actor,
+    );
+
+    const teamByClub = new Map<string, string>();
+    const usedTeamNames = new Set<string>();
+    let seed = 1;
+    for (const club of clubs.values()) {
+      const baseName = club.name.slice(0, 72);
+      let teamName = baseName;
+      for (let suffix = 2; usedTeamNames.has(teamName.toLocaleLowerCase('pt-BR')); suffix++) {
+        teamName = `${baseName.slice(0, 74)} ${suffix}`;
+      }
+      usedTeamNames.add(teamName.toLocaleLowerCase('pt-BR'));
+      const team = await this.prisma.tournamentTeam.create({
+        data: {
+          tournamentId: tournament.id,
+          name: teamName,
+          tag: club.name.replace(/[^a-z0-9]/gi, '').slice(0, 3).toUpperCase() || `EA${seed}`,
+          seed,
+          eaClubId: club.externalId,
+          eaPlatform: 'common-gen5',
+          ...(club.externalId === root.externalClubId
+            ? { members: { create: { userId: actor.id, captain: true } } }
+            : {}),
+        },
+      });
+      teamByClub.set(club.externalId, team.id);
+      seed++;
+    }
+
+    await this.tournaments.start(tournament.id, actor);
+    await this.prisma.tournamentMatch.deleteMany({ where: { tournamentId: tournament.id } });
+
+    const usedEaIds = new Set(
+      (await this.prisma.tournamentMatch.findMany({
+        where: { eaMatchId: { in: matches.map((match) => match.externalMatchId) } },
+        select: { eaMatchId: true },
+      })).flatMap((match) => match.eaMatchId ? [match.eaMatchId] : []),
+    );
+
+    const createdMatches: Array<{ id: string; source: EaClubMatch }> = [];
+    for (const [index, source] of matches.entries()) {
+      const homeTeamId = teamByClub.get(source.homeClubId);
+      const awayTeamId = teamByClub.get(source.awayClubId);
+      if (!homeTeamId || !awayTeamId) continue;
+      const match = await this.prisma.tournamentMatch.create({
+        data: {
+          tournamentId: tournament.id,
+          phase: TournamentPhase.LEAGUE,
+          round: index + 1,
+          position: 0,
+          label: `[EA] ${source.homeClubName} x ${source.awayClubName}`,
+          homeTeamId,
+          awayTeamId,
+          status: TournamentMatchStatus.READY,
+          readyAt: source.playedAt,
+          scheduledAt: source.playedAt,
+        },
+      });
+      createdMatches.push({ id: match.id, source });
+    }
+
+    for (const item of createdMatches) {
+      const source = item.source;
+      await this.results.settle(item.id, source.homeScore, source.awayScore, 'demo-ea', async (tx) => {
+        const matchTags = [
+          ...(source.homeScore === 0 || source.awayScore === 0 ? ['CLEAN_SHEET'] : []),
+          ...(source.homeScore + source.awayScore >= 7 ? ['CHUVA_DE_GOLS'] : []),
+          ...(Math.abs(source.homeScore - source.awayScore) >= 4 ? ['GOLEADA'] : []),
+          'LAB_EA_REAL',
+        ];
+        await tx.tournamentMatch.update({
+          where: { id: item.id },
+          data: {
+            playedAt: source.playedAt,
+            eaMatchId: usedEaIds.has(source.externalMatchId) ? null : source.externalMatchId,
+            eaVerifiedAt: new Date(),
+            eaRaw: source.rawData as Prisma.InputJsonValue,
+            eaTags: matchTags,
+          },
+        });
+        const rows = [source.homeClubId, source.awayClubId].flatMap((clubId) => {
+          const teamId = teamByClub.get(clubId)!;
+          return (source.playersByClub[clubId] ?? []).map((player) => ({
+            matchId: item.id,
+            teamId,
+            externalPlayerId: player.externalPlayerId,
+            playerName: player.playerName,
+            position: player.position,
+            rating: player.rating,
+            goals: player.goals,
+            assists: player.assists,
+            shots: player.shots,
+            passesAttempted: player.passesAttempted,
+            passesCompleted: player.passesCompleted,
+            tacklesAttempted: player.tacklesAttempted,
+            tacklesCompleted: player.tacklesCompleted,
+            saves: player.saves,
+            yellowCards: player.yellowCards,
+            redCards: player.redCards,
+            manOfTheMatch: player.manOfTheMatch,
+            tags: [
+              ...(player.manOfTheMatch ? ['MVP'] : []),
+              ...(player.goals >= 3 ? ['HAT_TRICK'] : []),
+              ...(player.goals >= 2 ? ['DOIS_GOLS'] : []),
+              ...(player.assists >= 3 ? ['MAESTRO'] : []),
+              ...((player.saves ?? 0) >= 5 ? ['PAREDAO'] : []),
+              ...((player.rating ?? 0) >= 9 ? ['NOTA_9_PLUS'] : []),
+            ],
+          }));
+        });
+        if (rows.length) await tx.tournamentEaPlayerStat.createMany({ data: rows });
+      });
+    }
+
+    const summary = await this.tournamentSummary(
+      tournament.id,
+      `${clubs.size} clubes reais e ${createdMatches.length} amistosos da EA reconstruídos até o campeão.`,
+    );
+    return {
+      ...summary,
+      debug: {
+        ...summary.debug,
+        clubesDescobertos: Array.from(clubs.values()).map((club) => `${club.name} · ${club.externalId}`),
+        amistososImportados: createdMatches.map(({ source }) =>
+          `${source.homeClubName} ${source.homeScore} x ${source.awayScore} ${source.awayClubName}`,
+        ),
+      },
+    };
+  }
 
   async prepareEaMatch(dto: PrepareDemoEaMatchDto, eaMatch: EaClubMatch, actor: Actor) {
     const source = await this.prisma.tournamentMatch.findFirst({
