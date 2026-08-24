@@ -1,4 +1,9 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import {
   DraftBudgetTxType,
   DraftLeague,
@@ -10,8 +15,16 @@ import { Actor } from '../common/actor.service';
 import { createHash } from 'crypto';
 import { DraftBudgetService } from './draft-budget.service';
 import { overallFromAttributes } from '../football/attributes';
-import { applyChange, attributeChange, nextForm, nextRatingAvg } from '../football/development';
-import { PlayerPerformance, SimulatedMatch } from '../football/match-simulation';
+import {
+  applyChange,
+  attributeChange,
+  nextForm,
+  nextRatingAvg,
+} from '../football/development';
+import {
+  PlayerPerformance,
+  SimulatedMatch,
+} from '../football/match-simulation';
 import { PrismaService } from '../prisma/prisma.service';
 import { ScoreReaderService } from '../score-reader/score-reader.service';
 import { DraftAccessService } from './draft-access.service';
@@ -35,8 +48,24 @@ export class DraftFixtureService {
       where: { leagueId, ...(round ? { round } : {}) },
       orderBy: [{ round: 'asc' }, { scheduledAt: 'asc' }],
       include: {
-        homeRoster: { select: { id: true, name: true, tag: true, logoUrl: true, userId: true } },
-        awayRoster: { select: { id: true, name: true, tag: true, logoUrl: true, userId: true } },
+        homeRoster: {
+          select: {
+            id: true,
+            name: true,
+            tag: true,
+            logoUrl: true,
+            userId: true,
+          },
+        },
+        awayRoster: {
+          select: {
+            id: true,
+            name: true,
+            tag: true,
+            logoUrl: true,
+            userId: true,
+          },
+        },
         proofs: {
           orderBy: { createdAt: 'desc' },
           select: {
@@ -82,7 +111,12 @@ export class DraftFixtureService {
     return this.settle(matchId, homeScore, awayScore, 'vaga');
   }
 
-  async report(leagueId: string, matchId: string, dto: ReportDraftResultDto, actor: Actor) {
+  async report(
+    leagueId: string,
+    matchId: string,
+    dto: ReportDraftResultDto,
+    actor: Actor,
+  ) {
     const match = await this.prisma.draftMatch.findFirst({
       where: { id: matchId, leagueId },
       include: {
@@ -97,18 +131,31 @@ export class DraftFixtureService {
     }
 
     const access = await this.access.of(leagueId, actor);
-    const isPlayer = match.homeRoster.userId === actor.id || match.awayRoster.userId === actor.id;
+    const isPlayer =
+      match.homeRoster.userId === actor.id ||
+      match.awayRoster.userId === actor.id;
     if (!access.canModerate && !isPlayer) {
-      throw new ForbiddenException('Só quem joga a partida ou a organização pode lançar o resultado.');
+      throw new ForbiddenException(
+        'Só quem joga a partida ou a organização pode lançar o resultado.',
+      );
     }
 
     const scorers = await this.checkScorers(match, dto);
 
     if (!dto.imageBase64) {
       if (!access.canModerate) {
-        throw new BadRequestException('Envie a foto do placar para validar o resultado.');
+        throw new BadRequestException(
+          'Envie a foto do placar para validar o resultado.',
+        );
       }
-      const settled = await this.settle(matchId, dto.homeScore, dto.awayScore, actor.discordId, undefined, scorers);
+      const settled = await this.settle(
+        matchId,
+        dto.homeScore,
+        dto.awayScore,
+        actor.discordId,
+        undefined,
+        scorers,
+      );
       return { match: settled, proof: null, autoApproved: true };
     }
 
@@ -122,7 +169,9 @@ export class DraftFixtureService {
     });
 
     const agrees =
-      reading.homeScore === dto.homeScore && reading.awayScore === dto.awayScore && reading.homeScore !== null;
+      reading.homeScore === dto.homeScore &&
+      reading.awayScore === dto.awayScore &&
+      reading.homeScore !== null;
 
     const proof = await this.prisma.$transaction(async (tx) => {
       const created = await tx.matchProof.create({
@@ -147,20 +196,37 @@ export class DraftFixtureService {
       });
       await tx.draftMatch.update({
         where: { id: matchId },
-        data: { status: DraftMatchStatus.AWAITING_PROOF, reportedByDiscordId: actor.discordId },
+        data: {
+          status: DraftMatchStatus.AWAITING_PROOF,
+          reportedByDiscordId: actor.discordId,
+        },
       });
       return created;
     });
 
     const autoApprove =
-      access.canModerate || (reading.available && agrees && reading.confidence >= AUTO_APPROVE_MIN_CONFIDENCE);
+      access.canModerate ||
+      (reading.available &&
+        agrees &&
+        reading.confidence >= AUTO_APPROVE_MIN_CONFIDENCE);
     if (!autoApprove) return { match: null, proof, autoApproved: false };
 
-    const settled = await this.approveProof(proof.id, actor.discordId, undefined, scorers);
+    const settled = await this.approveProof(
+      proof.id,
+      actor.discordId,
+      undefined,
+      scorers,
+    );
     return { match: settled, proof, autoApproved: true };
   }
 
-  async reviewProof(leagueId: string, proofId: string, approve: boolean, note: string | undefined, actor: Actor) {
+  async reviewProof(
+    leagueId: string,
+    proofId: string,
+    approve: boolean,
+    note: string | undefined,
+    actor: Actor,
+  ) {
     await this.access.requireModerate(leagueId, actor);
     const proof = await this.prisma.matchProof.findFirst({
       where: { id: proofId, draftMatch: { leagueId } },
@@ -219,13 +285,24 @@ export class DraftFixtureService {
     });
   }
 
-  async proofImage(proofId: string) {
-    const proof = await this.prisma.matchProof.findUnique({
-      where: { id: proofId },
-      select: { image: true, mimeType: true },
+  async proofImage(leagueId: string, proofId: string, actor: Actor) {
+    const access = await this.access.of(leagueId, actor);
+    const proof = await this.prisma.matchProof.findFirst({
+      where: { id: proofId, draftMatch: { leagueId } },
+      select: {
+        image: true,
+        mimeType: true,
+        draftMatch: { select: { homeRosterId: true, awayRosterId: true } },
+      },
     });
     if (!proof) throw new NotFoundException('Prova não encontrada.');
-    return proof;
+    const belongsToRoster =
+      access.rosterId === proof.draftMatch?.homeRosterId ||
+      access.rosterId === proof.draftMatch?.awayRosterId;
+    if (!access.canModerate && !belongsToRoster) {
+      throw new ForbiddenException('VocÃª nÃ£o pode ver esta prova.');
+    }
+    return { image: proof.image, mimeType: proof.mimeType };
   }
 
   private async approveProof(
@@ -257,7 +334,13 @@ export class DraftFixtureService {
   /// placar lançado à mão, o que muda é que aqui cada jogador ganha nota, gol,
   /// assistência e forma em vez de só somar presença.
   async settleSimulated(matchId: string, result: SimulatedMatch) {
-    return this.settle(matchId, result.homeScore, result.awayScore, 'simulacao', result.performances);
+    return this.settle(
+      matchId,
+      result.homeScore,
+      result.awayScore,
+      'simulacao',
+      result.performances,
+    );
   }
 
   /// Confere os autores contra o placar e contra o elenco: gol de quem não jogava
@@ -267,7 +350,9 @@ export class DraftFixtureService {
     match: { id: string; homeRosterId: string; awayRosterId: string },
     dto: ReportDraftResultDto,
   ): Promise<ScorerDto[] | undefined> {
-    const scorers = (dto.scorers ?? []).filter((entry) => (entry.goals ?? 0) > 0 || (entry.assists ?? 0) > 0);
+    const scorers = (dto.scorers ?? []).filter(
+      (entry) => (entry.goals ?? 0) > 0 || (entry.assists ?? 0) > 0,
+    );
     if (scorers.length === 0) return undefined;
 
     const players = await this.prisma.draftPlayer.findMany({
@@ -280,14 +365,23 @@ export class DraftFixtureService {
     let awayGoals = 0;
     for (const entry of scorers) {
       const player = byId.get(entry.playerId);
-      if (!player) throw new BadRequestException('Algum jogador da lista de gols não existe.');
+      if (!player)
+        throw new BadRequestException(
+          'Algum jogador da lista de gols não existe.',
+        );
       if (player.rosterId === match.homeRosterId) homeGoals += entry.goals ?? 0;
-      else if (player.rosterId === match.awayRosterId) awayGoals += entry.goals ?? 0;
-      else throw new BadRequestException(`${player.name} não joga por nenhum dos dois elencos.`);
+      else if (player.rosterId === match.awayRosterId)
+        awayGoals += entry.goals ?? 0;
+      else
+        throw new BadRequestException(
+          `${player.name} não joga por nenhum dos dois elencos.`,
+        );
     }
 
     if (homeGoals > dto.homeScore || awayGoals > dto.awayScore) {
-      throw new BadRequestException('A soma dos gols dos autores passou do placar informado.');
+      throw new BadRequestException(
+        'A soma dos gols dos autores passou do placar informado.',
+      );
     }
     return scorers;
   }
@@ -318,15 +412,55 @@ export class DraftFixtureService {
           },
         });
 
-        await this.applyRosterStats(tx, match.league, match.homeRosterId, homeScore, awayScore);
-        await this.applyRosterStats(tx, match.league, match.awayRosterId, awayScore, homeScore);
-        await this.creditRound(tx, match.league, match.homeRosterId, homeScore, awayScore, match.round);
-        await this.creditRound(tx, match.league, match.awayRosterId, awayScore, homeScore, match.round);
-        await this.paySalaries(tx, match.league, match.homeRosterId, match.round);
-        await this.paySalaries(tx, match.league, match.awayRosterId, match.round);
+        await this.applyRosterStats(
+          tx,
+          match.league,
+          match.homeRosterId,
+          homeScore,
+          awayScore,
+        );
+        await this.applyRosterStats(
+          tx,
+          match.league,
+          match.awayRosterId,
+          awayScore,
+          homeScore,
+        );
+        await this.creditRound(
+          tx,
+          match.league,
+          match.homeRosterId,
+          homeScore,
+          awayScore,
+          match.round,
+        );
+        await this.creditRound(
+          tx,
+          match.league,
+          match.awayRosterId,
+          awayScore,
+          homeScore,
+          match.round,
+        );
+        await this.paySalaries(
+          tx,
+          match.league,
+          match.homeRosterId,
+          match.round,
+        );
+        await this.paySalaries(
+          tx,
+          match.league,
+          match.awayRosterId,
+          match.round,
+        );
         if (performances) await this.applyPerformances(tx, performances);
         else {
-          await this.bumpAppearances(tx, match.homeRosterId, match.awayRosterId);
+          await this.bumpAppearances(
+            tx,
+            match.homeRosterId,
+            match.awayRosterId,
+          );
           await this.applyScorers(tx, scorers);
         }
         await this.advanceRound(tx, match.league.id);
@@ -355,7 +489,9 @@ export class DraftFixtureService {
         losses: { increment: !isWin && !isDraw ? 1 : 0 },
         goalsFor: { increment: scored },
         goalsAgainst: { increment: conceded },
-        points: { increment: isWin ? league.pointsWin : isDraw ? league.pointsDraw : 0 },
+        points: {
+          increment: isWin ? league.pointsWin : isDraw ? league.pointsDraw : 0,
+        },
       },
     });
   }
@@ -369,8 +505,18 @@ export class DraftFixtureService {
     conceded: number,
     round: number,
   ) {
-    const amount = scored > conceded ? league.coinsWin : scored === conceded ? league.coinsDraw : league.coinsLoss;
-    const label = scored > conceded ? 'Vitória' : scored === conceded ? 'Empate' : 'Derrota';
+    const amount =
+      scored > conceded
+        ? league.coinsWin
+        : scored === conceded
+          ? league.coinsDraw
+          : league.coinsLoss;
+    const label =
+      scored > conceded
+        ? 'Vitória'
+        : scored === conceded
+          ? 'Empate'
+          : 'Derrota';
     await this.budget.credit(
       {
         leagueId: league.id,
@@ -393,7 +539,10 @@ export class DraftFixtureService {
     round: number,
   ) {
     if (!league.paySalaries) return;
-    const wages = await tx.draftPlayer.aggregate({ where: { rosterId }, _sum: { salary: true } });
+    const wages = await tx.draftPlayer.aggregate({
+      where: { rosterId },
+      _sum: { salary: true },
+    });
     await this.budget.charge(
       {
         leagueId: league.id,
@@ -409,14 +558,23 @@ export class DraftFixtureService {
 
   /// Nota da partida virando história do jogador: média, forma e, de vez em
   /// quando, um ponto de atributo para cima ou para baixo.
-  private async applyPerformances(tx: Prisma.TransactionClient, performances: PlayerPerformance[]) {
+  private async applyPerformances(
+    tx: Prisma.TransactionClient,
+    performances: PlayerPerformance[],
+  ) {
     const now = new Date();
 
     for (const performance of performances) {
-      const player = await tx.draftPlayer.findUnique({ where: { id: performance.playerId } });
+      const player = await tx.draftPlayer.findUnique({
+        where: { id: performance.playerId },
+      });
       if (!player) continue;
 
-      const ratingAvg = nextRatingAvg(player.rating, player.appearances, performance.rating);
+      const ratingAvg = nextRatingAvg(
+        player.rating,
+        player.appearances,
+        performance.rating,
+      );
       const change = attributeChange(
         {
           position: player.position,
@@ -440,13 +598,21 @@ export class DraftFixtureService {
           rating: ratingAvg,
           lastRating: performance.rating,
           form: nextForm(player.form, performance.rating),
-          ...(attributes ? { ...attributes, overall: overallFromAttributes(player.position, attributes) } : {}),
+          ...(attributes
+            ? {
+                ...attributes,
+                overall: overallFromAttributes(player.position, attributes),
+              }
+            : {}),
         },
       });
     }
   }
 
-  private async applyScorers(tx: Prisma.TransactionClient, scorers?: ScorerDto[]) {
+  private async applyScorers(
+    tx: Prisma.TransactionClient,
+    scorers?: ScorerDto[],
+  ) {
     for (const entry of scorers ?? []) {
       await tx.draftPlayer.update({
         where: { id: entry.playerId },
@@ -458,7 +624,11 @@ export class DraftFixtureService {
     }
   }
 
-  private async bumpAppearances(tx: Prisma.TransactionClient, homeRosterId: string, awayRosterId: string) {
+  private async bumpAppearances(
+    tx: Prisma.TransactionClient,
+    homeRosterId: string,
+    awayRosterId: string,
+  ) {
     await tx.draftPlayer.updateMany({
       where: { rosterId: { in: [homeRosterId, awayRosterId] }, starter: true },
       data: { appearances: { increment: 1 } },
@@ -482,12 +652,17 @@ export class DraftFixtureService {
   private decodeImage(imageBase64: string, mimeType?: string) {
     const resolved = (mimeType ?? 'image/jpeg').toLowerCase();
     if (!ALLOWED_MIME_TYPES.includes(resolved)) {
-      throw new BadRequestException('Formato de imagem não suportado. Use JPEG, PNG ou WebP.');
+      throw new BadRequestException(
+        'Formato de imagem não suportado. Use JPEG, PNG ou WebP.',
+      );
     }
-    const payload = imageBase64.includes(',') ? imageBase64.slice(imageBase64.indexOf(',') + 1) : imageBase64;
+    const payload = imageBase64.includes(',')
+      ? imageBase64.slice(imageBase64.indexOf(',') + 1)
+      : imageBase64;
     const buffer = Buffer.from(payload, 'base64');
     if (buffer.length === 0) throw new BadRequestException('Imagem inválida.');
-    if (buffer.length > MAX_IMAGE_BYTES) throw new BadRequestException('A imagem precisa ter no máximo 3MB.');
+    if (buffer.length > MAX_IMAGE_BYTES)
+      throw new BadRequestException('A imagem precisa ter no máximo 3MB.');
     return { buffer, mimeType: resolved };
   }
 }

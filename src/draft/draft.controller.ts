@@ -15,7 +15,10 @@ import {
 } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { AuthGuard } from '../auth/guards/auth.guard';
-import { PermissionGuard, RequirePermissions } from '../access/permission.guard';
+import {
+  PermissionGuard,
+  RequirePermissions,
+} from '../access/permission.guard';
 import { RoleGuard } from '../auth/guards/role.guard';
 import { ActorService } from '../common/actor.service';
 import { Roles } from '../decorators/roles.decorator';
@@ -84,7 +87,11 @@ export class DraftController {
   }
 
   @Patch(':id')
-  async update(@Req() req: AuthedRequest, @Param('id') id: string, @Body() dto: UpdateDraftLeagueDto) {
+  async update(
+    @Req() req: AuthedRequest,
+    @Param('id') id: string,
+    @Body() dto: UpdateDraftLeagueDto,
+  ) {
     return this.draft.update(id, dto, await this.me(req));
   }
 
@@ -94,7 +101,11 @@ export class DraftController {
   }
 
   @Post(':id/join')
-  async join(@Req() req: AuthedRequest, @Param('id') id: string, @Body() dto: JoinDraftDto) {
+  async join(
+    @Req() req: AuthedRequest,
+    @Param('id') id: string,
+    @Body() dto: JoinDraftDto,
+  ) {
     return this.draft.join(id, dto, await this.me(req));
   }
 
@@ -104,7 +115,11 @@ export class DraftController {
   }
 
   @Post(':id/rosters/vacant')
-  async addVacantRosters(@Req() req: AuthedRequest, @Param('id') id: string, @Body() dto: AddVacantRostersDto) {
+  async addVacantRosters(
+    @Req() req: AuthedRequest,
+    @Param('id') id: string,
+    @Body() dto: AddVacantRostersDto,
+  ) {
     return this.draft.addVacantRosters(id, dto.count ?? 1, await this.me(req));
   }
 
@@ -119,17 +134,29 @@ export class DraftController {
   }
 
   @Post(':id/players')
-  async importPlayers(@Req() req: AuthedRequest, @Param('id') id: string, @Body() dto: ImportPlayersDto) {
+  async importPlayers(
+    @Req() req: AuthedRequest,
+    @Param('id') id: string,
+    @Body() dto: ImportPlayersDto,
+  ) {
     return this.draft.importPlayers(id, dto, await this.me(req));
   }
 
   @Delete(':id/players/:playerId')
-  async removePlayer(@Req() req: AuthedRequest, @Param('id') id: string, @Param('playerId') playerId: string) {
+  async removePlayer(
+    @Req() req: AuthedRequest,
+    @Param('id') id: string,
+    @Param('playerId') playerId: string,
+  ) {
     return this.draft.removePlayer(id, playerId, await this.me(req));
   }
 
   @Post(':id/staff')
-  async setStaff(@Req() req: AuthedRequest, @Param('id') id: string, @Body() dto: DraftStaffDto) {
+  async setStaff(
+    @Req() req: AuthedRequest,
+    @Param('id') id: string,
+    @Body() dto: DraftStaffDto,
+  ) {
     return this.draft.setStaff(id, dto, await this.me(req));
   }
 
@@ -158,7 +185,12 @@ export class DraftController {
     @Query('shuffle') shuffle?: string,
     @Query('force') force?: string,
   ) {
-    return this.picks.startDraft(id, await this.me(req), shuffle !== 'false', force === 'true');
+    return this.picks.startDraft(
+      id,
+      await this.me(req),
+      shuffle !== 'false',
+      force === 'true',
+    );
   }
 
   @Get(':id/waiting-room')
@@ -167,32 +199,52 @@ export class DraftController {
   }
 
   @Post(':id/ready')
-  async setReady(@Req() req: AuthedRequest, @Param('id') id: string, @Body() dto: SetReadyDto) {
+  async setReady(
+    @Req() req: AuthedRequest,
+    @Param('id') id: string,
+    @Body() dto: SetReadyDto,
+  ) {
     return this.picks.setReady(id, dto.ready, await this.me(req));
   }
 
   @Post(':id/pick')
-  async pick(@Req() req: AuthedRequest, @Param('id') id: string, @Body() dto: MakePickDto) {
+  async pick(
+    @Req() req: AuthedRequest,
+    @Param('id') id: string,
+    @Body() dto: MakePickDto,
+  ) {
     return this.picks.pick(id, dto.playerId, await this.me(req), dto.rosterId);
   }
 
   @Post(':id/lineup')
-  async lineup(@Req() req: AuthedRequest, @Param('id') id: string, @Body() dto: SetLineupDto) {
+  async lineup(
+    @Req() req: AuthedRequest,
+    @Param('id') id: string,
+    @Body() dto: SetLineupDto,
+  ) {
     return this.draft.setLineup(id, dto, await this.me(req));
   }
 
   @Post(':id/tactics')
-  async tactics(@Req() req: AuthedRequest, @Param('id') id: string, @Body() dto: SetTacticsDto) {
+  async tactics(
+    @Req() req: AuthedRequest,
+    @Param('id') id: string,
+    @Body() dto: SetTacticsDto,
+  ) {
     return this.draft.setTactics(id, dto, await this.me(req));
   }
 
   @Get(':id/budget')
-  async budget(@Req() req: AuthedRequest, @Param('id') id: string, @Query('rosterId') rosterId?: string) {
+  async budget(
+    @Req() req: AuthedRequest,
+    @Param('id') id: string,
+    @Query('rosterId') rosterId?: string,
+  ) {
     const actor = await this.me(req);
     const access = await this.access.of(id, actor);
     const target = rosterId && access.canModerate ? rosterId : access.rosterId;
     if (!target) throw new NotFoundException('Você não tem elenco nesta liga.');
-    return this.budgets.statement(target);
+    return this.budgets.statement(id, target);
   }
 
   @Get(':id/base-market')
@@ -201,8 +253,16 @@ export class DraftController {
   }
 
   @Post(':id/base-market/sign')
-  async signFromBase(@Req() req: AuthedRequest, @Param('id') id: string, @Body() dto: SignFromBaseDto) {
-    return this.market.signFromBase(id, dto.catalogPlayerId, await this.me(req));
+  async signFromBase(
+    @Req() req: AuthedRequest,
+    @Param('id') id: string,
+    @Body() dto: SignFromBaseDto,
+  ) {
+    return this.market.signFromBase(
+      id,
+      dto.catalogPlayerId,
+      await this.me(req),
+    );
   }
 
   @Get(':id/auctions')
@@ -211,7 +271,11 @@ export class DraftController {
   }
 
   @Post(':id/auctions')
-  async createAuction(@Req() req: AuthedRequest, @Param('id') id: string, @Body() dto: CreateAuctionDto) {
+  async createAuction(
+    @Req() req: AuthedRequest,
+    @Param('id') id: string,
+    @Body() dto: CreateAuctionDto,
+  ) {
     return this.auctions_.create(id, dto, await this.me(req));
   }
 
@@ -226,7 +290,11 @@ export class DraftController {
   }
 
   @Delete(':id/auctions/:auctionId')
-  async cancelAuction(@Req() req: AuthedRequest, @Param('id') id: string, @Param('auctionId') auctionId: string) {
+  async cancelAuction(
+    @Req() req: AuthedRequest,
+    @Param('id') id: string,
+    @Param('auctionId') auctionId: string,
+  ) {
     return this.auctions_.cancel(id, auctionId, await this.me(req));
   }
 
@@ -236,7 +304,11 @@ export class DraftController {
   }
 
   @Post(':id/offers')
-  async createOffer(@Req() req: AuthedRequest, @Param('id') id: string, @Body() dto: CreateOfferDto) {
+  async createOffer(
+    @Req() req: AuthedRequest,
+    @Param('id') id: string,
+    @Body() dto: CreateOfferDto,
+  ) {
     return this.market.createOffer(id, dto, await this.me(req));
   }
 
@@ -251,17 +323,29 @@ export class DraftController {
   }
 
   @Delete(':id/offers/:offerId')
-  async cancelOffer(@Req() req: AuthedRequest, @Param('id') id: string, @Param('offerId') offerId: string) {
+  async cancelOffer(
+    @Req() req: AuthedRequest,
+    @Param('id') id: string,
+    @Param('offerId') offerId: string,
+  ) {
     return this.market.cancel(id, offerId, await this.me(req));
   }
 
   @Post(':id/players/:playerId/release')
-  async release(@Req() req: AuthedRequest, @Param('id') id: string, @Param('playerId') playerId: string) {
+  async release(
+    @Req() req: AuthedRequest,
+    @Param('id') id: string,
+    @Param('playerId') playerId: string,
+  ) {
     return this.market.release(id, playerId, await this.me(req));
   }
 
   @Post(':id/matches/:matchId/simulate')
-  async simulate(@Req() req: AuthedRequest, @Param('id') id: string, @Param('matchId') matchId: string) {
+  async simulate(
+    @Req() req: AuthedRequest,
+    @Param('id') id: string,
+    @Param('matchId') matchId: string,
+  ) {
     await this.access.requireModerate(id, await this.me(req));
     return this.simulation.playOne(id, matchId);
   }
@@ -298,12 +382,27 @@ export class DraftController {
     @Param('proofId') proofId: string,
     @Body() dto: ReviewDraftProofDto,
   ) {
-    return this.fixtures.reviewProof(id, proofId, dto.approve, dto.note, await this.me(req));
+    return this.fixtures.reviewProof(
+      id,
+      proofId,
+      dto.approve,
+      dto.note,
+      await this.me(req),
+    );
   }
 
   @Get(':id/proofs/:proofId/image')
-  async proofImage(@Param('proofId') proofId: string, @Res() res: Response) {
-    const proof = await this.fixtures.proofImage(proofId);
+  async proofImage(
+    @Req() req: AuthedRequest,
+    @Param('id') id: string,
+    @Param('proofId') proofId: string,
+    @Res() res: Response,
+  ) {
+    const proof = await this.fixtures.proofImage(
+      id,
+      proofId,
+      await this.me(req),
+    );
     res.setHeader('Content-Type', proof.mimeType);
     res.setHeader('Cache-Control', 'private, max-age=3600');
     res.send(Buffer.from(proof.image));

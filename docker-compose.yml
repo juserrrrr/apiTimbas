@@ -17,6 +17,7 @@ services:
       TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:-1}
       DATABASE_URL: postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-admin}@db:5432/${POSTGRES_DB:-timbas_db}?schema=public
       WEB_URL: ${WEB_URL:?WEB_URL is required}
+      AUTH_COOKIE_DOMAIN: ${AUTH_COOKIE_DOMAIN:-}
       EXTRA_ALLOWED_ORIGINS: ${EXTRA_ALLOWED_ORIGINS:-}
       JWT_SECRET: ${JWT_SECRET:-}
       RIOT_API_KEY: ${RIOT_API_KEY:-}

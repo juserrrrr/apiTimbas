@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { DraftBudgetTxType, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { formatMoney } from '../football/market-value';
@@ -24,7 +28,10 @@ export class DraftBudgetService {
   /// Recomeço do caixa: todo elenco volta para o valor inicial da liga e o
   /// extrato anterior é apagado, porque é outra temporada.
   async seed(leagueId: string, startingBudget: number, db: Db = this.prisma) {
-    const rosters = await db.draftRoster.findMany({ where: { leagueId }, select: { id: true } });
+    const rosters = await db.draftRoster.findMany({
+      where: { leagueId },
+      select: { id: true },
+    });
 
     await db.draftBudgetEntry.deleteMany({ where: { leagueId } });
     for (const roster of rosters) {
@@ -77,7 +84,9 @@ export class DraftBudgetService {
         `Caixa insuficiente: você tem ${formatMoney(current.budget)} e precisa de ${formatMoney(movement.amount)}.`,
       );
     }
-    const roster = await db.draftRoster.findUniqueOrThrow({ where: { id: movement.rosterId } });
+    const roster = await db.draftRoster.findUniqueOrThrow({
+      where: { id: movement.rosterId },
+    });
     return this.record(db, movement, -movement.amount, roster.budget);
   }
 
@@ -108,29 +117,52 @@ export class DraftBudgetService {
       db,
     );
     await this.credit(
-      { leagueId: from.leagueId, rosterId: toRosterId, amount, type: DraftBudgetTxType.TRANSFER_IN, description },
+      {
+        leagueId: from.leagueId,
+        rosterId: toRosterId,
+        amount,
+        type: DraftBudgetTxType.TRANSFER_IN,
+        description,
+      },
       db,
     );
   }
 
-  async statement(rosterId: string) {
-    const roster = await this.prisma.draftRoster.findUniqueOrThrow({
-      where: { id: rosterId },
-      select: { id: true, name: true, budget: true, earned: true, spent: true, leagueId: true },
+  async statement(leagueId: string, rosterId: string) {
+    const roster = await this.prisma.draftRoster.findFirst({
+      where: { id: rosterId, leagueId },
+      select: {
+        id: true,
+        name: true,
+        budget: true,
+        earned: true,
+        spent: true,
+        leagueId: true,
+      },
     });
+    if (!roster)
+      throw new NotFoundException('Elenco nÃ£o encontrado nesta liga.');
     const [entries, wages] = await Promise.all([
       this.prisma.draftBudgetEntry.findMany({
-        where: { rosterId },
+        where: { rosterId, leagueId },
         orderBy: { createdAt: 'desc' },
         take: 60,
       }),
-      this.prisma.draftPlayer.aggregate({ where: { rosterId }, _sum: { salary: true } }),
+      this.prisma.draftPlayer.aggregate({
+        where: { rosterId },
+        _sum: { salary: true },
+      }),
     ]);
 
     return { ...roster, wageBill: wages._sum.salary ?? 0, entries };
   }
 
-  private record(db: Db, movement: Movement, amount: number, balanceAfter: number) {
+  private record(
+    db: Db,
+    movement: Movement,
+    amount: number,
+    balanceAfter: number,
+  ) {
     return db.draftBudgetEntry.create({
       data: {
         leagueId: movement.leagueId,

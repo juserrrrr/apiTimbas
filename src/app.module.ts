@@ -43,7 +43,11 @@ import { StreamingModule } from './streaming/streaming.module';
         ttl: 60000,
         limit: 5,
         name: 'auth',
-        skipIf: () => process.env.ENV_TYPE !== 'PRODUCTION',
+        skipIf: (context) => {
+          if (process.env.ENV_TYPE !== 'PRODUCTION') return true;
+          const request = context.switchToHttp().getRequest();
+          return !request.path?.startsWith('/auth/');
+        },
       },
     ]),
     UserModule,

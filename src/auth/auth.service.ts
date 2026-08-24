@@ -6,12 +6,10 @@ import {
 } from '@nestjs/common';
 import { timingSafeEqual } from 'crypto';
 import { JwtService } from '@nestjs/jwt';
-import { AuthRegisterDto } from './dto/auth-register.dto';
 import * as bcrypt from 'bcrypt';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
 import { PrismaService } from '../prisma/prisma.service';
-import { UserService } from '../user/user.service';
 import { CreateBotDto } from './dto/create-bot.dto';
 import { Role } from '../enums/role.enum';
 import { UserStatus } from '@prisma/client';
@@ -22,7 +20,6 @@ export class AuthService {
   constructor(
     private readonly jwtService: JwtService,
     private readonly prisma: PrismaService,
-    private readonly userService: UserService,
     private readonly httpService: HttpService,
   ) {}
 
@@ -67,24 +64,54 @@ export class AuthService {
       this.prisma.user.findUnique({ where: { id: adminId } }),
       this.prisma.user.findUnique({ where: { id: targetUserId } }),
     ]);
-    if (!admin || admin.role !== Role.ADMIN) throw new ForbiddenException('Apenas administradores podem entrar como usuário.');
+    if (!admin || admin.role !== Role.ADMIN)
+      throw new ForbiddenException(
+        'Apenas administradores podem entrar como usuário.',
+      );
     if (!target) throw new UnauthorizedException('Usuário não encontrado.');
-    if (target.status !== UserStatus.APPROVED) throw new ForbiddenException('Só é possível entrar como usuário aprovado.');
-    if (target.id === admin.id || target.role === Role.ADMIN || target.role === Role.BOT) {
-      throw new ForbiddenException('Não é permitido entrar como administrador ou bot.');
+    if (target.status !== UserStatus.APPROVED)
+      throw new ForbiddenException(
+        'Só é possível entrar como usuário aprovado.',
+      );
+    if (
+      target.id === admin.id ||
+      target.role === Role.ADMIN ||
+      target.role === Role.BOT
+    ) {
+      throw new ForbiddenException(
+        'Não é permitido entrar como administrador ou bot.',
+      );
     }
-    const token = this.jwtService.sign({
-      id: String(target.id), name: target.name, email: target.email ?? '', role: target.role,
-      ...(target.discordId && { discordId: target.discordId }),
-      ...(target.avatar && { avatar: target.avatar }),
-      impersonatedBy: admin.id,
-      impersonatorName: admin.name,
-    }, { expiresIn: '30m', subject: String(target.id), issuer: 'ApiTimbasSignature' });
-    this.logger.warn(`Admin ${admin.id} started impersonating user ${target.id} for up to 30 minutes`);
-    return { token, user: { id: target.id, name: target.name }, expiresInSeconds: 1800 };
+    const token = this.jwtService.sign(
+      {
+        id: String(target.id),
+        name: target.name,
+        email: target.email ?? '',
+        role: target.role,
+        ...(target.discordId && { discordId: target.discordId }),
+        ...(target.avatar && { avatar: target.avatar }),
+        impersonatedBy: admin.id,
+        impersonatorName: admin.name,
+      },
+      {
+        expiresIn: '30m',
+        subject: String(target.id),
+        issuer: 'ApiTimbasSignature',
+      },
+    );
+    this.logger.warn(
+      `Admin ${admin.id} started impersonating user ${target.id} for up to 30 minutes`,
+    );
+    return {
+      token,
+      user: { id: target.id, name: target.name },
+      expiresInSeconds: 1800,
+    };
   }
 
-  async refresh(refreshToken: string) {
+  async refresh(refreshToken?: string) {
+    if (!refreshToken)
+      throw new UnauthorizedException('Refresh token not found');
     try {
       const decoded = this.jwtService.verify(refreshToken, {
         issuer: 'ApiTimbasRefresh',
@@ -95,6 +122,7 @@ export class AuthService {
       });
 
       if (!user) throw new UnauthorizedException('User not found');
+      this.assertCanEnter(user.status, user.statusNote);
 
       return this.createToken(
         user.id.toString(),
@@ -137,12 +165,47 @@ export class AuthService {
     }
   }
 
-  async register(authRegisterDto: AuthRegisterDto) {
-    const user = await this.userService.createUser(authRegisterDto);
-    if (typeof user === 'object') {
-      const { id, name, email, role } = user;
-      return this.createToken(id.toString(), name, email, role);
+  async validateSessionToken(token: string) {
+    const decoded = this.validateToken(token);
+    if (decoded.role === Role.BOT && decoded.sub === 'bot' && !decoded.botId)
+      return decoded;
+
+    const user = decoded.botId
+      ? await this.prisma.user.findUnique({
+          where: { discordId: decoded.botId },
+        })
+      : await this.prisma.user.findUnique({
+          where: { id: Number(decoded.sub) },
+        });
+    if (!user) throw new UnauthorizedException('User not found');
+    this.assertCanEnter(user.status, user.statusNote);
+    if (
+      decoded.botId &&
+      (user.role !== Role.BOT || user.discordId !== decoded.botId)
+    ) {
+      throw new UnauthorizedException('Bot session is no longer valid');
     }
+    if (decoded.impersonatedBy) {
+      const impersonator = await this.prisma.user.findUnique({
+        where: { id: Number(decoded.impersonatedBy) },
+      });
+      if (!impersonator || impersonator.role !== Role.ADMIN) {
+        throw new UnauthorizedException(
+          'Impersonation session is no longer valid',
+        );
+      }
+      this.assertCanEnter(impersonator.status, impersonator.statusNote);
+    }
+    return {
+      ...decoded,
+      id: String(user.id),
+      sub: String(user.id),
+      name: user.name,
+      email: user.email ?? '',
+      role: user.role,
+      discordId: user.discordId,
+      avatar: user.avatar ?? undefined,
+    };
   }
 
   async login(emailLogin: string, password: string, lastLoginIp?: string) {
@@ -159,6 +222,7 @@ export class AuthService {
     if (user.role !== Role.USER && user.role !== Role.ADMIN) {
       throw new UnauthorizedException('Only users and admins can login');
     }
+    this.assertCanEnter(user.status, user.statusNote);
 
     await this.prisma.user.update({
       where: { id: user.id },
@@ -258,13 +322,17 @@ export class AuthService {
 
     if (!user) {
       // Com aprovação ligada, quem chega fica na fila em vez de entrar direto.
-      const settings = await this.prisma.platformSettings.findUnique({ where: { id: 1 } });
+      const settings = await this.prisma.platformSettings.findUnique({
+        where: { id: 1 },
+      });
       user = await this.prisma.user.create({
         data: {
           discordId: discordUser.id,
           name: discordUser.username,
           role: Role.PLAYER,
-          status: settings?.requireApproval ? UserStatus.PENDING : UserStatus.APPROVED,
+          status: settings?.requireApproval
+            ? UserStatus.PENDING
+            : UserStatus.APPROVED,
           avatar: incomingAvatar,
           lastLoginAt: new Date(),
           ...(lastLoginIp && { lastLoginIp }),
@@ -272,7 +340,9 @@ export class AuthService {
       });
     } else {
       const updateData = {
-        ...(user.name !== discordUser.username && { name: discordUser.username }),
+        ...(user.name !== discordUser.username && {
+          name: discordUser.username,
+        }),
         ...(user.avatar !== incomingAvatar && { avatar: incomingAvatar }),
         lastLoginAt: new Date(),
         ...(lastLoginIp && { lastLoginIp }),
@@ -303,26 +373,13 @@ export class AuthService {
   private assertCanEnter(status: UserStatus, note: string | null) {
     if (status === UserStatus.APPROVED) return;
     if (status === UserStatus.BLOCKED) {
-      throw new ForbiddenException(note ?? 'Seu acesso foi bloqueado pela organização do Timbas.');
+      throw new ForbiddenException(
+        note ?? 'Seu acesso foi bloqueado pela organização do Timbas.',
+      );
     }
     throw new ForbiddenException(
-      note ?? 'Sua entrada está aguardando aprovação da organização do Timbas. Chame alguém no Discord.',
-    );
-  }
-
-  async getOrCreateDevUser() {
-    const devDiscordId = 'dev-user-local';
-    const user = await this.prisma.user.upsert({
-      where: { discordId: devDiscordId },
-      update: {},
-      create: { discordId: devDiscordId, name: 'Dev User', role: Role.PLAYER },
-    });
-    return this.createToken(
-      user.id.toString(),
-      user.name,
-      user.email ?? '',
-      user.role,
-      user.discordId,
+      note ??
+        'Sua entrada está aguardando aprovação da organização do Timbas. Chame alguém no Discord.',
     );
   }
 
@@ -334,7 +391,7 @@ export class AuthService {
       },
     });
 
-    if (!bot) {
+    if (!bot || bot.status !== UserStatus.APPROVED) {
       throw new UnauthorizedException('Bot not found');
     }
 

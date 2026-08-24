@@ -1,4 +1,9 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import {
   CompetitionGame,
   CompetitionRole,
@@ -38,7 +43,10 @@ import {
 } from './dto/tournament.dto';
 import { TournamentAccessService } from './tournament-access.service';
 
-const MANAGED_STATUSES: TournamentStatus[] = [TournamentStatus.DRAFT, TournamentStatus.REGISTRATION];
+const MANAGED_STATUSES: TournamentStatus[] = [
+  TournamentStatus.DRAFT,
+  TournamentStatus.REGISTRATION,
+];
 
 // Espelham os defaults do schema, usados para validar o plano de grupos antes de
 // o registro existir.
@@ -54,7 +62,9 @@ export class TournamentService {
 
   async create(dto: CreateTournamentDto, actor: Actor) {
     if (!dto.startsAt) {
-      throw new BadRequestException('Defina o horário de início do campeonato.');
+      throw new BadRequestException(
+        'Defina o horário de início do campeonato.',
+      );
     }
     if (!dto.registrationEndsAt) {
       throw new BadRequestException('Defina quando as inscrições terminam.');
@@ -66,19 +76,33 @@ export class TournamentService {
       legs: dto.legs ?? DEFAULTS.legs,
       thirdPlace: dto.thirdPlace ?? false,
     });
-    this.assertWindow(dto.registrationEndsAt, dto.autoStartOnClose, dto.startsAt);
+    this.assertWindow(
+      dto.registrationEndsAt,
+      dto.autoStartOnClose,
+      dto.startsAt,
+    );
 
     const slug = await this.uniqueSlug(dto.name);
     const invitedUsers = dto.invitedUsernames?.length
       ? await this.prisma.user.findMany({
-          where: { OR: dto.invitedUsernames.map((name) => ({ name: { equals: name, mode: 'insensitive' } })) },
+          where: {
+            OR: dto.invitedUsernames.map((name) => ({
+              name: { equals: name, mode: 'insensitive' },
+            })),
+          },
           select: { id: true, name: true },
         })
       : [];
     if (invitedUsers.length !== new Set(dto.invitedUsernames ?? []).size) {
-      const found = new Set(invitedUsers.map((user) => user.name.toLocaleLowerCase('pt-BR')));
-      const missing = (dto.invitedUsernames ?? []).filter((name) => !found.has(name.toLocaleLowerCase('pt-BR')));
-      throw new BadRequestException(`Usuário não encontrado: ${missing.join(', ')}.`);
+      const found = new Set(
+        invitedUsers.map((user) => user.name.toLocaleLowerCase('pt-BR')),
+      );
+      const missing = (dto.invitedUsernames ?? []).filter(
+        (name) => !found.has(name.toLocaleLowerCase('pt-BR')),
+      );
+      throw new BadRequestException(
+        `Usuário não encontrado: ${missing.join(', ')}.`,
+      );
     }
     return this.prisma.tournament.create({
       data: {
@@ -87,13 +111,22 @@ export class TournamentService {
         slug,
         createdByDiscordId: actor.discordId,
         status: TournamentStatus.REGISTRATION,
-        inviteCode: dto.accessMode === 'INVITE_ONLY' ? randomBytes(24).toString('base64url') : null,
+        inviteCode:
+          dto.accessMode === 'INVITE_ONLY'
+            ? randomBytes(24).toString('base64url')
+            : null,
         staff: { create: { userId: actor.id, role: CompetitionRole.OWNER } },
         invites: {
-          create: invitedUsers.filter((user) => user.id !== actor.id).map((user) => ({ userId: user.id, invitedById: actor.id })),
+          create: invitedUsers
+            .filter((user) => user.id !== actor.id)
+            .map((user) => ({ userId: user.id, invitedById: actor.id })),
         },
       },
-      include: { staff: { include: { user: { select: { id: true, name: true, avatar: true } } } } },
+      include: {
+        staff: {
+          include: { user: { select: { id: true, name: true, avatar: true } } },
+        },
+      },
     });
   }
 
@@ -101,14 +134,16 @@ export class TournamentService {
     const where: Prisma.TournamentWhereInput = {
       ...(query.status ? { status: query.status } : {}),
       ...(query.game ? { game: query.game } : {}),
-      ...(actor.role === 'ADMIN' ? {} : {
-        OR: [
-          { accessMode: 'PUBLIC' as const },
-          { staff: { some: { userId: actor.id } } },
-          { teams: { some: { members: { some: { userId: actor.id } } } } },
-          { invites: { some: { userId: actor.id } } },
-        ],
-      }),
+      ...(actor.role === 'ADMIN'
+        ? {}
+        : {
+            OR: [
+              { accessMode: 'PUBLIC' as const },
+              { staff: { some: { userId: actor.id } } },
+              { teams: { some: { members: { some: { userId: actor.id } } } } },
+              { invites: { some: { userId: actor.id } } },
+            ],
+          }),
     };
 
     const [items, total] = await Promise.all([
@@ -121,7 +156,9 @@ export class TournamentService {
           _count: { select: { teams: true, matches: true } },
           staff: {
             where: { role: CompetitionRole.OWNER },
-            include: { user: { select: { id: true, name: true, avatar: true } } },
+            include: {
+              user: { select: { id: true, name: true, avatar: true } },
+            },
           },
         },
       }),
@@ -148,15 +185,44 @@ export class TournamentService {
       include: {
         teams: {
           orderBy: [{ points: 'desc' }, { seed: 'asc' }, { name: 'asc' }],
-          include: { members: { include: { user: { select: { id: true, name: true, avatar: true } } } } },
+          include: {
+            members: {
+              include: {
+                user: { select: { id: true, name: true, avatar: true } },
+              },
+            },
+          },
         },
         groups: { orderBy: { order: 'asc' } },
-        staff: { include: { user: { select: { id: true, name: true, avatar: true } } } },
+        staff: {
+          include: { user: { select: { id: true, name: true, avatar: true } } },
+        },
         matches: {
-          orderBy: [{ phase: 'asc' }, { round: 'asc' }, { position: 'asc' }, { leg: 'asc' }],
+          orderBy: [
+            { phase: 'asc' },
+            { round: 'asc' },
+            { position: 'asc' },
+            { leg: 'asc' },
+          ],
           include: {
-            homeTeam: { select: { id: true, name: true, tag: true, logoUrl: true, seed: true } },
-            awayTeam: { select: { id: true, name: true, tag: true, logoUrl: true, seed: true } },
+            homeTeam: {
+              select: {
+                id: true,
+                name: true,
+                tag: true,
+                logoUrl: true,
+                seed: true,
+              },
+            },
+            awayTeam: {
+              select: {
+                id: true,
+                name: true,
+                tag: true,
+                logoUrl: true,
+                seed: true,
+              },
+            },
             proofs: {
               orderBy: { createdAt: 'desc' },
               select: {
@@ -186,7 +252,9 @@ export class TournamentService {
     if (!tournament) throw new NotFoundException('Campeonato não encontrado.');
 
     const access = await this.access.of(id, actor);
-    const matches = tournament.matches.map(({ eaRaw: _eaRaw, ...match }) => match);
+    const matches = tournament.matches.map(
+      ({ eaRaw: _eaRaw, ...match }) => match,
+    );
     const publicTournament = tournament;
     return {
       ...publicTournament,
@@ -201,23 +269,44 @@ export class TournamentService {
     const tournament = await this.access.requireExists(id);
 
     const settings = this.settingsFrom(dto);
-    if (tournament.status === TournamentStatus.RUNNING || tournament.status === TournamentStatus.FINISHED) {
-      for (const locked of ['format', 'maxTeams', 'groupCount', 'advancePerGroup', 'legs', 'thirdPlace'] as const) {
+    if (
+      tournament.status === TournamentStatus.RUNNING ||
+      tournament.status === TournamentStatus.FINISHED
+    ) {
+      for (const locked of [
+        'format',
+        'maxTeams',
+        'groupCount',
+        'advancePerGroup',
+        'legs',
+        'thirdPlace',
+      ] as const) {
         delete settings[locked];
       }
     }
 
     // Só revalida quando a edição mexe no plano: durante as inscrições o total de
     // times ainda muda e nada mais precisa ficar preso a isso.
-    const planKeys = ['format', 'maxTeams', 'groupCount', 'advancePerGroup', 'legs', 'thirdPlace'] as const;
+    const planKeys = [
+      'format',
+      'maxTeams',
+      'groupCount',
+      'advancePerGroup',
+      'legs',
+      'thirdPlace',
+    ] as const;
     if (planKeys.some((key) => key in settings)) {
-      this.assertPlan((settings.format as TournamentFormat) ?? tournament.format, {
-        teamCount: (settings.maxTeams as number) ?? tournament.maxTeams,
-        groupCount: (settings.groupCount as number) ?? tournament.groupCount,
-        advancePerGroup: (settings.advancePerGroup as number) ?? tournament.advancePerGroup,
-        legs: (settings.legs as number) ?? tournament.legs,
-        thirdPlace: (settings.thirdPlace as boolean) ?? tournament.thirdPlace,
-      });
+      this.assertPlan(
+        (settings.format as TournamentFormat) ?? tournament.format,
+        {
+          teamCount: (settings.maxTeams as number) ?? tournament.maxTeams,
+          groupCount: (settings.groupCount as number) ?? tournament.groupCount,
+          advancePerGroup:
+            (settings.advancePerGroup as number) ?? tournament.advancePerGroup,
+          legs: (settings.legs as number) ?? tournament.legs,
+          thirdPlace: (settings.thirdPlace as boolean) ?? tournament.thirdPlace,
+        },
+      );
     }
     this.assertWindow(
       dto.registrationEndsAt ?? tournament.registrationEndsAt ?? undefined,
@@ -231,7 +320,8 @@ export class TournamentService {
         ...settings,
         ...(dto.name ? { name: dto.name } : {}),
         ...(dto.status ? { status: dto.status } : {}),
-        ...(dto.accessMode === 'INVITE_ONLY' && tournament.accessMode !== 'INVITE_ONLY'
+        ...(dto.accessMode === 'INVITE_ONLY' &&
+        tournament.accessMode !== 'INVITE_ONLY'
           ? { inviteCode: randomBytes(24).toString('base64url') }
           : {}),
         ...(dto.accessMode === 'PUBLIC' ? { inviteCode: null } : {}),
@@ -248,54 +338,94 @@ export class TournamentService {
   async addTeam(id: string, dto: AddTeamDto, actor: Actor) {
     const tournament = await this.access.requireExists(id);
     const access = await this.access.of(id, actor);
-    if (!access.canView) throw new ForbiddenException('Este campeonato é fechado e exige convite.');
+    if (!access.canView)
+      throw new ForbiddenException(
+        'Este campeonato é fechado e exige convite.',
+      );
 
     if (!access.canModerate) {
       if (tournament.status !== TournamentStatus.REGISTRATION) {
-        throw new ForbiddenException('As inscrições deste campeonato estão fechadas.');
+        throw new ForbiddenException(
+          'As inscrições deste campeonato estão fechadas.',
+        );
       }
       if (access.teamIds.length > 0) {
-        throw new BadRequestException('Você já tem um time inscrito neste campeonato.');
+        throw new BadRequestException(
+          'Você já tem um time inscrito neste campeonato.',
+        );
       }
     }
     if (!MANAGED_STATUSES.includes(tournament.status)) {
-      throw new BadRequestException('O campeonato já começou, não dá mais para inscrever times.');
+      throw new BadRequestException(
+        'O campeonato já começou, não dá mais para inscrever times.',
+      );
     }
 
-    if (tournament.game === CompetitionGame.EA_FC && !access.canModerate && !dto.eaClubId) {
-      throw new BadRequestException('Valide o clube na EA antes de entrar no campeonato.');
+    if (
+      tournament.game === CompetitionGame.EA_FC &&
+      !access.canModerate &&
+      !dto.eaClubId
+    ) {
+      throw new BadRequestException(
+        'Valide o clube na EA antes de entrar no campeonato.',
+      );
     }
     const eaClub = dto.eaClubId
-      ? await this.eaClubs.requireTournamentClub(dto.eaClubId, dto.eaPlatform ?? 'common-gen5')
+      ? await this.eaClubs.requireTournamentClub(
+          dto.eaClubId,
+          dto.eaPlatform ?? 'common-gen5',
+        )
       : null;
 
-    const teamCount = await this.prisma.tournamentTeam.count({ where: { tournamentId: id } });
+    const teamCount = await this.prisma.tournamentTeam.count({
+      where: { tournamentId: id },
+    });
     if (teamCount >= tournament.maxTeams) {
-      throw new BadRequestException(`O campeonato já atingiu o limite de ${tournament.maxTeams} times.`);
+      throw new BadRequestException(
+        `O campeonato já atingiu o limite de ${tournament.maxTeams} times.`,
+      );
     }
 
-    const captainUser = access.canModerate && dto.captainUsername
-      ? await this.prisma.user.findFirst({
-          where: { name: { equals: dto.captainUsername, mode: 'insensitive' } },
-          select: { id: true, discordId: true },
-        })
-      : null;
+    const captainUser =
+      access.canModerate && dto.captainUsername
+        ? await this.prisma.user.findFirst({
+            where: {
+              name: { equals: dto.captainUsername, mode: 'insensitive' },
+            },
+            select: { id: true, discordId: true },
+          })
+        : null;
     if (access.canModerate && dto.captainUsername && !captainUser) {
-      throw new BadRequestException('Não encontramos um usuário com esse nome exato.');
+      throw new BadRequestException(
+        'Não encontramos um usuário com esse nome exato.',
+      );
     }
     const memberIds = access.canModerate
-      ? captainUser ? [captainUser.id, ...(dto.memberIds ?? []).filter((id) => id !== captainUser.id)] : (dto.memberIds ?? [])
+      ? captainUser
+        ? [
+            captainUser.id,
+            ...(dto.memberIds ?? []).filter((id) => id !== captainUser.id),
+          ]
+        : (dto.memberIds ?? [])
       : [actor.id];
     if (memberIds.length === 0) {
-      throw new BadRequestException('Todo time precisa ter um usuário responsável vinculado.');
+      throw new BadRequestException(
+        'Todo time precisa ter um usuário responsável vinculado.',
+      );
     }
     if (new Set(memberIds).size !== memberIds.length) {
-      throw new BadRequestException('O mesmo jogador apareceu duas vezes na lista do time.');
+      throw new BadRequestException(
+        'O mesmo jogador apareceu duas vezes na lista do time.',
+      );
     }
     if (memberIds.length > tournament.teamSize) {
-      throw new BadRequestException(`Este campeonato é ${tournament.teamSize} por time.`);
+      throw new BadRequestException(
+        `Este campeonato é ${tournament.teamSize} por time.`,
+      );
     }
-    const existingMembers = await this.prisma.user.count({ where: { id: { in: memberIds } } });
+    const existingMembers = await this.prisma.user.count({
+      where: { id: { in: memberIds } },
+    });
     if (existingMembers !== memberIds.length) {
       throw new BadRequestException('Algum jogador da lista não existe.');
     }
@@ -304,7 +434,9 @@ export class TournamentService {
       include: { user: { select: { name: true } } },
     });
     if (alreadyRegistered) {
-      throw new BadRequestException(`${alreadyRegistered.user.name} já está associado a outro time neste campeonato.`);
+      throw new BadRequestException(
+        `${alreadyRegistered.user.name} já está associado a outro time neste campeonato.`,
+      );
     }
 
     return this.prisma.tournamentTeam.create({
@@ -318,28 +450,45 @@ export class TournamentService {
         seed: teamCount + 1,
         ownerDiscordId: captainUser?.discordId ?? actor.discordId,
         members: {
-          create: memberIds.map((userId, index) => ({ userId, captain: index === 0 })),
+          create: memberIds.map((userId, index) => ({
+            userId,
+            captain: index === 0,
+          })),
         },
       },
-      include: { members: { include: { user: { select: { id: true, name: true, avatar: true } } } } },
+      include: {
+        members: {
+          include: { user: { select: { id: true, name: true, avatar: true } } },
+        },
+      },
     });
   }
 
-  async validateEaClub(id: string, name: string, platform: 'common-gen5', actor: Actor) {
+  async validateEaClub(
+    id: string,
+    name: string,
+    platform: 'common-gen5',
+    actor: Actor,
+  ) {
     const tournament = await this.access.requireExists(id);
     await this.access.requireView(id, actor);
     if (tournament.game !== CompetitionGame.EA_FC) {
       throw new BadRequestException('Este campeonato não é de EA Sports FC.');
     }
     if (!MANAGED_STATUSES.includes(tournament.status)) {
-      throw new BadRequestException('As inscrições deste campeonato já terminaram.');
+      throw new BadRequestException(
+        'As inscrições deste campeonato já terminaram.',
+      );
     }
     const club = await this.eaClubs.resolveTournamentClub(name, platform);
     const alreadyEntered = await this.prisma.tournamentTeam.findFirst({
       where: { tournamentId: id, eaClubId: club.externalClubId },
       select: { id: true },
     });
-    if (alreadyEntered) throw new BadRequestException('Este clube da EA já está inscrito no campeonato.');
+    if (alreadyEntered)
+      throw new BadRequestException(
+        'Este clube da EA já está inscrito no campeonato.',
+      );
     return club;
   }
 
@@ -350,26 +499,58 @@ export class TournamentService {
       include: { match: { select: { playedAt: true } } },
     });
     const teams = await this.prisma.tournamentTeam.findMany({
-      where: { tournamentId: id }, select: { id: true, name: true, logoUrl: true },
+      where: { tournamentId: id },
+      select: { id: true, name: true, logoUrl: true },
     });
     const teamById = new Map(teams.map((team) => [team.id, team]));
     const matchesByTeam = new Map<string, Set<string>>();
-    const players = new Map<string, {
-      playerName: string; externalPlayerId: string | null; teamId: string; games: Set<string>;
-      goals: number; assists: number; ratingTotal: number; ratedGames: number; mvps: number; tags: Set<string>;
-      passesAttempted: number; passesCompleted: number; tacklesAttempted: number; tacklesCompleted: number;
-      shots: number; saves: number; yellowCards: number; redCards: number;
-    }>();
+    const players = new Map<
+      string,
+      {
+        playerName: string;
+        externalPlayerId: string | null;
+        teamId: string;
+        games: Set<string>;
+        goals: number;
+        assists: number;
+        ratingTotal: number;
+        ratedGames: number;
+        mvps: number;
+        tags: Set<string>;
+        passesAttempted: number;
+        passesCompleted: number;
+        tacklesAttempted: number;
+        tacklesCompleted: number;
+        shots: number;
+        saves: number;
+        yellowCards: number;
+        redCards: number;
+      }
+    >();
     for (const stat of stats) {
       const teamMatches = matchesByTeam.get(stat.teamId) ?? new Set<string>();
       teamMatches.add(stat.matchId);
       matchesByTeam.set(stat.teamId, teamMatches);
       const key = `${stat.teamId}:${stat.externalPlayerId ?? stat.playerName.normalize('NFKC').toLocaleLowerCase('pt-BR')}`;
       const row = players.get(key) ?? {
-        playerName: stat.playerName, externalPlayerId: stat.externalPlayerId, teamId: stat.teamId,
-        games: new Set<string>(), goals: 0, assists: 0, ratingTotal: 0, ratedGames: 0, mvps: 0, tags: new Set<string>(),
-        passesAttempted: 0, passesCompleted: 0, tacklesAttempted: 0, tacklesCompleted: 0,
-        shots: 0, saves: 0, yellowCards: 0, redCards: 0,
+        playerName: stat.playerName,
+        externalPlayerId: stat.externalPlayerId,
+        teamId: stat.teamId,
+        games: new Set<string>(),
+        goals: 0,
+        assists: 0,
+        ratingTotal: 0,
+        ratedGames: 0,
+        mvps: 0,
+        tags: new Set<string>(),
+        passesAttempted: 0,
+        passesCompleted: 0,
+        tacklesAttempted: 0,
+        tacklesCompleted: 0,
+        shots: 0,
+        saves: 0,
+        yellowCards: 0,
+        redCards: 0,
       };
       row.games.add(stat.matchId);
       row.goals += stat.goals;
@@ -388,82 +569,153 @@ export class TournamentService {
       stat.tags.forEach((tag) => row.tags.add(tag));
       players.set(key, row);
     }
-    return Array.from(players.values()).map((player) => ({
-      playerName: player.playerName,
-      externalPlayerId: player.externalPlayerId,
-      team: teamById.get(player.teamId) ?? null,
-      appearances: player.games.size,
-      ratedAppearances: player.ratedGames,
-      teamMatches: matchesByTeam.get(player.teamId)?.size ?? player.games.size,
-      goals: player.goals,
-      assists: player.assists,
-      goalContributions: player.goals + player.assists,
-      averageRating: player.ratedGames ? player.ratingTotal / player.ratedGames : null,
-      mvps: player.mvps,
-      passesAttempted: player.passesAttempted,
-      passesCompleted: player.passesCompleted,
-      passAccuracy: player.passesAttempted ? player.passesCompleted / player.passesAttempted * 100 : null,
-      tacklesAttempted: player.tacklesAttempted,
-      tacklesCompleted: player.tacklesCompleted,
-      tackleSuccess: player.tacklesAttempted ? player.tacklesCompleted / player.tacklesAttempted * 100 : null,
-      shots: player.shots,
-      saves: player.saves,
-      yellowCards: player.yellowCards,
-      redCards: player.redCards,
-      tags: Array.from(player.tags),
-    })).sort((a, b) => b.goalContributions - a.goalContributions || b.goals - a.goals);
+    return Array.from(players.values())
+      .map((player) => ({
+        playerName: player.playerName,
+        externalPlayerId: player.externalPlayerId,
+        team: teamById.get(player.teamId) ?? null,
+        appearances: player.games.size,
+        ratedAppearances: player.ratedGames,
+        teamMatches:
+          matchesByTeam.get(player.teamId)?.size ?? player.games.size,
+        goals: player.goals,
+        assists: player.assists,
+        goalContributions: player.goals + player.assists,
+        averageRating: player.ratedGames
+          ? player.ratingTotal / player.ratedGames
+          : null,
+        mvps: player.mvps,
+        passesAttempted: player.passesAttempted,
+        passesCompleted: player.passesCompleted,
+        passAccuracy: player.passesAttempted
+          ? (player.passesCompleted / player.passesAttempted) * 100
+          : null,
+        tacklesAttempted: player.tacklesAttempted,
+        tacklesCompleted: player.tacklesCompleted,
+        tackleSuccess: player.tacklesAttempted
+          ? (player.tacklesCompleted / player.tacklesAttempted) * 100
+          : null,
+        shots: player.shots,
+        saves: player.saves,
+        yellowCards: player.yellowCards,
+        redCards: player.redCards,
+        tags: Array.from(player.tags),
+      }))
+      .sort(
+        (a, b) =>
+          b.goalContributions - a.goalContributions || b.goals - a.goals,
+      );
   }
 
   async eaAwards(id: string, actor: Actor) {
     await this.access.requireView(id, actor);
-    const tournament = await this.prisma.tournament.findUnique({ where: { id }, select: { status: true } });
+    const tournament = await this.prisma.tournament.findUnique({
+      where: { id },
+      select: { status: true },
+    });
     if (!tournament) throw new NotFoundException('Campeonato não encontrado.');
 
     const players = await this.eaStats(id, actor);
     const rank = (
       pool: typeof players,
       score: (player: (typeof players)[number]) => number,
-    ) => [...pool].sort((a, b) =>
-      score(b) - score(a)
-      || b.appearances - a.appearances
-      || b.mvps - a.mvps
-      || b.goalContributions - a.goalContributions
-      || a.playerName.localeCompare(b.playerName, 'pt-BR'),
-    )[0];
+    ) =>
+      [...pool].sort(
+        (a, b) =>
+          score(b) - score(a) ||
+          b.appearances - a.appearances ||
+          b.mvps - a.mvps ||
+          b.goalContributions - a.goalContributions ||
+          a.playerName.localeCompare(b.playerName, 'pt-BR'),
+      )[0];
 
-    const ratedPlayers = players.filter((player) => player.averageRating !== null && player.ratedAppearances > 0);
-    const totalRatedAppearances = ratedPlayers.reduce((total, player) => total + player.ratedAppearances, 0);
-    const tournamentAverageRating = totalRatedAppearances > 0
-      ? ratedPlayers.reduce((total, player) => total + (player.averageRating ?? 0) * player.ratedAppearances, 0) / totalRatedAppearances
-      : 0;
-    const mostTeamMatches = Math.max(...players.map((player) => player.teamMatches), 0);
-    const absoluteMinimum = Math.min(3, mostTeamMatches);
-    const requiredAppearances = (player: (typeof players)[number]) => Math.max(
-      absoluteMinimum,
-      Math.ceil(player.teamMatches * 0.7),
+    const ratedPlayers = players.filter(
+      (player) => player.averageRating !== null && player.ratedAppearances > 0,
     );
-    const eligibleCraques = ratedPlayers.filter((player) =>
-      player.appearances >= requiredAppearances(player)
-      && player.ratedAppearances >= requiredAppearances(player),
+    const totalRatedAppearances = ratedPlayers.reduce(
+      (total, player) => total + player.ratedAppearances,
+      0,
+    );
+    const tournamentAverageRating =
+      totalRatedAppearances > 0
+        ? ratedPlayers.reduce(
+            (total, player) =>
+              total + (player.averageRating ?? 0) * player.ratedAppearances,
+            0,
+          ) / totalRatedAppearances
+        : 0;
+    const mostTeamMatches = Math.max(
+      ...players.map((player) => player.teamMatches),
+      0,
+    );
+    const absoluteMinimum = Math.min(3, mostTeamMatches);
+    const requiredAppearances = (player: (typeof players)[number]) =>
+      Math.max(absoluteMinimum, Math.ceil(player.teamMatches * 0.7));
+    const eligibleCraques = ratedPlayers.filter(
+      (player) =>
+        player.appearances >= requiredAppearances(player) &&
+        player.ratedAppearances >= requiredAppearances(player),
     );
     const craqueScore = (player: (typeof players)[number]) => {
       const priorGames = 2;
-      const adjustedRating = (
-        (player.averageRating ?? 0) * player.ratedAppearances
-        + tournamentAverageRating * priorGames
-      ) / (player.ratedAppearances + priorGames);
-      const participationRate = player.teamMatches > 0 ? player.appearances / player.teamMatches : 0;
-      const mvpRate = player.appearances > 0 ? player.mvps / player.appearances : 0;
+      const adjustedRating =
+        ((player.averageRating ?? 0) * player.ratedAppearances +
+          tournamentAverageRating * priorGames) /
+        (player.ratedAppearances + priorGames);
+      const participationRate =
+        player.teamMatches > 0 ? player.appearances / player.teamMatches : 0;
+      const mvpRate =
+        player.appearances > 0 ? player.mvps / player.appearances : 0;
       return adjustedRating + participationRate * 0.1 + mvpRate * 0.2;
     };
     const craque = rank(eligibleCraques, craqueScore);
     const definitions = [
-      { key: 'ARTILHEIRO', title: 'Artilheiro', subtitle: 'Maior goleador', player: rank(players, (player) => player.goals), value: (player: (typeof players)[number]) => `${player.goals} gols` },
-      { key: 'GARCOM', title: 'Garçom', subtitle: 'Líder de assistências', player: rank(players, (player) => player.assists), value: (player: (typeof players)[number]) => `${player.assists} assistências` },
-      { key: 'CRAQUE', title: 'Craque do Campeonato', subtitle: 'Melhor índice técnico ajustado', player: craque, value: (player: (typeof players)[number]) => `Índice ${craqueScore(player).toFixed(2).replace('.', ',')}` },
-      { key: 'MAESTRO', title: 'Maestro', subtitle: 'Mais passes certos', player: rank(players, (player) => player.passesCompleted), value: (player: (typeof players)[number]) => `${player.passesCompleted} passes · ${player.passAccuracy?.toFixed(0) ?? 0}%` },
-      { key: 'XERIFE', title: 'Xerife', subtitle: 'Mais desarmes certos', player: rank(players, (player) => player.tacklesCompleted), value: (player: (typeof players)[number]) => `${player.tacklesCompleted} desarmes · ${player.tackleSuccess?.toFixed(0) ?? 0}%` },
-      { key: 'MURALHA', title: 'Muralha', subtitle: 'Maior número de defesas', player: rank(players, (player) => player.saves), value: (player: (typeof players)[number]) => `${player.saves} defesas` },
+      {
+        key: 'ARTILHEIRO',
+        title: 'Artilheiro',
+        subtitle: 'Maior goleador',
+        player: rank(players, (player) => player.goals),
+        value: (player: (typeof players)[number]) => `${player.goals} gols`,
+      },
+      {
+        key: 'GARCOM',
+        title: 'Garçom',
+        subtitle: 'Líder de assistências',
+        player: rank(players, (player) => player.assists),
+        value: (player: (typeof players)[number]) =>
+          `${player.assists} assistências`,
+      },
+      {
+        key: 'CRAQUE',
+        title: 'Craque do Campeonato',
+        subtitle: 'Melhor índice técnico ajustado',
+        player: craque,
+        value: (player: (typeof players)[number]) =>
+          `Índice ${craqueScore(player).toFixed(2).replace('.', ',')}`,
+      },
+      {
+        key: 'MAESTRO',
+        title: 'Maestro',
+        subtitle: 'Mais passes certos',
+        player: rank(players, (player) => player.passesCompleted),
+        value: (player: (typeof players)[number]) =>
+          `${player.passesCompleted} passes · ${player.passAccuracy?.toFixed(0) ?? 0}%`,
+      },
+      {
+        key: 'XERIFE',
+        title: 'Xerife',
+        subtitle: 'Mais desarmes certos',
+        player: rank(players, (player) => player.tacklesCompleted),
+        value: (player: (typeof players)[number]) =>
+          `${player.tacklesCompleted} desarmes · ${player.tackleSuccess?.toFixed(0) ?? 0}%`,
+      },
+      {
+        key: 'MURALHA',
+        title: 'Muralha',
+        subtitle: 'Maior número de defesas',
+        player: rank(players, (player) => player.saves),
+        value: (player: (typeof players)[number]) => `${player.saves} defesas`,
+      },
     ];
 
     return {
@@ -477,32 +729,49 @@ export class TournamentService {
         craqueFormula: 'adjustedRating + participationRate*0.1 + mvpRate*0.2',
         tieBreakers: ['appearances', 'mvps', 'goalContributions', 'playerName'],
       },
-      awards: tournament.status === TournamentStatus.FINISHED
-        ? definitions.filter((award) => award.player).map((award) => ({
-            key: award.key,
-            title: award.title,
-            subtitle: award.subtitle,
-            player: award.player!,
-            value: award.value(award.player!),
-          }))
-        : [],
+      awards:
+        tournament.status === TournamentStatus.FINISHED
+          ? definitions
+              .filter((award) => award.player)
+              .map((award) => ({
+                key: award.key,
+                title: award.title,
+                subtitle: award.subtitle,
+                player: award.player!,
+                value: award.value(award.player!),
+              }))
+          : [],
     };
   }
 
   async joinByInvite(code: string, actor: Actor) {
-    const tournament = await this.prisma.tournament.findUnique({ where: { inviteCode: code } });
+    const tournament = await this.prisma.tournament.findUnique({
+      where: { inviteCode: code },
+    });
     if (!tournament || tournament.accessMode !== 'INVITE_ONLY') {
       throw new NotFoundException('Convite inválido ou expirado.');
     }
     await this.prisma.tournamentInvite.upsert({
-      where: { tournamentId_userId: { tournamentId: tournament.id, userId: actor.id } },
+      where: {
+        tournamentId_userId: { tournamentId: tournament.id, userId: actor.id },
+      },
       update: { acceptedAt: new Date() },
-      create: { tournamentId: tournament.id, userId: actor.id, invitedById: null, acceptedAt: new Date() },
+      create: {
+        tournamentId: tournament.id,
+        userId: actor.id,
+        invitedById: null,
+        acceptedAt: new Date(),
+      },
     });
     return { tournamentId: tournament.id };
   }
 
-  async updateTeam(id: string, teamId: string, dto: UpdateTeamDto, actor: Actor) {
+  async updateTeam(
+    id: string,
+    teamId: string,
+    dto: UpdateTeamDto,
+    actor: Actor,
+  ) {
     const team = await this.requireTeam(id, teamId);
     const access = await this.access.of(id, actor);
     const isTeamOwner = access.teamIds.includes(team.id);
@@ -511,7 +780,9 @@ export class TournamentService {
     }
 
     if (dto.eaClubId !== undefined || dto.eaPlatform !== undefined) {
-      throw new BadRequestException('O vínculo com o clube da EA é definido na inscrição e não pode ser alterado.');
+      throw new BadRequestException(
+        'O vínculo com o clube da EA é definido na inscrição e não pode ser alterado.',
+      );
     }
 
     return this.prisma.tournamentTeam.update({
@@ -520,7 +791,9 @@ export class TournamentService {
         ...(dto.name ? { name: dto.name } : {}),
         ...(dto.tag !== undefined ? { tag: dto.tag } : {}),
         ...(dto.logoUrl !== undefined ? { logoUrl: dto.logoUrl } : {}),
-        ...(dto.seed !== undefined && access.canModerate ? { seed: dto.seed } : {}),
+        ...(dto.seed !== undefined && access.canModerate
+          ? { seed: dto.seed }
+          : {}),
       },
     });
   }
@@ -534,7 +807,9 @@ export class TournamentService {
       throw new ForbiddenException('Você não pode remover este time.');
     }
     if (!MANAGED_STATUSES.includes(tournament.status)) {
-      throw new BadRequestException('O campeonato já começou. Use W.O. em vez de remover o time.');
+      throw new BadRequestException(
+        'O campeonato já começou. Use W.O. em vez de remover o time.',
+      );
     }
 
     await this.prisma.tournamentTeam.delete({ where: { id: teamId } });
@@ -545,7 +820,25 @@ export class TournamentService {
     await this.access.requireModerate(id, actor);
     const tournament = await this.access.requireExists(id);
     if (!MANAGED_STATUSES.includes(tournament.status)) {
-      throw new BadRequestException('Não dá para mudar o chaveamento com o campeonato em andamento.');
+      throw new BadRequestException(
+        'Não dá para mudar o chaveamento com o campeonato em andamento.',
+      );
+    }
+
+    const teamIds = dto.seeds.map((entry) => entry.teamId);
+    if (new Set(teamIds).size !== teamIds.length) {
+      throw new BadRequestException(
+        'Cada time deve aparecer apenas uma vez no chaveamento.',
+      );
+    }
+    const scopedTeams = await this.prisma.tournamentTeam.findMany({
+      where: { id: { in: teamIds }, tournamentId: id },
+      select: { id: true },
+    });
+    if (scopedTeams.length !== teamIds.length) {
+      throw new BadRequestException(
+        'Um ou mais times nÃ£o pertencem a este campeonato.',
+      );
     }
 
     await this.prisma.$transaction(
@@ -556,18 +849,28 @@ export class TournamentService {
         }),
       ),
     );
-    return this.prisma.tournamentTeam.findMany({ where: { tournamentId: id }, orderBy: { seed: 'asc' } });
+    return this.prisma.tournamentTeam.findMany({
+      where: { tournamentId: id },
+      orderBy: { seed: 'asc' },
+    });
   }
 
   async setStaff(id: string, dto: StaffDto, actor: Actor) {
     await this.access.requireManage(id, actor);
     if (dto.role === CompetitionRole.OWNER) {
-      throw new BadRequestException('Use a transferência de propriedade para trocar o dono.');
+      throw new BadRequestException(
+        'Use a transferência de propriedade para trocar o dono.',
+      );
     }
     return this.prisma.tournamentStaff.upsert({
       where: { tournamentId_userId: { tournamentId: id, userId: dto.userId } },
       update: { role: dto.role, addedByUserId: actor.id },
-      create: { tournamentId: id, userId: dto.userId, role: dto.role, addedByUserId: actor.id },
+      create: {
+        tournamentId: id,
+        userId: dto.userId,
+        role: dto.role,
+        addedByUserId: actor.id,
+      },
       include: { user: { select: { id: true, name: true, avatar: true } } },
     });
   }
@@ -577,9 +880,12 @@ export class TournamentService {
     const staff = await this.prisma.tournamentStaff.findUnique({
       where: { tournamentId_userId: { tournamentId: id, userId } },
     });
-    if (!staff) throw new NotFoundException('Esse usuário não faz parte da organização.');
+    if (!staff)
+      throw new NotFoundException('Esse usuário não faz parte da organização.');
     if (staff.role === CompetitionRole.OWNER) {
-      throw new BadRequestException('O dono do campeonato não pode ser removido.');
+      throw new BadRequestException(
+        'O dono do campeonato não pode ser removido.',
+      );
     }
     await this.prisma.tournamentStaff.delete({ where: { id: staff.id } });
     return { removed: true };
@@ -587,7 +893,8 @@ export class TournamentService {
 
   async transferOwnership(id: string, userId: number, actor: Actor) {
     await this.access.requireManage(id, actor);
-    if (userId === actor.id) throw new BadRequestException('Você já é o dono deste campeonato.');
+    if (userId === actor.id)
+      throw new BadRequestException('Você já é o dono deste campeonato.');
 
     return this.prisma.$transaction(async (tx) => {
       await tx.tournamentStaff.updateMany({
@@ -597,7 +904,12 @@ export class TournamentService {
       return tx.tournamentStaff.upsert({
         where: { tournamentId_userId: { tournamentId: id, userId } },
         update: { role: CompetitionRole.OWNER },
-        create: { tournamentId: id, userId, role: CompetitionRole.OWNER, addedByUserId: actor.id },
+        create: {
+          tournamentId: id,
+          userId,
+          role: CompetitionRole.OWNER,
+          addedByUserId: actor.id,
+        },
         include: { user: { select: { id: true, name: true, avatar: true } } },
       });
     });
@@ -658,7 +970,12 @@ export class TournamentService {
                 tournament.legs,
                 tournament.thirdPlace,
               )
-            : this.planFor(tournament.format, teams.length, tournament.legs, tournament.thirdPlace);
+            : this.planFor(
+                tournament.format,
+                teams.length,
+                tournament.legs,
+                tournament.thirdPlace,
+              );
 
         const groups = await tx.tournamentGroup.findMany({
           where: { tournamentId: id },
@@ -671,19 +988,38 @@ export class TournamentService {
             orderBy: { seed: 'asc' },
             select: { id: true },
           });
-          groupTeams.set(group.order, members.map((member) => member.id));
+          groupTeams.set(
+            group.order,
+            members.map((member) => member.id),
+          );
         }
 
         const created = new Map<string, string>();
         for (const plan of plans) {
-          const pool = plan.groupOrder !== undefined ? (groupTeams.get(plan.groupOrder) ?? []) : teamIdsBySeed;
-          const homeTeamId = this.resolveTeam(plan.homeSeed, plan.homeIndex, pool, teamIdsBySeed);
-          const awayTeamId = this.resolveTeam(plan.awaySeed, plan.awayIndex, pool, teamIdsBySeed);
+          const pool =
+            plan.groupOrder !== undefined
+              ? (groupTeams.get(plan.groupOrder) ?? [])
+              : teamIdsBySeed;
+          const homeTeamId = this.resolveTeam(
+            plan.homeSeed,
+            plan.homeIndex,
+            pool,
+            teamIdsBySeed,
+          );
+          const awayTeamId = this.resolveTeam(
+            plan.awaySeed,
+            plan.awayIndex,
+            pool,
+            teamIdsBySeed,
+          );
 
           const match = await tx.tournamentMatch.create({
             data: {
               tournamentId: id,
-              groupId: plan.groupOrder !== undefined ? groups[plan.groupOrder]?.id : null,
+              groupId:
+                plan.groupOrder !== undefined
+                  ? groups[plan.groupOrder]?.id
+                  : null,
               phase: plan.phase,
               round: plan.round,
               position: plan.position,
@@ -692,7 +1028,9 @@ export class TournamentService {
               homeTeamId,
               awayTeamId,
               status:
-                homeTeamId && awayTeamId ? TournamentMatchStatus.READY : TournamentMatchStatus.PENDING,
+                homeTeamId && awayTeamId
+                  ? TournamentMatchStatus.READY
+                  : TournamentMatchStatus.PENDING,
               readyAt: homeTeamId && awayTeamId ? new Date() : null,
             },
           });
@@ -716,7 +1054,10 @@ export class TournamentService {
             }
           }
           if (Object.keys(data).length > 0) {
-            await tx.tournamentMatch.update({ where: { id: created.get(planKey(plan))! }, data });
+            await tx.tournamentMatch.update({
+              where: { id: created.get(planKey(plan))! },
+              data,
+            });
           }
         }
 
@@ -724,17 +1065,30 @@ export class TournamentService {
 
         return tx.tournament.update({
           where: { id },
-          data: { status: TournamentStatus.RUNNING, startsAt: tournament.startsAt ?? new Date() },
+          data: {
+            status: TournamentStatus.RUNNING,
+            startsAt: tournament.startsAt ?? new Date(),
+          },
         });
       },
       { timeout: 30000 },
     );
   }
 
-  async scheduleMatch(tournamentId: string, matchId: string, scheduledAt: Date) {
-    const match = await this.prisma.tournamentMatch.findFirst({ where: { id: matchId, tournamentId } });
-    if (!match) throw new NotFoundException('Partida não encontrada neste campeonato.');
-    return this.prisma.tournamentMatch.update({ where: { id: matchId }, data: { scheduledAt } });
+  async scheduleMatch(
+    tournamentId: string,
+    matchId: string,
+    scheduledAt: Date,
+  ) {
+    const match = await this.prisma.tournamentMatch.findFirst({
+      where: { id: matchId, tournamentId },
+    });
+    if (!match)
+      throw new NotFoundException('Partida não encontrada neste campeonato.');
+    return this.prisma.tournamentMatch.update({
+      where: { id: matchId },
+      data: { scheduledAt },
+    });
   }
 
   private resolveTeam(
@@ -748,9 +1102,16 @@ export class TournamentService {
     return null;
   }
 
-  private planFor(format: TournamentFormat, teamCount: number, legs: number, thirdPlace: boolean): MatchPlan[] {
-    if (format === TournamentFormat.SINGLE_ELIMINATION) return buildSingleElimination(teamCount, thirdPlace);
-    if (format === TournamentFormat.DOUBLE_ELIMINATION) return buildDoubleElimination(teamCount);
+  private planFor(
+    format: TournamentFormat,
+    teamCount: number,
+    legs: number,
+    thirdPlace: boolean,
+  ): MatchPlan[] {
+    if (format === TournamentFormat.SINGLE_ELIMINATION)
+      return buildSingleElimination(teamCount, thirdPlace);
+    if (format === TournamentFormat.DOUBLE_ELIMINATION)
+      return buildDoubleElimination(teamCount);
     return buildRoundRobin(teamCount, legs, TournamentPhase.LEAGUE);
   }
 
@@ -770,7 +1131,9 @@ export class TournamentService {
         data: { tournamentId, order, name: groupName(order) },
       });
       await tx.tournamentTeam.updateMany({
-        where: { id: { in: seedIndexes.map((seedIndex) => teamIdsBySeed[seedIndex]) } },
+        where: {
+          id: { in: seedIndexes.map((seedIndex) => teamIdsBySeed[seedIndex]) },
+        },
         data: { groupId: group.id },
       });
     }
@@ -781,19 +1144,22 @@ export class TournamentService {
     );
 
     const qualifiers = distribution.reduce(
-      (total, seedIndexes) => total + Math.min(advancePerGroup, seedIndexes.length),
+      (total, seedIndexes) =>
+        total + Math.min(advancePerGroup, seedIndexes.length),
       0,
     );
     const knockoutRounds = Math.log2(bracketSizeFor(qualifiers));
-    const knockout = buildSingleElimination(qualifiers, thirdPlace).map((plan) => ({
-      ...plan,
-      homeSeed: undefined,
-      awaySeed: undefined,
-      label:
-        plan.phase === TournamentPhase.THIRD_PLACE
-          ? plan.label
-          : `Mata-mata · ${knockoutRoundLabel(plan.round, knockoutRounds)}`,
-    }));
+    const knockout = buildSingleElimination(qualifiers, thirdPlace).map(
+      (plan) => ({
+        ...plan,
+        homeSeed: undefined,
+        awaySeed: undefined,
+        label:
+          plan.phase === TournamentPhase.THIRD_PLACE
+            ? plan.label
+            : `Mata-mata · ${knockoutRoundLabel(plan.round, knockoutRounds)}`,
+      }),
+    );
 
     return [...groupPlans, ...knockout];
   }
@@ -806,14 +1172,26 @@ export class TournamentService {
     legs: number,
     thirdPlace: boolean,
   ) {
-    this.assertPlan(format, { teamCount, groupCount, advancePerGroup, legs, thirdPlace });
+    this.assertPlan(format, {
+      teamCount,
+      groupCount,
+      advancePerGroup,
+      legs,
+      thirdPlace,
+    });
   }
 
   /// Mesma checagem na criação, na edição e no início: a tela filtra as opções,
   /// mas a API é quem garante.
   private assertPlan(
     format: TournamentFormat,
-    plan: { teamCount: number; groupCount: number; advancePerGroup: number; legs: number; thirdPlace: boolean },
+    plan: {
+      teamCount: number;
+      groupCount: number;
+      advancePerGroup: number;
+      legs: number;
+      thirdPlace: boolean;
+    },
   ) {
     const issue = tournamentPlanIssue(format, plan);
     if (issue) throw new BadRequestException(issue);
@@ -825,13 +1203,23 @@ export class TournamentService {
     startsAt?: Date,
   ) {
     if (registrationEndsAt && registrationEndsAt.getTime() <= Date.now()) {
-      throw new BadRequestException('O fim das inscrições precisa ser no futuro.');
+      throw new BadRequestException(
+        'O fim das inscrições precisa ser no futuro.',
+      );
     }
     if (autoStartOnClose && !registrationEndsAt) {
-      throw new BadRequestException('Para começar sozinho, o campeonato precisa de uma data de fim das inscrições.');
+      throw new BadRequestException(
+        'Para começar sozinho, o campeonato precisa de uma data de fim das inscrições.',
+      );
     }
-    if (registrationEndsAt && startsAt && startsAt.getTime() <= registrationEndsAt.getTime()) {
-      throw new BadRequestException('O início do campeonato precisa ser depois do fim das inscrições.');
+    if (
+      registrationEndsAt &&
+      startsAt &&
+      startsAt.getTime() <= registrationEndsAt.getTime()
+    ) {
+      throw new BadRequestException(
+        'O início do campeonato precisa ser depois do fim das inscrições.',
+      );
     }
   }
 
@@ -854,26 +1242,25 @@ export class TournamentService {
     groups: Array<{ id: string; name: string; order: number }>,
   ) {
     const rank = (rows: typeof teams) =>
-      [...rows]
-        .sort(compareStandings)
-        .map((team, index) => ({
-          position: index + 1,
-          teamId: team.id,
-          name: team.name,
-          tag: team.tag,
-          logoUrl: team.logoUrl,
-          played: team.played,
-          wins: team.wins,
-          draws: team.draws,
-          losses: team.losses,
-          scoreFor: team.scoreFor,
-          scoreAgainst: team.scoreAgainst,
-          scoreDiff: team.scoreFor - team.scoreAgainst,
-          points: team.points,
-          eliminated: team.eliminated,
-        }));
+      [...rows].sort(compareStandings).map((team, index) => ({
+        position: index + 1,
+        teamId: team.id,
+        name: team.name,
+        tag: team.tag,
+        logoUrl: team.logoUrl,
+        played: team.played,
+        wins: team.wins,
+        draws: team.draws,
+        losses: team.losses,
+        scoreFor: team.scoreFor,
+        scoreAgainst: team.scoreAgainst,
+        scoreDiff: team.scoreFor - team.scoreAgainst,
+        points: team.points,
+        eliminated: team.eliminated,
+      }));
 
-    if (groups.length === 0) return [{ groupId: null, groupName: 'Classificação', rows: rank(teams) }];
+    if (groups.length === 0)
+      return [{ groupId: null, groupName: 'Classificação', rows: rank(teams) }];
 
     return groups.map((group) => ({
       groupId: group.id,
@@ -883,13 +1270,19 @@ export class TournamentService {
   }
 
   private settingsFrom(dto: CreateTournamentDto | UpdateTournamentDto) {
-    const { name, status, invitedUsernames, ...settings } = dto as UpdateTournamentDto;
-    return Object.fromEntries(Object.entries(settings).filter(([, value]) => value !== undefined));
+    const { name, status, invitedUsernames, ...settings } =
+      dto as UpdateTournamentDto;
+    return Object.fromEntries(
+      Object.entries(settings).filter(([, value]) => value !== undefined),
+    );
   }
 
   private async requireTeam(tournamentId: string, teamId: string) {
-    const team = await this.prisma.tournamentTeam.findFirst({ where: { id: teamId, tournamentId } });
-    if (!team) throw new NotFoundException('Time não encontrado neste campeonato.');
+    const team = await this.prisma.tournamentTeam.findFirst({
+      where: { id: teamId, tournamentId },
+    });
+    if (!team)
+      throw new NotFoundException('Time não encontrado neste campeonato.');
     return team;
   }
 
@@ -905,7 +1298,9 @@ export class TournamentService {
 
     for (let attempt = 0; attempt < 50; attempt++) {
       const slug = attempt === 0 ? base : `${base}-${attempt + 1}`;
-      const taken = await this.prisma.tournament.findUnique({ where: { slug } });
+      const taken = await this.prisma.tournament.findUnique({
+        where: { slug },
+      });
       if (!taken) return slug;
     }
     return `${base}-${Date.now().toString(36)}`;
@@ -916,6 +1311,10 @@ function planKey(plan: MatchPlan): string {
   return `${plan.phase}:${plan.round}:${plan.position}:${plan.leg}`;
 }
 
-function refKey(ref: { phase: TournamentPhase; round: number; position: number }): string {
+function refKey(ref: {
+  phase: TournamentPhase;
+  round: number;
+  position: number;
+}): string {
   return `${ref.phase}:${ref.round}:${ref.position}:1`;
 }

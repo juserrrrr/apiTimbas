@@ -1,8 +1,21 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { Role, UserStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { ALL_PERMISSIONS, PERMISSION_CATEGORIES, sanitizePermissions } from './permissions';
-import { GroupDto, PlatformSettingsDto, ReviewUserDto, SetUserGroupsDto } from './dto/access.dto';
+import {
+  ALL_PERMISSIONS,
+  PERMISSION_CATEGORIES,
+  sanitizePermissions,
+} from './permissions';
+import {
+  GroupDto,
+  PlatformSettingsDto,
+  ReviewUserDto,
+  SetUserGroupsDto,
+} from './dto/access.dto';
 
 @Injectable()
 export class AccessService {
@@ -10,13 +23,21 @@ export class AccessService {
 
   /// ADMIN é super admin fixo: tem tudo sem depender de grupo. Todo o resto vem
   /// da união dos grupos da pessoa.
-  async permissionsOf(userId: number): Promise<{ role: Role; permissions: string[] }> {
+  async permissionsOf(
+    userId: number,
+  ): Promise<{ role: Role; permissions: string[] }> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { role: true, groups: { select: { group: { select: { permissions: true } } } } },
+      select: {
+        status: true,
+        role: true,
+        groups: { select: { group: { select: { permissions: true } } } },
+      },
     });
-    if (!user) return { role: Role.PLAYER, permissions: [] };
-    if (user.role === Role.ADMIN) return { role: user.role, permissions: [...ALL_PERMISSIONS] };
+    if (!user || user.status !== UserStatus.APPROVED)
+      return { role: Role.PLAYER, permissions: [] };
+    if (user.role === Role.ADMIN)
+      return { role: user.role, permissions: [...ALL_PERMISSIONS] };
 
     const permissions = new Set<string>();
     for (const membership of user.groups) {
@@ -36,9 +57,15 @@ export class AccessService {
   }
 
   async settings() {
-    const existing = await this.prisma.platformSettings.findUnique({ where: { id: 1 } });
+    const existing = await this.prisma.platformSettings.findUnique({
+      where: { id: 1 },
+    });
     if (existing) return existing;
-    return this.prisma.platformSettings.upsert({ where: { id: 1 }, update: {}, create: { id: 1 } });
+    return this.prisma.platformSettings.upsert({
+      where: { id: 1 },
+      update: {},
+      create: { id: 1 },
+    });
   }
 
   async updateSettings(dto: PlatformSettingsDto, updatedByDiscordId: string) {
@@ -46,8 +73,12 @@ export class AccessService {
     return this.prisma.platformSettings.update({
       where: { id: 1 },
       data: {
-        ...(dto.requireApproval !== undefined ? { requireApproval: dto.requireApproval } : {}),
-        ...(dto.approvalMessage !== undefined ? { approvalMessage: dto.approvalMessage } : {}),
+        ...(dto.requireApproval !== undefined
+          ? { requireApproval: dto.requireApproval }
+          : {}),
+        ...(dto.approvalMessage !== undefined
+          ? { approvalMessage: dto.approvalMessage }
+          : {}),
         updatedByDiscordId,
       },
     });
@@ -62,8 +93,11 @@ export class AccessService {
 
   async createGroup(dto: GroupDto) {
     const permissions = sanitizePermissions(dto.permissions ?? []);
-    const taken = await this.prisma.permissionGroup.findUnique({ where: { name: dto.name } });
-    if (taken) throw new BadRequestException('Já existe um grupo com esse nome.');
+    const taken = await this.prisma.permissionGroup.findUnique({
+      where: { name: dto.name },
+    });
+    if (taken)
+      throw new BadRequestException('Já existe um grupo com esse nome.');
 
     return this.prisma.permissionGroup.create({
       data: { name: dto.name, description: dto.description, permissions },
@@ -76,8 +110,12 @@ export class AccessService {
       where: { id },
       data: {
         ...(dto.name ? { name: dto.name } : {}),
-        ...(dto.description !== undefined ? { description: dto.description } : {}),
-        ...(dto.permissions ? { permissions: sanitizePermissions(dto.permissions) } : {}),
+        ...(dto.description !== undefined
+          ? { description: dto.description }
+          : {}),
+        ...(dto.permissions
+          ? { permissions: sanitizePermissions(dto.permissions) }
+          : {}),
       },
     });
   }
@@ -93,7 +131,9 @@ export class AccessService {
       where: {
         role: { not: Role.BOT },
         ...(query.status ? { status: query.status } : {}),
-        ...(query.search ? { name: { contains: query.search, mode: 'insensitive' } } : {}),
+        ...(query.search
+          ? { name: { contains: query.search, mode: 'insensitive' } }
+          : {}),
       },
       orderBy: [{ status: 'asc' }, { dateCreated: 'desc' }],
       take: 200,
@@ -116,7 +156,9 @@ export class AccessService {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException('Usuário não encontrado.');
     if (user.role === Role.ADMIN && dto.status !== UserStatus.APPROVED) {
-      throw new BadRequestException('Um admin da plataforma não pode ser bloqueado por aqui.');
+      throw new BadRequestException(
+        'Um admin da plataforma não pode ser bloqueado por aqui.',
+      );
     }
 
     return this.prisma.user.update({
@@ -139,10 +181,13 @@ export class AccessService {
       where: { id: { in: dto.groupIds } },
       select: { id: true },
     });
-    if (groups.length !== dto.groupIds.length) throw new BadRequestException('Algum grupo não existe.');
+    if (groups.length !== dto.groupIds.length)
+      throw new BadRequestException('Algum grupo não existe.');
 
     await this.prisma.$transaction([
-      this.prisma.userGroupMember.deleteMany({ where: { userId, groupId: { notIn: dto.groupIds } } }),
+      this.prisma.userGroupMember.deleteMany({
+        where: { userId, groupId: { notIn: dto.groupIds } },
+      }),
       ...dto.groupIds.map((groupId) =>
         this.prisma.userGroupMember.upsert({
           where: { userId_groupId: { userId, groupId } },
@@ -156,7 +201,9 @@ export class AccessService {
   }
 
   private async requireGroup(id: string) {
-    const group = await this.prisma.permissionGroup.findUnique({ where: { id } });
+    const group = await this.prisma.permissionGroup.findUnique({
+      where: { id },
+    });
     if (!group) throw new NotFoundException('Grupo não encontrado.');
     return group;
   }

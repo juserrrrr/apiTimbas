@@ -10,27 +10,27 @@ import { AuthService } from '../auth.service';
 @Injectable()
 export class AuthGuard implements CanActivate {
   constructor(private readonly authService: AuthService) {}
-  canActivate(context: ExecutionContext): boolean {
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest();
     const token = this.getTokenHeader(request);
 
     if (!token) {
       throw new UnauthorizedException('Token not found');
     }
-    const payload = this.authService.validateToken(token);
+    const payload = await this.authService.validateSessionToken(token);
     request.tokenPayload = payload;
     return true;
   }
 
   private getTokenHeader(request: Request): string | undefined {
+    if (request.cookies?.timbas_token) {
+      return request.cookies.timbas_token;
+    }
     const [type, token] = request.headers.authorization?.split(' ') ?? [];
     if (type === 'Bearer' && token) {
       return token;
     }
     // Fallback: Tenta pegar o token do cookie (pois o oauth loga apenas salvando cookie httpOnly)
-    if (request.cookies && request.cookies['acessToken']) {
-      return request.cookies['acessToken'];
-    }
     return undefined;
   }
 }

@@ -1,11 +1,10 @@
-import { Module, forwardRef } from '@nestjs/common';
+import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { HttpModule } from '@nestjs/axios';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { PrismaModule } from '../prisma/prisma.module';
-import { UserModule } from '../user/user.module';
 @Module({
   imports: [
     JwtModule.registerAsync({
@@ -17,7 +16,6 @@ import { UserModule } from '../user/user.module';
     }),
     HttpModule,
     PrismaModule,
-    forwardRef(() => UserModule),
   ],
   controllers: [AuthController],
   providers: [AuthService],

@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import axios from 'axios';
+import { safeJsonGet } from '../common/safe-http';
 import { CatalogSource } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { PlayerAttributes } from '../football/attributes';
@@ -72,13 +73,21 @@ export class CatalogSyncService {
     const league = await this.sofifa.findLeague(input.name);
     const teams = await this.sofifa.fetchLeagueTeams(league.id);
     if (teams.length === 0) {
-      throw new BadRequestException(`O SoFIFA não listou clubes para ${league.name}.`);
+      throw new BadRequestException(
+        `O SoFIFA não listou clubes para ${league.name}.`,
+      );
     }
 
-    const code = (input.code?.trim() || slugCode(`${league.name} ${league.country ?? ''}`)).toUpperCase();
+    const code = (
+      input.code?.trim() || slugCode(`${league.name} ${league.country ?? ''}`)
+    ).toUpperCase();
     const competition = await this.prisma.catalogCompetition.upsert({
       where: { code },
-      update: { name: league.name, country: league.country, source: CatalogSource.SOFIFA },
+      update: {
+        name: league.name,
+        country: league.country,
+        source: CatalogSource.SOFIFA,
+      },
       create: {
         code,
         name: league.name,
@@ -91,7 +100,12 @@ export class CatalogSyncService {
     let created = 0;
     for (const team of teams) {
       const existing = await this.prisma.catalogTeam.findUnique({
-        where: { competitionId_name: { competitionId: competition.id, name: team.name } },
+        where: {
+          competitionId_name: {
+            competitionId: competition.id,
+            name: team.name,
+          },
+        },
       });
       if (existing) continue;
       await this.prisma.catalogTeam.create({
@@ -139,7 +153,9 @@ export class CatalogSyncService {
   /// Os clubes vazios da competição, de uma vez: aqui cada time é uma página
   /// HTML, não uma chamada de modelo, então cabe tudo numa requisição só.
   async fillCompetitionFromSofifa(competitionId: string, limit?: number) {
-    await this.prisma.catalogCompetition.findUniqueOrThrow({ where: { id: competitionId } });
+    await this.prisma.catalogCompetition.findUniqueOrThrow({
+      where: { id: competitionId },
+    });
     const teams = await this.prisma.catalogTeam.findMany({
       where: { competitionId, players: { none: { active: true } } },
       orderBy: { name: 'asc' },
@@ -159,17 +175,24 @@ export class CatalogSyncService {
           players: squad.players.map(toSyncedPlayer),
         });
       } catch (error) {
-        failures.push(`${team.name}: ${(error as Error)?.message ?? 'erro desconhecido'}`);
+        failures.push(
+          `${team.name}: ${(error as Error)?.message ?? 'erro desconhecido'}`,
+        );
       }
     }
 
     if (squads.length === 0) {
       throw new BadRequestException(
-        failures.join(' | ') || 'Nenhum clube vazio para preencher nesta competição.',
+        failures.join(' | ') ||
+          'Nenhum clube vazio para preencher nesta competição.',
       );
     }
 
-    const result = await this.persist(competitionId, squads, CatalogSource.SOFIFA);
+    const result = await this.persist(
+      competitionId,
+      squads,
+      CatalogSource.SOFIFA,
+    );
     const remaining = await this.prisma.catalogTeam.count({
       where: { competitionId, players: { none: { active: true } } },
     });
@@ -181,7 +204,9 @@ export class CatalogSyncService {
         lastSyncOk: failures.length === 0,
         lastSyncMessage:
           `${result.teams} times e ${result.players} jogadores vieram do SoFIFA.` +
-          (failures.length ? ` ${failures.length} clube(s) não encontrados.` : ''),
+          (failures.length
+            ? ` ${failures.length} clube(s) não encontrados.`
+            : ''),
       },
     });
 
@@ -211,7 +236,9 @@ export class CatalogSyncService {
       take: MAX_SOFIFA_TEAMS,
     });
     if (teams.length === 0) {
-      throw new BadRequestException('Esta competição ainda não tem nenhum time.');
+      throw new BadRequestException(
+        'Esta competição ainda não tem nenhum time.',
+      );
     }
 
     const squads: SyncedTeam[] = [];
@@ -227,12 +254,19 @@ export class CatalogSyncService {
           players: squad.players.map(toSyncedPlayer),
         });
       } catch (error) {
-        failures.push(`${team.name}: ${(error as Error)?.message ?? 'erro desconhecido'}`);
+        failures.push(
+          `${team.name}: ${(error as Error)?.message ?? 'erro desconhecido'}`,
+        );
       }
     }
-    if (squads.length === 0) throw new BadRequestException(failures.join(' | '));
+    if (squads.length === 0)
+      throw new BadRequestException(failures.join(' | '));
 
-    const result = await this.persist(competitionId, squads, CatalogSource.SOFIFA);
+    const result = await this.persist(
+      competitionId,
+      squads,
+      CatalogSource.SOFIFA,
+    );
     await this.prisma.catalogCompetition.update({
       where: { id: competitionId },
       data: {
@@ -240,7 +274,9 @@ export class CatalogSyncService {
         lastSyncOk: failures.length === 0,
         lastSyncMessage:
           `${result.teams} times e ${result.players} jogadores relidos do SoFIFA.` +
-          (failures.length ? ` ${failures.length} clube(s) não encontrados.` : ''),
+          (failures.length
+            ? ` ${failures.length} clube(s) não encontrados.`
+            : ''),
       },
     });
     return { ...result, failures };
@@ -766,7 +802,7 @@ export class CatalogSyncService {
         'Nenhuma URL de origem configurada para esta competição.',
       );
 
-    const response = await axios.get(url, { timeout: 30000 });
+    const response = await safeJsonGet(url);
     const teams = response.data?.teams ?? response.data;
     if (!Array.isArray(teams)) {
       throw new BadRequestException(

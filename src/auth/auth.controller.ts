@@ -14,7 +14,6 @@ import { randomBytes } from 'crypto';
 import { Request as ExpressRequest, Response } from 'express';
 import { AuthService } from './auth.service';
 import { AuthLoginDto } from './dto/auth-login.dto';
-import { AuthRegisterDto } from './dto/auth-register.dto';
 import { AuthForgotDto } from './dto/auth-forgot.dto';
 import { AuthResetDto } from './dto/auth-reset.dto';
 import { AuthGuard } from './guards/auth.guard';
@@ -23,6 +22,7 @@ import { Roles } from '../decorators/roles.decorator';
 import { CreateBotDto } from './dto/create-bot.dto';
 import { AuthBotDto } from './dto/auth-bot.dto';
 import { AuthBotSecretDto } from './dto/auth-bot-secret.dto';
+import { RoleGuard } from './guards/role.guard';
 
 @Controller('auth')
 export class AuthController {
@@ -55,11 +55,6 @@ export class AuthController {
     return this.authService.login(email, password, this.getClientIp(req));
   }
 
-  @Post('register')
-  async register(@Body() authRegisterDto: AuthRegisterDto) {
-    return this.authService.register(authRegisterDto);
-  }
-
   @Post('forgot-password')
   async forgotPassword(@Body() { email }: AuthForgotDto) {
     return this.authService.forgotPassword(email);
@@ -80,14 +75,14 @@ export class AuthController {
     return { message: 'token is valid', data: req.tokenPayload };
   }
 
-  @UseGuards(AuthGuard)
+  @UseGuards(AuthGuard, RoleGuard)
   @Roles(Role.ADMIN)
   @Post('create-bot')
   async createBot(@Body() createBotDto: CreateBotDto) {
     return this.authService.createBot(createBotDto);
   }
 
-  @UseGuards(AuthGuard)
+  @UseGuards(AuthGuard, RoleGuard)
   @Roles(Role.ADMIN)
   @Post('authenticate-bot')
   async authenticateBot(@Body() { botId }: AuthBotDto) {
@@ -100,19 +95,23 @@ export class AuthController {
   }
 
   @Post('refresh')
-  async refresh(@Body() body: { refreshToken: string }) {
-    return this.authService.refresh(body.refreshToken);
+  async refresh(
+    @Req() req: ExpressRequest,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const tokens = await this.authService.refresh(
+      req.cookies?.timbas_refresh_token,
+    );
+    this.setSessionCookies(res, tokens.acessToken, tokens.refreshToken);
+    return { refreshed: true };
   }
 
-  // ─── Dev bypass (non-production only) ────────────────────────────────────
-
-  @Get('dev-token')
-  async devToken(@Res() res: Response) {
-    if (process.env.ENV_TYPE === 'PRODUCTION') {
-      return res.status(403).json({ message: 'Not available in production' });
-    }
-    const { acessToken, refreshToken } = await this.authService.getOrCreateDevUser();
-    return res.json({ token: acessToken, refreshToken });
+  @Post('logout')
+  logout(@Res({ passthrough: true }) res: Response) {
+    const options = this.sessionCookieOptions();
+    res.clearCookie('timbas_token', options);
+    res.clearCookie('timbas_refresh_token', options);
+    return { loggedOut: true };
   }
 
   // ─── Discord OAuth ────────────────────────────────────────────────────────
@@ -171,20 +170,7 @@ export class AuthController {
         this.getClientIp(req),
       );
 
-      // Set tokens in secure httpOnly cookies instead of URL
-      res.cookie('acessToken', acessToken, {
-        httpOnly: true,
-        secure: process.env.ENV_TYPE === 'PRODUCTION',
-        sameSite: 'lax',
-        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-      });
-
-      res.cookie('refreshToken', refreshToken, {
-        httpOnly: true,
-        secure: process.env.ENV_TYPE === 'PRODUCTION',
-        sameSite: 'lax',
-        maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
-      });
+      this.setSessionCookies(res, acessToken, refreshToken);
 
       // Clear state and redirect cookies
       res.clearCookie('oauth_state');
@@ -193,10 +179,9 @@ export class AuthController {
         : null;
       res.clearCookie('oauth_redirect');
 
-      // Redirect to auth success page - O FRONTEND PRECISA DESTES DADOS NA URL PARA FUNCIONAR
-      let redirectUrl = `${webUrl}/auth/callback?token=${acessToken}&refreshToken=${refreshToken}`;
+      let redirectUrl = `${webUrl}/auth/callback`;
       if (originalRedirect) {
-        redirectUrl += `&redirect=${encodeURIComponent(originalRedirect)}`;
+        redirectUrl += `?redirect=${encodeURIComponent(originalRedirect)}`;
       }
       res.redirect(redirectUrl);
     } catch (e) {
@@ -215,5 +200,33 @@ export class AuthController {
       }
       res.redirect(`${webUrl}/login?error=auth_failed`);
     }
+  }
+
+  private setSessionCookies(
+    res: Response,
+    accessToken: string,
+    refreshToken: string,
+  ) {
+    const common = this.sessionCookieOptions();
+    res.cookie('timbas_token', accessToken, {
+      ...common,
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+    res.cookie('timbas_refresh_token', refreshToken, {
+      ...common,
+      maxAge: 30 * 24 * 60 * 60 * 1000,
+    });
+  }
+
+  private sessionCookieOptions() {
+    return {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax' as const,
+      path: '/',
+      ...(process.env.AUTH_COOKIE_DOMAIN
+        ? { domain: process.env.AUTH_COOKIE_DOMAIN }
+        : {}),
+    };
   }
 }
