@@ -25,6 +25,19 @@ export class DemoEaSyncDto {
   matchId!: string;
 }
 
+export class PrepareDemoEaMatchDto {
+  @IsString()
+  tournamentId!: string;
+  @IsString()
+  matchId!: string;
+  @IsString()
+  clubId!: string;
+  @IsString()
+  externalMatchId!: string;
+  @IsIn(['HOME', 'AWAY'])
+  side!: 'HOME' | 'AWAY';
+}
+
 export class BuildDemoTournamentDto {
   @IsOptional()
   @IsEnum(TournamentFormat)

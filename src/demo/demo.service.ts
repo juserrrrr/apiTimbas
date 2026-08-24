@@ -5,6 +5,7 @@ import {
   Role,
   TournamentFormat,
   TournamentMatchStatus,
+  TournamentPhase,
   TournamentStatus,
 } from '@prisma/client';
 import { Actor } from '../common/actor.service';
@@ -18,6 +19,7 @@ import { DraftFixtureService } from '../draft/draft-fixture.service';
 import { DraftPickService } from '../draft/draft-pick.service';
 import { DraftSimulationService } from '../draft/draft-simulation.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { EaClubMatch } from '../ea-fc-clubs/ea-fc-clubs.types';
 import { TournamentResultService } from '../tournament/tournament-result.service';
 import { TournamentService } from '../tournament/tournament.service';
 import {
@@ -28,7 +30,7 @@ import {
   DEMO_PREFIX,
   DEMO_TEAM_NAMES,
 } from './demo.constants';
-import { BuildDemoDraftDto, BuildDemoTournamentDto } from './dto/demo.dto';
+import { BuildDemoDraftDto, BuildDemoTournamentDto, PrepareDemoEaMatchDto } from './dto/demo.dto';
 
 @Injectable()
 export class DemoService {
@@ -42,6 +44,78 @@ export class DemoService {
     private readonly fixtures: DraftFixtureService,
     private readonly simulation: DraftSimulationService,
   ) {}
+
+  async prepareEaMatch(dto: PrepareDemoEaMatchDto, eaMatch: EaClubMatch, actor: Actor) {
+    const source = await this.prisma.tournamentMatch.findFirst({
+      where: { id: dto.matchId, tournamentId: dto.tournamentId },
+      include: { tournament: true, homeTeam: true, awayTeam: true },
+    });
+    if (!source?.homeTeam || !source.awayTeam) throw new BadRequestException('Confronto de demonstração inválido.');
+    if (!source.tournament.name.startsWith(DEMO_PREFIX)) {
+      throw new BadRequestException('A preparação forçada só funciona em campeonatos de demonstração.');
+    }
+    const last = await this.prisma.tournamentMatch.findFirst({
+      where: { tournamentId: dto.tournamentId, phase: TournamentPhase.LEAGUE },
+      orderBy: { round: 'desc' },
+      select: { round: true },
+    });
+    const participantTeamId = dto.side === 'HOME' ? source.homeTeam.id : source.awayTeam.id;
+
+    return this.prisma.$transaction(async (tx) => {
+      await tx.tournamentTeam.updateMany({
+        where: { tournamentId: dto.tournamentId, eaClubId: { in: [eaMatch.homeClubId, eaMatch.awayClubId] } },
+        data: { eaClubId: null, eaPlatform: null },
+      });
+      await tx.tournamentTeam.update({
+        where: { id: source.homeTeam.id },
+        data: { eaClubId: eaMatch.homeClubId, eaPlatform: 'common-gen5' },
+      });
+      await tx.tournamentTeam.update({
+        where: { id: source.awayTeam.id },
+        data: { eaClubId: eaMatch.awayClubId, eaPlatform: 'common-gen5' },
+      });
+
+      const used = await tx.tournamentMatch.findFirst({
+        where: { eaMatchId: eaMatch.externalMatchId, tournament: { name: { startsWith: DEMO_PREFIX } } },
+        select: { id: true },
+      });
+      if (used) {
+        await tx.tournamentEaPlayerStat.deleteMany({ where: { matchId: used.id } });
+        await tx.tournamentMatch.update({
+          where: { id: used.id },
+          data: { eaMatchId: null, eaVerifiedAt: null, eaTags: [] },
+        });
+      }
+
+      await tx.tournamentTeamMember.deleteMany({
+        where: { userId: actor.id, team: { tournamentId: dto.tournamentId } },
+      });
+      await tx.tournamentTeamMember.create({
+        data: { teamId: participantTeamId, userId: actor.id, captain: true },
+      });
+      const match = await tx.tournamentMatch.create({
+        data: {
+          tournamentId: dto.tournamentId,
+          phase: TournamentPhase.LEAGUE,
+          round: (last?.round ?? 0) + 1,
+          position: 999,
+          label: '[LAB] Teste de sincronização EA',
+          homeTeamId: source.homeTeam.id,
+          awayTeamId: source.awayTeam.id,
+          status: TournamentMatchStatus.READY,
+          readyAt: new Date(),
+          scheduledAt: eaMatch.playedAt,
+        },
+      });
+      return {
+        tournamentId: dto.tournamentId,
+        matchId: match.id,
+        side: dto.side,
+        scheduledAt: eaMatch.playedAt,
+        eaScore: { home: eaMatch.homeScore, away: eaMatch.awayScore },
+      };
+    });
+  }
 
   async buildTournament(dto: BuildDemoTournamentDto, actor: Actor) {
     try {
