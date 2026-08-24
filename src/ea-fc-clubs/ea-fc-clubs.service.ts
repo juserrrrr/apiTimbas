@@ -77,7 +77,7 @@ export class EaFcClubsService {
   async friendlyMatches(externalClubId: string, platform: 'common-gen5') {
     return this.callProvider(() => this.provider.getClubMatches(externalClubId, platform, {
       matchType: 'friendlyMatch',
-      maxResultCount: 100,
+      maxResultCount: 10,
     }));
   }
 
