@@ -1,5 +1,6 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import {
+  CompetitionGame,
   CompetitionRole,
   Prisma,
   TournamentFormat,
@@ -10,6 +11,7 @@ import {
 import { randomBytes } from 'crypto';
 import { Actor } from '../common/actor.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { EaFcClubsService } from '../ea-fc-clubs/ea-fc-clubs.service';
 import {
   MatchPlan,
   bracketSizeFor,
@@ -47,6 +49,7 @@ export class TournamentService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly access: TournamentAccessService,
+    private readonly eaClubs: EaFcClubsService,
   ) {}
 
   async create(dto: CreateTournamentDto, actor: Actor) {
@@ -167,6 +170,9 @@ export class TournamentService {
                 createdAt: true,
               },
             },
+            eaPlayerStats: {
+              orderBy: [{ rating: 'desc' }, { goals: 'desc' }],
+            },
           },
         },
       },
@@ -174,8 +180,10 @@ export class TournamentService {
     if (!tournament) throw new NotFoundException('Campeonato não encontrado.');
 
     const access = await this.access.of(id, actor);
+    const matches = tournament.matches.map(({ eaRaw: _eaRaw, ...match }) => match);
     return {
       ...tournament,
+      matches,
       access,
       standings: this.buildStandings(tournament.teams, tournament.groups),
     };
@@ -243,6 +251,13 @@ export class TournamentService {
       throw new BadRequestException('O campeonato já começou, não dá mais para inscrever times.');
     }
 
+    if (tournament.game === CompetitionGame.EA_FC && !access.canModerate && !dto.eaClubId) {
+      throw new BadRequestException('Valide o clube na EA antes de entrar no campeonato.');
+    }
+    const eaClub = dto.eaClubId
+      ? await this.eaClubs.requireTournamentClub(dto.eaClubId, dto.eaPlatform ?? 'common-gen5')
+      : null;
+
     const teamCount = await this.prisma.tournamentTeam.count({ where: { tournamentId: id } });
     if (teamCount >= tournament.maxTeams) {
       throw new BadRequestException(`O campeonato já atingiu o limite de ${tournament.maxTeams} times.`);
@@ -263,10 +278,11 @@ export class TournamentService {
     return this.prisma.tournamentTeam.create({
       data: {
         tournamentId: id,
-        name: dto.name,
+        name: eaClub?.name ?? dto.name,
         tag: dto.tag,
         logoUrl: dto.logoUrl,
         eaClubId: dto.eaClubId,
+        eaPlatform: eaClub?.platform ?? dto.eaPlatform,
         seed: teamCount + 1,
         ownerDiscordId: access.canModerate ? undefined : actor.discordId,
         members: {
@@ -275,6 +291,67 @@ export class TournamentService {
       },
       include: { members: { include: { user: { select: { id: true, name: true, avatar: true } } } } },
     });
+  }
+
+  async validateEaClub(id: string, name: string, platform: 'common-gen5', actor: Actor) {
+    const tournament = await this.access.requireExists(id);
+    await this.access.requireView(id, actor);
+    if (tournament.game !== CompetitionGame.EA_FC) {
+      throw new BadRequestException('Este campeonato não é de EA Sports FC.');
+    }
+    if (!MANAGED_STATUSES.includes(tournament.status)) {
+      throw new BadRequestException('As inscrições deste campeonato já terminaram.');
+    }
+    const club = await this.eaClubs.resolveTournamentClub(name, platform);
+    const alreadyEntered = await this.prisma.tournamentTeam.findFirst({
+      where: { tournamentId: id, eaClubId: club.externalClubId },
+      select: { id: true },
+    });
+    if (alreadyEntered) throw new BadRequestException('Este clube da EA já está inscrito no campeonato.');
+    return club;
+  }
+
+  async eaStats(id: string, actor: Actor) {
+    await this.access.requireView(id, actor);
+    const stats = await this.prisma.tournamentEaPlayerStat.findMany({
+      where: { match: { tournamentId: id } },
+      include: { match: { select: { playedAt: true } } },
+    });
+    const teams = await this.prisma.tournamentTeam.findMany({
+      where: { tournamentId: id }, select: { id: true, name: true, logoUrl: true },
+    });
+    const teamById = new Map(teams.map((team) => [team.id, team]));
+    const players = new Map<string, {
+      playerName: string; externalPlayerId: string | null; teamId: string; games: Set<string>;
+      goals: number; assists: number; ratingTotal: number; ratedGames: number; mvps: number; tags: Set<string>;
+    }>();
+    for (const stat of stats) {
+      const key = `${stat.teamId}:${stat.externalPlayerId ?? stat.playerName.normalize('NFKC').toLocaleLowerCase('pt-BR')}`;
+      const row = players.get(key) ?? {
+        playerName: stat.playerName, externalPlayerId: stat.externalPlayerId, teamId: stat.teamId,
+        games: new Set<string>(), goals: 0, assists: 0, ratingTotal: 0, ratedGames: 0, mvps: 0, tags: new Set<string>(),
+      };
+      row.games.add(stat.matchId);
+      row.goals += stat.goals;
+      row.assists += stat.assists;
+      row.ratingTotal += stat.rating ?? 0;
+      row.ratedGames += stat.rating === null ? 0 : 1;
+      row.mvps += stat.manOfTheMatch ? 1 : 0;
+      stat.tags.forEach((tag) => row.tags.add(tag));
+      players.set(key, row);
+    }
+    return Array.from(players.values()).map((player) => ({
+      playerName: player.playerName,
+      externalPlayerId: player.externalPlayerId,
+      team: teamById.get(player.teamId) ?? null,
+      appearances: player.games.size,
+      goals: player.goals,
+      assists: player.assists,
+      goalContributions: player.goals + player.assists,
+      averageRating: player.ratedGames ? player.ratingTotal / player.ratedGames : null,
+      mvps: player.mvps,
+      tags: Array.from(player.tags),
+    })).sort((a, b) => b.goalContributions - a.goalContributions || b.goals - a.goals);
   }
 
   async joinByInvite(code: string, actor: Actor) {
@@ -298,13 +375,16 @@ export class TournamentService {
       throw new ForbiddenException('Você não pode editar este time.');
     }
 
+    if (dto.eaClubId !== undefined || dto.eaPlatform !== undefined) {
+      throw new BadRequestException('O vínculo com o clube da EA é definido na inscrição e não pode ser alterado.');
+    }
+
     return this.prisma.tournamentTeam.update({
       where: { id: teamId },
       data: {
         ...(dto.name ? { name: dto.name } : {}),
         ...(dto.tag !== undefined ? { tag: dto.tag } : {}),
         ...(dto.logoUrl !== undefined ? { logoUrl: dto.logoUrl } : {}),
-        ...(dto.eaClubId !== undefined ? { eaClubId: dto.eaClubId } : {}),
         ...(dto.seed !== undefined && access.canModerate ? { seed: dto.seed } : {}),
       },
     });

@@ -27,7 +27,13 @@ export class TournamentResultService {
     private readonly wallet: WalletService,
   ) {}
 
-  async settle(matchId: string, homeScore: number, awayScore: number, reportedByDiscordId: string) {
+  async settle(
+    matchId: string,
+    homeScore: number,
+    awayScore: number,
+    reportedByDiscordId: string,
+    onSettled?: (tx: Prisma.TransactionClient, match: TournamentMatch) => Promise<void>,
+  ) {
     const match = await this.prisma.tournamentMatch.findUnique({
       where: { id: matchId },
       include: { tournament: true },
@@ -59,6 +65,7 @@ export class TournamentResultService {
           },
         });
 
+        if (onSettled) await onSettled(tx, updated);
         await this.applyTeamStats(tx, match.tournament, match.phase, match.homeTeamId!, homeScore, awayScore);
         await this.applyTeamStats(tx, match.tournament, match.phase, match.awayTeamId!, awayScore, homeScore);
         await this.payMatch(tx, match.tournament, match.homeTeamId!, match.awayTeamId!, homeScore, awayScore, matchId);
@@ -114,7 +121,6 @@ export class TournamentResultService {
             label: reason ? `${match.label ?? 'Partida'} (W.O.: ${reason})` : match.label,
           },
         });
-
         await this.applyTeamStats(tx, match.tournament, match.phase, winnerTeamId, 1, 0);
         await this.applyTeamStats(tx, match.tournament, match.phase, loserTeamId, 0, 1);
         await propagate(tx, updated, winnerTeamId, loserTeamId);

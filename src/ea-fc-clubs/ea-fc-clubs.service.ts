@@ -56,6 +56,31 @@ export class EaFcClubsService {
     }));
   }
 
+  async resolveTournamentClub(name: string, platform: 'common-gen5') {
+    const clubs = await this.callProvider(() => this.provider.searchClubs(name.trim(), platform));
+    const normalized = name.normalize('NFKC').trim().toLocaleLowerCase('pt-BR');
+    const exact = Array.from(new Map(
+      clubs
+        .filter((club) => club.name.normalize('NFKC').trim().toLocaleLowerCase('pt-BR') === normalized)
+        .map((club) => [club.externalId, club]),
+    ).values());
+    if (exact.length === 0) throw new NotFoundException('Não encontramos um clube com esse nome exato na EA.');
+    if (exact.length > 1) throw new BadGatewayException('A EA retornou mais de um clube com esse nome. Tente um nome mais específico.');
+    return { externalClubId: exact[0].externalId, name: exact[0].name, platform: exact[0].platform };
+  }
+
+  async requireTournamentClub(externalClubId: string, platform: 'common-gen5') {
+    const club = await this.callProvider(() => this.provider.getClub(externalClubId, platform));
+    return { externalClubId: club.externalId, name: club.name, platform: club.platform };
+  }
+
+  async friendlyMatches(externalClubId: string, platform: 'common-gen5') {
+    return this.callProvider(() => this.provider.getClubMatches(externalClubId, platform, {
+      matchType: 'friendlyMatch',
+      maxResultCount: 100,
+    }));
+  }
+
   async createClub(dto: CreateEaClubDto) {
     const external = await this.callProvider(() =>
       this.provider.getClub(dto.externalClubId, dto.platform),

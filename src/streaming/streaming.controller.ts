@@ -17,7 +17,7 @@ import {
 } from '../access/permission.guard';
 import { RequireFeature } from '../decorators/feature.decorator';
 import { FeatureFlagGuard } from '../feature-flags/guards/feature-flag.guard';
-import { FEATURE_SCREEN_SHARE } from '../feature-flags/feature-flags.constants';
+import { FEATURE_LIVE_LIMIT_720P_30FPS, FEATURE_SCREEN_SHARE } from '../feature-flags/feature-flags.constants';
 import { FeatureFlagsService } from '../feature-flags/feature-flags.service';
 import { CreateStreamDto } from './dto/create-stream.dto';
 import { JoinStreamDto } from './dto/join-stream.dto';
@@ -62,6 +62,7 @@ export class StreamingController {
       canStream,
       featureEnabled: await this.featureFlags.isEnabled(FEATURE_SCREEN_SHARE),
       sfu: await this.livekit.isEnabled(),
+      limit720p30fps: await this.featureFlags.isEnabled(FEATURE_LIVE_LIMIT_720P_30FPS),
     };
   }
 

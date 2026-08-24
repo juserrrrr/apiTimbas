@@ -35,6 +35,7 @@ import {
   UpdateTeamDto,
   UpdateTournamentDto,
   WalkoverDto,
+  ValidateTournamentEaClubDto,
 } from './dto/tournament.dto';
 import { TournamentAccessService } from './tournament-access.service';
 import { TournamentResultService } from './tournament-result.service';
@@ -93,6 +94,20 @@ export class TournamentController {
   @Post(':id/teams')
   async addTeam(@Req() req: AuthedRequest, @Param('id') id: string, @Body() dto: AddTeamDto) {
     return this.tournaments.addTeam(id, dto, await this.me(req));
+  }
+
+  @Post(':id/ea-club/validate')
+  async validateEaClub(
+    @Req() req: AuthedRequest,
+    @Param('id') id: string,
+    @Body() dto: ValidateTournamentEaClubDto,
+  ) {
+    return this.tournaments.validateEaClub(id, dto.name, dto.platform ?? 'common-gen5', await this.me(req));
+  }
+
+  @Get(':id/ea-stats')
+  async eaStats(@Req() req: AuthedRequest, @Param('id') id: string) {
+    return this.tournaments.eaStats(id, await this.me(req));
   }
 
   @Patch(':id/teams/:teamId')
@@ -214,6 +229,15 @@ export class TournamentController {
     @Body() dto: ClaimResultDto,
   ) {
     return this.matches.claimResult(id, matchId, dto, await this.me(req));
+  }
+
+  @Post(':id/matches/:matchId/check-ea')
+  async checkEaResult(
+    @Req() req: AuthedRequest,
+    @Param('id') id: string,
+    @Param('matchId') matchId: string,
+  ) {
+    return this.matches.checkEaResult(id, matchId, await this.me(req));
   }
 
   @Post(':id/matches/:matchId/claim/respond')

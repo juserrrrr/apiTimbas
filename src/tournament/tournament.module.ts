@@ -3,6 +3,8 @@ import { AuthModule } from '../auth/auth.module';
 import { EconomyModule } from '../economy/economy.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { ScoreReaderModule } from '../score-reader/score-reader.module';
+import { EaFcClubsModule } from '../ea-fc-clubs/ea-fc-clubs.module';
+import { FeatureFlagsModule } from '../feature-flags/feature-flags.module';
 import { MatchProofService } from './match-proof.service';
 import { RegistrationWindowScheduler } from './registration-window.scheduler';
 import { TournamentAccessService } from './tournament-access.service';
@@ -12,7 +14,7 @@ import { TournamentMatchService } from './tournament-match.service';
 import { TournamentService } from './tournament.service';
 
 @Module({
-  imports: [PrismaModule, AuthModule, EconomyModule, ScoreReaderModule],
+  imports: [PrismaModule, AuthModule, EconomyModule, ScoreReaderModule, EaFcClubsModule, FeatureFlagsModule],
   controllers: [TournamentController],
   providers: [
     TournamentService,
@@ -22,6 +24,6 @@ import { TournamentService } from './tournament.service';
     MatchProofService,
     RegistrationWindowScheduler,
   ],
-  exports: [TournamentService, TournamentResultService],
+  exports: [TournamentService, TournamentResultService, TournamentMatchService],
 })
 export class TournamentModule {}

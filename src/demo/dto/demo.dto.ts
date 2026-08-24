@@ -1,9 +1,29 @@
 import { Type } from 'class-transformer';
-import { IsBoolean, IsEnum, IsIn, IsInt, IsOptional, Max, Min } from 'class-validator';
+import { IsBoolean, IsEnum, IsIn, IsInt, IsOptional, IsString, Max, Min, MinLength } from 'class-validator';
 import { DraftResultMode, TournamentFormat } from '@prisma/client';
 
 export const TOURNAMENT_STAGES = ['REGISTRATION', 'STARTED', 'PARTIAL', 'FINISHED'] as const;
 export const DRAFT_STAGES = ['SETUP', 'DRAFTING', 'ACTIVE', 'PLAYED'] as const;
+
+export class DemoEaClubDto {
+  @IsString()
+  @MinLength(2)
+  name!: string;
+}
+
+export class DemoEaHistoryDto {
+  @IsString()
+  @MinLength(1)
+  clubId!: string;
+}
+
+export class DemoEaSyncDto {
+  @IsString()
+  tournamentId!: string;
+
+  @IsString()
+  matchId!: string;
+}
 
 export class BuildDemoTournamentDto {
   @IsOptional()

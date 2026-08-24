@@ -669,6 +669,7 @@ model TournamentTeam {
   group          TournamentGroup?       @relation(fields: [groupId], references: [id])
   ownerDiscordId String?
   eaClubId       String?
+  eaPlatform     String?
   eliminated     Boolean                @default(false)
   played         Int                    @default(0)
   wins           Int                    @default(0)
@@ -681,8 +682,10 @@ model TournamentTeam {
   members        TournamentTeamMember[]
   homeMatches    TournamentMatch[]      @relation("TournamentHome")
   awayMatches    TournamentMatch[]      @relation("TournamentAway")
+  eaPlayerStats  TournamentEaPlayerStat[]
 
   @@unique([tournamentId, name])
+  @@unique([tournamentId, eaClubId])
   @@index([tournamentId, groupId])
   @@index([ownerDiscordId])
 }
@@ -740,6 +743,9 @@ model TournamentMatch {
   claimedAt                DateTime?
   playedAt                 DateTime?
   reportedByDiscordId      String?
+  eaMatchId                String?                    @unique
+  eaVerifiedAt             DateTime?
+  eaRaw                    Json?
   nextMatchId              String?
   nextMatch                TournamentMatch?         @relation("BracketAdvance", fields: [nextMatchId], references: [id])
   nextMatchSlot            MatchSlot?
@@ -752,6 +758,8 @@ model TournamentMatch {
   dropsInto                TournamentMatch[]        @relation("BracketDrop")
   proofs                   MatchProof[]
   messages                 TournamentMatchMessage[]
+  eaPlayerStats            TournamentEaPlayerStat[]
+  eaTags                   String[]                 @default([])
 
   @@unique([tournamentId, phase, round, position, leg])
   @@index([tournamentId, status])
@@ -945,6 +953,32 @@ model MatchProof {
   @@index([matchId, status])
   @@index([draftMatchId, status])
   @@index([status, createdAt])
+}
+
+model TournamentEaPlayerStat {
+  id                 String          @id @default(cuid())
+  matchId            String
+  match              TournamentMatch @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  teamId             String
+  team               TournamentTeam  @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  externalPlayerId   String?
+  playerName         String
+  position           String?
+  rating             Float?
+  goals              Int             @default(0)
+  assists            Int             @default(0)
+  shots              Int?
+  passesAttempted    Int?
+  passesCompleted    Int?
+  tacklesAttempted   Int?
+  tacklesCompleted   Int?
+  saves              Int?
+  manOfTheMatch      Boolean?
+  tags               String[]        @default([])
+
+  @@index([matchId])
+  @@index([teamId])
+  @@index([externalPlayerId])
 }
 
 // ─── Economia (moedas) ────────────────────────────────────────────────────────

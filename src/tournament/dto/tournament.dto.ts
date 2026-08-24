@@ -4,6 +4,7 @@ import {
   IsBoolean,
   IsEnum,
   IsInt,
+  IsIn,
   IsOptional,
   IsString,
   IsUrl,
@@ -261,6 +262,10 @@ export class AddTeamDto {
   eaClubId?: string;
 
   @IsOptional()
+  @IsIn(['common-gen5'])
+  eaPlatform?: 'common-gen5';
+
+  @IsOptional()
   @IsArray()
   @IsInt({ each: true })
   memberIds?: number[];
@@ -375,6 +380,18 @@ export class ClaimResultDto {
 export class RespondClaimDto {
   @IsBoolean()
   agree: boolean;
+}
+
+export class ValidateTournamentEaClubDto {
+  @Transform(trim)
+  @IsString()
+  @MinLength(2)
+  @MaxLength(48)
+  name: string;
+
+  @IsOptional()
+  @IsIn(['common-gen5'])
+  platform?: 'common-gen5';
 }
 
 export class JoinByInviteDto {

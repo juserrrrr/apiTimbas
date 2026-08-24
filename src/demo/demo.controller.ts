@@ -4,7 +4,9 @@ import { AuthGuard } from '../auth/guards/auth.guard';
 import { PermissionGuard, RequirePermissions } from '../access/permission.guard';
 import { ActorService } from '../common/actor.service';
 import { DemoService } from './demo.service';
-import { BuildDemoDraftDto, BuildDemoTournamentDto } from './dto/demo.dto';
+import { EaFcClubsService } from '../ea-fc-clubs/ea-fc-clubs.service';
+import { TournamentMatchService } from '../tournament/tournament-match.service';
+import { BuildDemoDraftDto, BuildDemoTournamentDto, DemoEaClubDto, DemoEaHistoryDto, DemoEaSyncDto } from './dto/demo.dto';
 
 type AuthedRequest = Request & { tokenPayload?: { discordId?: string } };
 
@@ -15,6 +17,8 @@ export class DemoController {
   constructor(
     private readonly demo: DemoService,
     private readonly actor: ActorService,
+    private readonly eaClubs: EaFcClubsService,
+    private readonly tournamentMatches: TournamentMatchService,
   ) {}
 
   @Get()
@@ -30,6 +34,26 @@ export class DemoController {
   @Post('draft')
   async draft(@Req() req: AuthedRequest, @Body() dto: BuildDemoDraftDto) {
     return this.demo.buildDraftLeague(dto, await this.actor.require(req.tokenPayload?.discordId));
+  }
+
+  @Post('ea/club')
+  findEaClub(@Body() dto: DemoEaClubDto) {
+    return this.eaClubs.resolveTournamentClub(dto.name, 'common-gen5');
+  }
+
+  @Post('ea/history')
+  async eaHistory(@Body() dto: DemoEaHistoryDto) {
+    const matches = await this.eaClubs.friendlyMatches(dto.clubId, 'common-gen5');
+    return { count: matches.length, latest: matches[0] ?? null, matches };
+  }
+
+  @Post('ea/sync')
+  async syncEaMatch(@Req() req: AuthedRequest, @Body() dto: DemoEaSyncDto) {
+    return this.tournamentMatches.checkEaResult(
+      dto.tournamentId,
+      dto.matchId,
+      await this.actor.require(req.tokenPayload?.discordId),
+    );
   }
 
   @Delete()

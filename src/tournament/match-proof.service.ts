@@ -5,6 +5,8 @@ import { createHash } from 'crypto';
 import { Actor } from '../common/actor.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ScoreReaderService } from '../score-reader/score-reader.service';
+import { FEATURE_TOURNAMENT_AI_RESULTS } from '../feature-flags/feature-flags.constants';
+import { FeatureFlagsService } from '../feature-flags/feature-flags.service';
 import { ReportResultDto, ReviewProofDto } from './dto/tournament.dto';
 import { TournamentAccessService } from './tournament-access.service';
 import { TournamentResultService } from './tournament-result.service';
@@ -22,6 +24,7 @@ export class MatchProofService {
     private readonly access: TournamentAccessService,
     private readonly reader: ScoreReaderService,
     private readonly results: TournamentResultService,
+    private readonly featureFlags: FeatureFlagsService,
   ) {}
 
   async report(tournamentId: string, matchId: string, dto: ReportResultDto, actor: Actor) {
@@ -87,6 +90,13 @@ export class MatchProofService {
   }
 
   private async processProof(id: string) {
+    if (!(await this.featureFlags.isEnabled(FEATURE_TOURNAMENT_AI_RESULTS))) {
+      await this.prisma.matchProof.updateMany({
+        where: { id, status: MatchProofStatus.PENDING, processedAt: null },
+        data: { processedAt: new Date(), processingAt: null, aiNotes: 'Leitura por IA desativada. A organização precisa revisar a prova.' },
+      });
+      return;
+    }
     const lock = await this.prisma.matchProof.updateMany({
       where: {
         id, status: MatchProofStatus.PENDING, processedAt: null,

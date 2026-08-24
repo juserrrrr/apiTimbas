@@ -1,8 +1,12 @@
 import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
-import { Prisma, TournamentMatch, TournamentMatchStatus } from '@prisma/client';
+import { CompetitionGame, Prisma, TournamentMatch, TournamentMatchStatus } from '@prisma/client';
 import { Actor } from '../common/actor.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { EaFcClubsService } from '../ea-fc-clubs/ea-fc-clubs.service';
+import { FEATURE_TOURNAMENT_EA_RESULTS } from '../feature-flags/feature-flags.constants';
+import { FeatureFlagsService } from '../feature-flags/feature-flags.service';
+import { EaClubMatch, EaClubMatchPlayer } from '../ea-fc-clubs/ea-fc-clubs.types';
 import { TournamentAccessService } from './tournament-access.service';
 import { TournamentResultService } from './tournament-result.service';
 import { ClaimResultDto, MatchMessageDto, ProposeScheduleDto, RespondClaimDto, RespondScheduleDto } from './dto/tournament.dto';
@@ -24,6 +28,8 @@ export class TournamentMatchService {
     private readonly prisma: PrismaService,
     private readonly access: TournamentAccessService,
     private readonly results: TournamentResultService,
+    private readonly eaClubs: EaFcClubsService,
+    private readonly featureFlags: FeatureFlagsService,
   ) {}
 
   async view(tournamentId: string, matchId: string, actor: Actor) {
@@ -180,6 +186,120 @@ export class TournamentMatchService {
   /// Prazo estourado sem resultado. Quem se mexeu na partida leva a vaga; se
   /// ninguém se mexeu, passa o cabeça de chave, porque a chave precisa andar. Se os
   /// dois tentaram, é decisão humana e a partida vai para disputa.
+  async checkEaResult(tournamentId: string, matchId: string, actor: Actor) {
+    await this.featureFlags.ensureEnabled(FEATURE_TOURNAMENT_EA_RESULTS);
+    const match = await this.prisma.tournamentMatch.findFirst({
+      where: { id: matchId, tournamentId },
+      include: { tournament: true, homeTeam: true, awayTeam: true },
+    });
+    if (!match) throw new NotFoundException('Partida não encontrada neste campeonato.');
+    const { side, canModerate } = await this.requireParticipant(tournamentId, match, actor);
+    if (!side && !canModerate) throw new ForbiddenException('Só quem joga ou a organização pode checar o resultado.');
+    this.assertOpen(match);
+    if (match.tournament.game !== CompetitionGame.EA_FC) throw new BadRequestException('Esta partida não é de EA Sports FC.');
+    if (!match.scheduledAt) throw new BadRequestException('Marque o horário da partida antes de procurar o resultado na EA.');
+    if (!match.homeTeam?.eaClubId || !match.awayTeam?.eaClubId) {
+      throw new BadRequestException('Os dois times precisam ter um clube validado na EA.');
+    }
+
+    const platform = (match.homeTeam.eaPlatform ?? 'common-gen5') as 'common-gen5';
+    if ((match.awayTeam.eaPlatform ?? 'common-gen5') !== platform) {
+      throw new BadRequestException('Os clubes estão cadastrados em plataformas diferentes.');
+    }
+    const [homeHistory, awayHistory] = await Promise.all([
+      this.eaClubs.friendlyMatches(match.homeTeam.eaClubId, platform),
+      this.eaClubs.friendlyMatches(match.awayTeam.eaClubId, platform),
+    ]);
+    const awayById = new Map(awayHistory.map((item) => [item.externalMatchId, item]));
+    const earliest = match.scheduledAt.getTime() - 30 * 60 * 1000;
+    const latest = match.scheduledAt.getTime() + 4 * 60 * 60 * 1000;
+    if (Date.now() < earliest) {
+      throw new BadRequestException('A checagem na EA fica disponível 30 minutos antes do horário marcado.');
+    }
+    const candidates = homeHistory.filter((item) => {
+      const clubs = new Set([item.homeClubId, item.awayClubId]);
+      const awayCopy = awayById.get(item.externalMatchId);
+      return Boolean(awayCopy) && awayCopy!.homeClubId === item.homeClubId && awayCopy!.awayClubId === item.awayClubId &&
+        awayCopy!.homeScore === item.homeScore && awayCopy!.awayScore === item.awayScore &&
+        clubs.has(match.homeTeam!.eaClubId!) && clubs.has(match.awayTeam!.eaClubId!) &&
+        item.playedAt.getTime() >= earliest && item.playedAt.getTime() <= latest;
+    });
+    if (candidates.length === 0) {
+      throw new NotFoundException('A partida ainda não apareceu no histórico de amistosos dos dois clubes.');
+    }
+    if (candidates.length > 1) {
+      throw new BadRequestException('Encontramos mais de um amistoso entre os clubes nesse período. Use a prova por imagem.');
+    }
+    const eaMatch = candidates[0];
+    const used = await this.prisma.tournamentMatch.findFirst({
+      where: { eaMatchId: eaMatch.externalMatchId }, select: { id: true },
+    });
+    if (used) throw new BadRequestException('Esta partida da EA já foi usada em outro confronto.');
+
+    const tournamentHomeIsEaHome = eaMatch.homeClubId === match.homeTeam.eaClubId;
+    const homeScore = tournamentHomeIsEaHome ? eaMatch.homeScore : eaMatch.awayScore;
+    const awayScore = tournamentHomeIsEaHome ? eaMatch.awayScore : eaMatch.homeScore;
+    const matchTags = this.matchTags(eaMatch);
+    const settled = await this.results.settle(matchId, homeScore, awayScore, actor.discordId, async (tx) => {
+      await tx.tournamentMatch.update({
+        where: { id: matchId },
+        data: {
+          eaMatchId: eaMatch.externalMatchId,
+          eaVerifiedAt: new Date(),
+          eaRaw: eaMatch.rawData as Prisma.InputJsonValue,
+          eaTags: matchTags,
+        },
+      });
+      const rows = [
+        ...this.playerRows(matchId, eaMatch, match.homeTeam!.eaClubId!, match.homeTeamId!),
+        ...this.playerRows(matchId, eaMatch, match.awayTeam!.eaClubId!, match.awayTeamId!),
+      ];
+      if (rows.length) await tx.tournamentEaPlayerStat.createMany({ data: rows });
+    });
+    await this.systemMessage(matchId, null, `Resultado confirmado pela EA: ${homeScore} a ${awayScore}. Estatísticas sincronizadas.`);
+    return settled;
+  }
+
+  private playerRows(matchId: string, match: EaClubMatch, clubId: string, teamId: string) {
+    return (match.playersByClub[clubId] ?? []).map((player) => ({
+      matchId,
+      teamId,
+      externalPlayerId: player.externalPlayerId,
+      playerName: player.playerName,
+      position: player.position,
+      rating: player.rating,
+      goals: player.goals,
+      assists: player.assists,
+      shots: player.shots,
+      passesAttempted: player.passesAttempted,
+      passesCompleted: player.passesCompleted,
+      tacklesAttempted: player.tacklesAttempted,
+      tacklesCompleted: player.tacklesCompleted,
+      saves: player.saves,
+      manOfTheMatch: player.manOfTheMatch,
+      tags: this.playerTags(player),
+    }));
+  }
+
+  private playerTags(player: EaClubMatchPlayer): string[] {
+    return [
+      ...(player.manOfTheMatch ? ['MVP'] : []),
+      ...(player.goals >= 3 ? ['HAT_TRICK'] : []),
+      ...(player.goals >= 2 ? ['DOIS_GOLS'] : []),
+      ...(player.assists >= 3 ? ['MAESTRO'] : []),
+      ...((player.saves ?? 0) >= 5 ? ['PAREDAO'] : []),
+      ...((player.rating ?? 0) >= 9 ? ['NOTA_9_PLUS'] : []),
+    ];
+  }
+
+  private matchTags(match: EaClubMatch): string[] {
+    return [
+      ...(match.homeScore === 0 || match.awayScore === 0 ? ['CLEAN_SHEET'] : []),
+      ...(match.homeScore + match.awayScore >= 7 ? ['CHUVA_DE_GOLS'] : []),
+      ...(Math.abs(match.homeScore - match.awayScore) >= 4 ? ['GOLEADA'] : []),
+    ];
+  }
+
   @Cron(CronExpression.EVERY_HOUR)
   async resolveDeadlines() {
     const tournaments = await this.prisma.tournament.findMany({
