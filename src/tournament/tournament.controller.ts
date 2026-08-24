@@ -232,6 +232,15 @@ export class TournamentController {
     return this.matches.claimResult(id, matchId, dto, await this.me(req));
   }
 
+  @Post(':id/matches/:matchId/grace')
+  async requestGrace(
+    @Req() req: AuthedRequest,
+    @Param('id') id: string,
+    @Param('matchId') matchId: string,
+  ) {
+    return this.matches.requestGrace(id, matchId, await this.me(req));
+  }
+
   @Post(':id/matches/:matchId/check-ea')
   async checkEaResult(
     @Req() req: AuthedRequest,

@@ -2,6 +2,7 @@ import { Transform, Type } from 'class-transformer';
 import {
   IsArray,
   IsBoolean,
+  IsDate,
   IsEnum,
   IsInt,
   IsIn,
@@ -150,6 +151,20 @@ export class CreateTournamentDto {
   @Min(0)
   @Max(720)
   woAfterHours?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(10080)
+  matchWindowMinutes?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(60)
+  graceMinutes?: number;
 
   @IsOptional()
   @IsBoolean()
@@ -348,6 +363,7 @@ export class MatchMessageDto {
 
 export class ProposeScheduleDto {
   @Type(() => Date)
+  @IsDate()
   scheduledAt: Date;
 }
 
@@ -407,6 +423,7 @@ export class JoinByInviteDto {
 
 export class ScheduleMatchDto {
   @Type(() => Date)
+  @IsDate()
   scheduledAt: Date;
 }
 

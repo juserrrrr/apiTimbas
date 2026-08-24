@@ -601,6 +601,8 @@ model Tournament {
   // resposta até o prazo, quem não apareceu perde por W.O.
   requireOpponentConfirm   Boolean           @default(true)
   woAfterHours             Int               @default(72)
+  matchWindowMinutes       Int               @default(10)
+  graceMinutes             Int               @default(5)
   autoApproveProof         Boolean           @default(true)
   autoApproveMinConfidence Int               @default(90)
   accessMode               TournamentAccessMode @default(PUBLIC)
@@ -737,6 +739,8 @@ model TournamentMatch {
   scheduledAt              DateTime?
   scheduleProposedAt       DateTime?
   scheduleProposedByTeamId String?
+  homeGraceUsed            Boolean                  @default(false)
+  awayGraceUsed            Boolean                  @default(false)
   claimedHomeScore         Int?
   claimedAwayScore         Int?
   claimedByTeamId          String?

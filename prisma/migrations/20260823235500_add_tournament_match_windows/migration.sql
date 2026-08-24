@@ -1,0 +1,9 @@
+ALTER TABLE "Tournament"
+ADD COLUMN "matchWindowMinutes" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN "graceMinutes" INTEGER NOT NULL DEFAULT 5;
+
+ALTER TABLE "Tournament" ALTER COLUMN "matchWindowMinutes" SET DEFAULT 10;
+
+ALTER TABLE "TournamentMatch"
+ADD COLUMN "homeGraceUsed" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN "awayGraceUsed" BOOLEAN NOT NULL DEFAULT false;

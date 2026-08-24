@@ -57,7 +57,9 @@ export class TournamentMatchService {
       messages,
       mySide: side,
       canModerate: access.canModerate,
-      deadlineAt: this.deadlineOf(match, tournament.woAfterHours),
+      deadlineAt: this.deadlineOf(match, tournament),
+      matchWindowMinutes: tournament.matchWindowMinutes,
+      graceMinutes: tournament.graceMinutes,
       requireOpponentConfirm: tournament.requireOpponentConfirm,
       resultMode: tournament.game === CompetitionGame.EA_FC && eaEnabled ? 'EA_API' : aiEnabled ? 'AI_IMAGE' : 'MANUAL',
     };
@@ -207,7 +209,11 @@ export class TournamentMatchService {
     if (!side && !canModerate) throw new ForbiddenException('Só quem joga ou a organização pode checar o resultado.');
     this.assertOpen(match);
     if (match.tournament.game !== CompetitionGame.EA_FC) throw new BadRequestException('Esta partida não é de EA Sports FC.');
-    if (!match.scheduledAt) throw new BadRequestException('Marque o horário da partida antes de procurar o resultado na EA.');
+    const automaticStart = match.readyAt
+      ? new Date(Math.max(match.readyAt.getTime(), match.tournament.startsAt?.getTime() ?? 0))
+      : null;
+    const searchAnchor = match.scheduledAt ?? (match.tournament.matchWindowMinutes > 0 ? automaticStart : null);
+    if (!searchAnchor) throw new BadRequestException('Marque o horário da partida antes de procurar o resultado na EA.');
     if (!match.homeTeam?.eaClubId || !match.awayTeam?.eaClubId) {
       throw new BadRequestException('Os dois times precisam ter um clube validado na EA.');
     }
@@ -221,8 +227,8 @@ export class TournamentMatchService {
       this.eaClubs.friendlyMatches(match.awayTeam.eaClubId, platform),
     ]);
     const awayById = new Map(awayHistory.map((item) => [item.externalMatchId, item]));
-    const earliest = match.scheduledAt.getTime() - 30 * 60 * 1000;
-    const latest = match.scheduledAt.getTime() + 4 * 60 * 60 * 1000;
+    const earliest = searchAnchor.getTime() - 30 * 60 * 1000;
+    const latest = searchAnchor.getTime() + 4 * 60 * 60 * 1000;
     if (Date.now() < earliest) {
       throw new BadRequestException('A checagem na EA fica disponível 30 minutos antes do horário marcado.');
     }
@@ -268,6 +274,25 @@ export class TournamentMatchService {
     });
     await this.systemMessage(matchId, null, `Resultado confirmado pela EA: ${homeScore} a ${awayScore}. Estatísticas sincronizadas.`);
     return settled;
+  }
+
+  async requestGrace(tournamentId: string, matchId: string, actor: Actor) {
+    const tournament = await this.access.requireExists(tournamentId);
+    const match = await this.requireMatch(tournamentId, matchId);
+    const { side } = await this.requireParticipant(tournamentId, match, actor);
+    if (!side) throw new ForbiddenException('Só quem joga a partida pode pedir tolerância.');
+    this.assertOpen(match);
+    if (tournament.graceMinutes <= 0) throw new BadRequestException('Este campeonato não oferece tolerância.');
+    if (side === 'HOME' ? match.homeGraceUsed : match.awayGraceUsed) {
+      throw new BadRequestException('Seu time já usou a tolerância nesta partida.');
+    }
+    const teamId = side === 'HOME' ? match.homeTeamId! : match.awayTeamId!;
+    const updated = await this.prisma.tournamentMatch.update({
+      where: { id: matchId },
+      data: side === 'HOME' ? { homeGraceUsed: true } : { awayGraceUsed: true },
+    });
+    await this.systemMessage(matchId, teamId, `Pediu ${tournament.graceMinutes} minutos de tolerância.`);
+    return updated;
   }
 
   async requestReview(tournamentId: string, matchId: string, dto: RequestMatchReviewDto, actor: Actor) {
@@ -342,20 +367,19 @@ export class TournamentMatchService {
     ];
   }
 
-  @Cron(CronExpression.EVERY_HOUR)
+  @Cron(CronExpression.EVERY_MINUTE)
   async resolveDeadlines() {
     const tournaments = await this.prisma.tournament.findMany({
-      where: { status: 'RUNNING', woAfterHours: { gt: 0 } },
-      select: { id: true, name: true, woAfterHours: true },
+      where: { status: 'RUNNING', OR: [{ matchWindowMinutes: { gt: 0 } }, { woAfterHours: { gt: 0 } }] },
+      select: { id: true, name: true, woAfterHours: true, matchWindowMinutes: true, graceMinutes: true, startsAt: true },
     });
 
     for (const tournament of tournaments) {
-      const limit = new Date(Date.now() - tournament.woAfterHours * 60 * 60 * 1000);
-      const late = await this.prisma.tournamentMatch.findMany({
+      const candidates = await this.prisma.tournamentMatch.findMany({
         where: {
           tournamentId: tournament.id,
           status: { in: [TournamentMatchStatus.READY, TournamentMatchStatus.AWAITING_PROOF] },
-          readyAt: { not: null, lte: limit },
+          readyAt: { not: null },
           homeTeamId: { not: null },
           awayTeamId: { not: null },
         },
@@ -366,6 +390,10 @@ export class TournamentMatchService {
         take: 40,
       });
 
+      const late = candidates.filter((match) => {
+        const deadline = this.deadlineOf(match, tournament);
+        return deadline !== null && deadline.getTime() <= Date.now();
+      });
       for (const match of late) {
         try {
           await this.applyDeadline(match, tournament.name);
@@ -431,10 +459,19 @@ export class TournamentMatchService {
     return engaged;
   }
 
-  private deadlineOf(match: TournamentMatch, woAfterHours: number): Date | null {
-    if (woAfterHours <= 0 || !match.readyAt) return null;
+  private deadlineOf(
+    match: TournamentMatch,
+    tournament: { woAfterHours: number; matchWindowMinutes: number; graceMinutes: number; startsAt: Date | null },
+  ): Date | null {
+    if (!match.readyAt) return null;
     if (!OPEN_STATUSES.includes(match.status)) return null;
-    return new Date(match.readyAt.getTime() + woAfterHours * 60 * 60 * 1000);
+    const base = Math.max(match.readyAt.getTime(), tournament.startsAt?.getTime() ?? 0);
+    const regularMinutes = tournament.matchWindowMinutes > 0
+      ? tournament.matchWindowMinutes
+      : tournament.woAfterHours * 60;
+    if (regularMinutes <= 0) return null;
+    const graceUses = Number(match.homeGraceUsed) + Number(match.awayGraceUsed);
+    return new Date(base + (regularMinutes + graceUses * tournament.graceMinutes) * 60_000);
   }
 
   private sideOf(match: TournamentMatch, teamIds: string[]): 'HOME' | 'AWAY' | null {
