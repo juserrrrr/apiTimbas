@@ -171,11 +171,10 @@ export class DemoService {
     }
 
     await this.tournaments.start(tournament.id, actor);
-    await this.seedMatchRoom(tournament.id);
     if (dto.stage === 'STARTED') {
       return this.tournamentSummary(
         tournament.id,
-        'Chaveamento gerado, com uma partida já tendo conversa, proposta de horário e placar aguardando confirmação.',
+        'Chaveamento gerado, sem horários, conversas ou resultados preenchidos.',
       );
     }
 
@@ -316,61 +315,6 @@ export class DemoService {
       }),
     ]);
     return { tournaments, leagues };
-  }
-
-  /// Deixa a primeira partida com a sala cheia: conversa, proposta de horário e um
-  /// placar esperando o adversário confirmar. É o que a tela precisa para dar para
-  /// conferir o fluxo sem combinar nada com ninguém.
-  private async seedMatchRoom(tournamentId: string) {
-    const match = await this.prisma.tournamentMatch.findFirst({
-      where: { tournamentId, status: TournamentMatchStatus.READY, homeTeamId: { not: null }, awayTeamId: { not: null } },
-      orderBy: [{ round: 'asc' }, { position: 'asc' }],
-      include: { homeTeam: { select: { id: true, name: true } }, awayTeam: { select: { id: true, name: true } } },
-    });
-    if (!match) return;
-
-    const kickoff = new Date(Date.now() + 24 * 60 * 60 * 1000);
-    await this.prisma.tournamentMatch.update({
-      where: { id: match.id },
-      data: {
-        scheduleProposedAt: kickoff,
-        scheduleProposedByTeamId: match.homeTeamId,
-        claimedHomeScore: 3,
-        claimedAwayScore: 1,
-        claimedByTeamId: match.homeTeamId,
-        claimedAt: new Date(),
-        status: TournamentMatchStatus.AWAITING_PROOF,
-      },
-    });
-
-    await this.prisma.tournamentMatchMessage.createMany({
-      data: [
-        {
-          matchId: match.id,
-          teamId: match.homeTeamId,
-          body: 'Fechado para amanhã à noite?',
-          system: false,
-        },
-        {
-          matchId: match.id,
-          teamId: match.awayTeamId,
-          body: 'Pode ser, confirmo mais tarde.',
-          system: false,
-        },
-        {
-          matchId: match.id,
-          teamId: match.homeTeamId,
-          body: `Propôs jogar em ${kickoff.toLocaleString('pt-BR')}.`,
-          system: true,
-        },
-        {
-          matchId: match.id,
-          teamId: match.homeTeamId,
-          body: 'Informou 3 a 1 e aguarda a confirmação do adversário.',
-          system: true,
-        },
-      ],
-    });
   }
 
   private async simulate(tournamentId: string, stopHalfway: boolean): Promise<number> {
