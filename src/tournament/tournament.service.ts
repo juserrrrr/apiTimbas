@@ -353,6 +353,7 @@ export class TournamentService {
       where: { tournamentId: id }, select: { id: true, name: true, logoUrl: true },
     });
     const teamById = new Map(teams.map((team) => [team.id, team]));
+    const matchesByTeam = new Map<string, Set<string>>();
     const players = new Map<string, {
       playerName: string; externalPlayerId: string | null; teamId: string; games: Set<string>;
       goals: number; assists: number; ratingTotal: number; ratedGames: number; mvps: number; tags: Set<string>;
@@ -360,6 +361,9 @@ export class TournamentService {
       shots: number; saves: number; yellowCards: number; redCards: number;
     }>();
     for (const stat of stats) {
+      const teamMatches = matchesByTeam.get(stat.teamId) ?? new Set<string>();
+      teamMatches.add(stat.matchId);
+      matchesByTeam.set(stat.teamId, teamMatches);
       const key = `${stat.teamId}:${stat.externalPlayerId ?? stat.playerName.normalize('NFKC').toLocaleLowerCase('pt-BR')}`;
       const row = players.get(key) ?? {
         playerName: stat.playerName, externalPlayerId: stat.externalPlayerId, teamId: stat.teamId,
@@ -389,6 +393,8 @@ export class TournamentService {
       externalPlayerId: player.externalPlayerId,
       team: teamById.get(player.teamId) ?? null,
       appearances: player.games.size,
+      ratedAppearances: player.ratedGames,
+      teamMatches: matchesByTeam.get(player.teamId)?.size ?? player.games.size,
       goals: player.goals,
       assists: player.assists,
       goalContributions: player.goals + player.assists,
@@ -425,16 +431,36 @@ export class TournamentService {
       || a.playerName.localeCompare(b.playerName, 'pt-BR'),
     )[0];
 
-    const ratedPlayers = players.filter((player) => player.averageRating !== null);
-    const mostAppearances = Math.max(...players.map((player) => player.appearances), 0);
-    const minimumCraqueAppearances = mostAppearances <= 1
-      ? mostAppearances
-      : Math.max(2, Math.ceil(mostAppearances * 0.5));
-    const eligibleCraques = ratedPlayers.filter((player) => player.appearances >= minimumCraqueAppearances);
+    const ratedPlayers = players.filter((player) => player.averageRating !== null && player.ratedAppearances > 0);
+    const totalRatedAppearances = ratedPlayers.reduce((total, player) => total + player.ratedAppearances, 0);
+    const tournamentAverageRating = totalRatedAppearances > 0
+      ? ratedPlayers.reduce((total, player) => total + (player.averageRating ?? 0) * player.ratedAppearances, 0) / totalRatedAppearances
+      : 0;
+    const mostTeamMatches = Math.max(...players.map((player) => player.teamMatches), 0);
+    const absoluteMinimum = Math.min(3, mostTeamMatches);
+    const requiredAppearances = (player: (typeof players)[number]) => Math.max(
+      absoluteMinimum,
+      Math.ceil(player.teamMatches * 0.7),
+    );
+    const eligibleCraques = ratedPlayers.filter((player) =>
+      player.appearances >= requiredAppearances(player)
+      && player.ratedAppearances >= requiredAppearances(player),
+    );
+    const craqueScore = (player: (typeof players)[number]) => {
+      const priorGames = 2;
+      const adjustedRating = (
+        (player.averageRating ?? 0) * player.ratedAppearances
+        + tournamentAverageRating * priorGames
+      ) / (player.ratedAppearances + priorGames);
+      const participationRate = player.teamMatches > 0 ? player.appearances / player.teamMatches : 0;
+      const mvpRate = player.appearances > 0 ? player.mvps / player.appearances : 0;
+      return adjustedRating + participationRate * 0.1 + mvpRate * 0.2;
+    };
+    const craque = rank(eligibleCraques, craqueScore);
     const definitions = [
       { key: 'ARTILHEIRO', title: 'Artilheiro', subtitle: 'Maior goleador', player: rank(players, (player) => player.goals), value: (player: (typeof players)[number]) => `${player.goals} gols` },
       { key: 'GARCOM', title: 'Garçom', subtitle: 'Líder de assistências', player: rank(players, (player) => player.assists), value: (player: (typeof players)[number]) => `${player.assists} assistências` },
-      { key: 'CRAQUE', title: 'Craque do Campeonato', subtitle: `Melhor nota média · mínimo ${minimumCraqueAppearances} ${minimumCraqueAppearances === 1 ? 'jogo' : 'jogos'}`, player: rank(eligibleCraques, (player) => player.averageRating ?? 0), value: (player: (typeof players)[number]) => `Nota ${player.averageRating?.toFixed(1) ?? '-'}` },
+      { key: 'CRAQUE', title: 'Craque do Campeonato', subtitle: 'Melhor índice técnico ajustado', player: craque, value: (player: (typeof players)[number]) => `Índice ${craqueScore(player).toFixed(2).replace('.', ',')}` },
       { key: 'MAESTRO', title: 'Maestro', subtitle: 'Mais passes certos', player: rank(players, (player) => player.passesCompleted), value: (player: (typeof players)[number]) => `${player.passesCompleted} passes · ${player.passAccuracy?.toFixed(0) ?? 0}%` },
       { key: 'XERIFE', title: 'Xerife', subtitle: 'Mais desarmes certos', player: rank(players, (player) => player.tacklesCompleted), value: (player: (typeof players)[number]) => `${player.tacklesCompleted} desarmes · ${player.tackleSuccess?.toFixed(0) ?? 0}%` },
       { key: 'MURALHA', title: 'Muralha', subtitle: 'Maior número de defesas', player: rank(players, (player) => player.saves), value: (player: (typeof players)[number]) => `${player.saves} defesas` },
@@ -444,8 +470,11 @@ export class TournamentService {
       source: 'EA_API',
       finalized: tournament.status === TournamentStatus.FINISHED,
       criteria: {
-        craqueMinimumAppearances: minimumCraqueAppearances,
-        craqueMinimumShare: 0.5,
+        craqueMinimumAppearances: absoluteMinimum,
+        craqueMinimumShare: 0.7,
+        craquePriorGames: 2,
+        craqueTournamentAverageRating: tournamentAverageRating,
+        craqueFormula: 'adjustedRating + participationRate*0.1 + mvpRate*0.2',
         tieBreakers: ['appearances', 'mvps', 'goalContributions', 'playerName'],
       },
       awards: tournament.status === TournamentStatus.FINISHED
