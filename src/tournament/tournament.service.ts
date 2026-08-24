@@ -263,7 +263,21 @@ export class TournamentService {
       throw new BadRequestException(`O campeonato já atingiu o limite de ${tournament.maxTeams} times.`);
     }
 
-    const memberIds = access.canModerate ? (dto.memberIds ?? []) : [actor.id];
+    const captainUser = access.canModerate && dto.captainUsername
+      ? await this.prisma.user.findFirst({
+          where: { name: { equals: dto.captainUsername, mode: 'insensitive' } },
+          select: { id: true, discordId: true },
+        })
+      : null;
+    if (access.canModerate && dto.captainUsername && !captainUser) {
+      throw new BadRequestException('Não encontramos um usuário com esse nome exato.');
+    }
+    const memberIds = access.canModerate
+      ? captainUser ? [captainUser.id, ...(dto.memberIds ?? []).filter((id) => id !== captainUser.id)] : (dto.memberIds ?? [])
+      : [actor.id];
+    if (memberIds.length === 0) {
+      throw new BadRequestException('Todo time precisa ter um usuário responsável vinculado.');
+    }
     if (new Set(memberIds).size !== memberIds.length) {
       throw new BadRequestException('O mesmo jogador apareceu duas vezes na lista do time.');
     }
@@ -273,6 +287,13 @@ export class TournamentService {
     const existingMembers = await this.prisma.user.count({ where: { id: { in: memberIds } } });
     if (existingMembers !== memberIds.length) {
       throw new BadRequestException('Algum jogador da lista não existe.');
+    }
+    const alreadyRegistered = await this.prisma.tournamentTeamMember.findFirst({
+      where: { userId: { in: memberIds }, team: { tournamentId: id } },
+      include: { user: { select: { name: true } } },
+    });
+    if (alreadyRegistered) {
+      throw new BadRequestException(`${alreadyRegistered.user.name} já está associado a outro time neste campeonato.`);
     }
 
     return this.prisma.tournamentTeam.create({
@@ -284,7 +305,7 @@ export class TournamentService {
         eaClubId: dto.eaClubId,
         eaPlatform: eaClub?.platform ?? dto.eaPlatform,
         seed: teamCount + 1,
-        ownerDiscordId: access.canModerate ? undefined : actor.discordId,
+        ownerDiscordId: captainUser?.discordId ?? actor.discordId,
         members: {
           create: memberIds.map((userId, index) => ({ userId, captain: index === 0 })),
         },

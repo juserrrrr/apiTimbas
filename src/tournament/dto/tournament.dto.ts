@@ -269,6 +269,13 @@ export class AddTeamDto {
   @IsArray()
   @IsInt({ each: true })
   memberIds?: number[];
+
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MinLength(2)
+  @MaxLength(48)
+  captainUsername?: string;
 }
 
 export class UpdateTeamDto extends AddTeamDto {
