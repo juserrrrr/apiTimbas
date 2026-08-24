@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
+import { AccessModule } from '../access/access.module';
 import { EconomyModule } from '../economy/economy.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { ScoreReaderModule } from '../score-reader/score-reader.module';
@@ -14,7 +15,7 @@ import { TournamentMatchService } from './tournament-match.service';
 import { TournamentService } from './tournament.service';
 
 @Module({
-  imports: [PrismaModule, AuthModule, EconomyModule, ScoreReaderModule, EaFcClubsModule, FeatureFlagsModule],
+  imports: [PrismaModule, AuthModule, AccessModule, EconomyModule, ScoreReaderModule, EaFcClubsModule, FeatureFlagsModule],
   controllers: [TournamentController],
   providers: [
     TournamentService,
