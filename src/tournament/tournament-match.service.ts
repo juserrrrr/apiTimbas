@@ -33,7 +33,7 @@ export class TournamentMatchService {
   ) {}
 
   async view(tournamentId: string, matchId: string, actor: Actor) {
-    const match = await this.requireMatch(tournamentId, matchId);
+    const match = await this.requireMatchDetail(tournamentId, matchId);
     const access = await this.access.of(tournamentId, actor);
     const side = this.sideOf(match, access.teamIds);
     if (!side && !access.canModerate) {
@@ -584,6 +584,19 @@ export class TournamentMatchService {
   private async requireMatch(tournamentId: string, matchId: string) {
     const match = await this.prisma.tournamentMatch.findFirst({ where: { id: matchId, tournamentId } });
     if (!match) throw new NotFoundException('Partida não encontrada neste campeonato.');
+    return match;
+  }
+
+  private async requireMatchDetail(tournamentId: string, matchId: string) {
+    const match = await this.prisma.tournamentMatch.findFirst({
+      where: { id: matchId, tournamentId },
+      include: {
+        homeTeam: { select: { id: true, name: true, tag: true, logoUrl: true, seed: true } },
+        awayTeam: { select: { id: true, name: true, tag: true, logoUrl: true, seed: true } },
+        eaPlayerStats: { orderBy: [{ rating: 'desc' }, { goals: 'desc' }] },
+      },
+    });
+    if (!match) throw new NotFoundException('Partida nÃ£o encontrada neste campeonato.');
     return match;
   }
 

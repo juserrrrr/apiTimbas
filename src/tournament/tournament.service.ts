@@ -179,7 +179,7 @@ export class TournamentService {
   }
 
   async detail(id: string, actor: Actor) {
-    await this.access.requireView(id, actor);
+    const access = await this.access.requireView(id, actor);
     const tournament = await this.prisma.tournament.findUnique({
       where: { id },
       include: {
@@ -198,6 +198,7 @@ export class TournamentService {
           include: { user: { select: { id: true, name: true, avatar: true } } },
         },
         matches: {
+          omit: { eaRaw: true },
           orderBy: [
             { phase: 'asc' },
             { round: 'asc' },
@@ -242,23 +243,14 @@ export class TournamentService {
                 createdAt: true,
               },
             },
-            eaPlayerStats: {
-              orderBy: [{ rating: 'desc' }, { goals: 'desc' }],
-            },
           },
         },
       },
     });
     if (!tournament) throw new NotFoundException('Campeonato não encontrado.');
 
-    const access = await this.access.of(id, actor);
-    const matches = tournament.matches.map(
-      ({ eaRaw: _eaRaw, ...match }) => match,
-    );
-    const publicTournament = tournament;
     return {
-      ...publicTournament,
-      matches,
+      ...tournament,
       access,
       standings: this.buildStandings(tournament.teams, tournament.groups),
     };
@@ -721,6 +713,7 @@ export class TournamentService {
     return {
       source: 'EA_API',
       finalized: tournament.status === TournamentStatus.FINISHED,
+      players,
       criteria: {
         craqueMinimumAppearances: absoluteMinimum,
         craqueMinimumShare: 0.7,
