@@ -153,6 +153,42 @@ export class TournamentResultService {
     });
   }
 
+  async correctLabGroupResult(
+    tournamentId: string,
+    matchId: string,
+    homeScore: number,
+    awayScore: number,
+    reportedByDiscordId: string,
+  ) {
+    const match = await this.prisma.tournamentMatch.findFirst({ where: { id: matchId, tournamentId }, include: { tournament: true } });
+    if (!match) throw new NotFoundException('Partida não encontrada neste campeonato.');
+    if (!match.tournament.labMode) throw new BadRequestException('A correção direta está disponível somente no Laboratório.');
+    if (match.phase !== TournamentPhase.GROUP) throw new BadRequestException('Somente resultados da fase de grupos podem ser corrigidos diretamente.');
+    if (match.status !== TournamentMatchStatus.FINISHED && match.status !== TournamentMatchStatus.WALKOVER) throw new BadRequestException('Esta partida ainda não possui resultado encerrado.');
+    if (homeScore === awayScore && !match.tournament.allowDraws) throw new BadRequestException('Este campeonato não aceita empates.');
+    const publishedKnockout = await this.prisma.tournamentMatch.count({
+      where: { tournamentId, phase: { not: TournamentPhase.GROUP }, OR: [{ homeTeamId: { not: null } }, { awayTeamId: { not: null } }] },
+    });
+    if (publishedKnockout > 0) throw new BadRequestException('O mata-mata já foi publicado. Corrija o placar antes de montar a chave.');
+    if (match.homeScore === null || match.awayScore === null || !match.homeTeamId || !match.awayTeamId) throw new BadRequestException('O resultado anterior está incompleto.');
+
+    return this.prisma.$transaction(async (tx) => {
+      await this.reverseTeamStats(tx, match.tournament, match.homeTeamId!, match.homeScore!, match.awayScore!);
+      await this.reverseTeamStats(tx, match.tournament, match.awayTeamId!, match.awayScore!, match.homeScore!);
+      await this.applyTeamStats(tx, match.tournament, match.phase, match.homeTeamId!, homeScore, awayScore);
+      await this.applyTeamStats(tx, match.tournament, match.phase, match.awayTeamId!, awayScore, homeScore);
+      await tx.tournamentEaPlayerStat.deleteMany({ where: { matchId } });
+      await tx.matchProof.deleteMany({ where: { matchId } });
+      const winnerTeamId = homeScore === awayScore ? null : homeScore > awayScore ? match.homeTeamId : match.awayTeamId;
+      const updated = await tx.tournamentMatch.update({
+        where: { id: matchId },
+        data: { homeScore, awayScore, winnerTeamId, status: TournamentMatchStatus.FINISHED, reportedByDiscordId },
+      });
+      await tx.tournamentMatchMessage.create({ data: { matchId, teamId: null, system: true, body: `A organização corrigiu o resultado para ${homeScore} a ${awayScore}.` } });
+      return updated;
+    }, { timeout: 30000, isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+  }
+
   assertScoreIsValid(match: TournamentMatch, tournament: Tournament, homeScore: number, awayScore: number) {
     this.assertMatchIsOpen(match);
     if (homeScore !== awayScore) return;
@@ -198,6 +234,29 @@ export class TournamentResultService {
         points: {
           increment: isWin ? tournament.pointsWin : isDraw ? tournament.pointsDraw : tournament.pointsLoss,
         },
+      },
+    });
+  }
+
+  private async reverseTeamStats(
+    tx: Prisma.TransactionClient,
+    tournament: Tournament,
+    teamId: string,
+    scored: number,
+    conceded: number,
+  ) {
+    const isWin = scored > conceded;
+    const isDraw = scored === conceded;
+    await tx.tournamentTeam.update({
+      where: { id: teamId },
+      data: {
+        played: { decrement: 1 },
+        wins: { decrement: isWin ? 1 : 0 },
+        draws: { decrement: isDraw ? 1 : 0 },
+        losses: { decrement: !isWin && !isDraw ? 1 : 0 },
+        scoreFor: { decrement: scored },
+        scoreAgainst: { decrement: conceded },
+        points: { decrement: isWin ? tournament.pointsWin : isDraw ? tournament.pointsDraw : tournament.pointsLoss },
       },
     });
   }

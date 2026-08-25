@@ -375,6 +375,12 @@ export class SetMatchReadyDto {
   ready!: boolean;
 }
 
+export class CheckEaResultDto {
+  @IsOptional()
+  @IsString()
+  eaMatchId?: string;
+}
+
 export class RequestMatchReviewDto {
   @Transform(trim)
   @IsString()

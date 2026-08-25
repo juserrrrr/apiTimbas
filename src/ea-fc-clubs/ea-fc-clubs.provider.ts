@@ -156,7 +156,20 @@ export class EaFcClubsProvider {
         100,
       ),
     });
-    return parseMatchesPayload(payload).map(mapEaMatch);
+    const parsed = parseMatchesPayload(payload);
+    const matches: EaClubMatch[] = [];
+    for (const item of parsed) {
+      try {
+        matches.push(mapEaMatch(item));
+      } catch (error) {
+        if (error instanceof EaFcPayloadError) {
+          this.logger.warn(`EA returned an incomplete match ${String(item.matchId ?? 'unknown')}; skipping it until the result is published`);
+          continue;
+        }
+        throw error;
+      }
+    }
+    return matches;
   }
 
   async getRecentMatches(

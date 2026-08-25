@@ -198,7 +198,7 @@ export class TournamentMatchService {
   /// Prazo estourado sem resultado. Quem se mexeu na partida leva a vaga; se
   /// ninguém se mexeu, passa o cabeça de chave, porque a chave precisa andar. Se os
   /// dois tentaram, é decisão humana e a partida vai para disputa.
-  async checkEaResult(tournamentId: string, matchId: string, actor: Actor) {
+  async checkEaResult(tournamentId: string, matchId: string, actor: Actor, selectedEaMatchId?: string) {
     await this.featureFlags.ensureEnabled(FEATURE_TOURNAMENT_EA_RESULTS);
     const match = await this.prisma.tournamentMatch.findFirst({
       where: { id: matchId, tournamentId },
@@ -254,14 +254,42 @@ export class TournamentMatchService {
     if (candidates.length === 0) {
       throw new NotFoundException('A partida ainda não apareceu no histórico de amistosos dos dois clubes.');
     }
-    if (candidates.length > 1) {
-      throw new BadRequestException('Encontramos mais de um amistoso entre os clubes nesse período. Use a prova por imagem.');
-    }
-    const eaMatch = candidates[0];
-    const used = await this.prisma.tournamentMatch.findFirst({
-      where: { eaMatchId: eaMatch.externalMatchId }, select: { id: true },
+    const usedEaMatches = await this.prisma.tournamentMatch.findMany({
+      where: { eaMatchId: { in: candidates.map((candidate) => candidate.externalMatchId) } },
+      select: { eaMatchId: true },
     });
-    if (used) throw new BadRequestException('Esta partida da EA já foi usada em outro confronto.');
+    const usedIds = new Set(usedEaMatches.flatMap((item) => item.eaMatchId ? [item.eaMatchId] : []));
+    const available = candidates
+      .filter((candidate) => !usedIds.has(candidate.externalMatchId))
+      .sort((left, right) => left.playedAt.getTime() - right.playedAt.getTime());
+    if (available.length === 0) {
+      throw new BadRequestException('Todos os amistosos encontrados entre esses clubes já foram usados no campeonato.');
+    }
+    if (selectedEaMatchId && !canModerate) {
+      throw new ForbiddenException('Somente a organização pode escolher manualmente uma partida da EA.');
+    }
+    if (available.length > 1 && canModerate && !selectedEaMatchId) {
+      return {
+        selectionRequired: true as const,
+        candidates: available.map((candidate) => {
+          const tournamentHomeIsEaHome = candidate.homeClubId === match.homeTeam!.eaClubId;
+          return {
+            eaMatchId: candidate.externalMatchId,
+            playedAt: candidate.playedAt,
+            homeScore: tournamentHomeIsEaHome ? candidate.homeScore : candidate.awayScore,
+            awayScore: tournamentHomeIsEaHome ? candidate.awayScore : candidate.homeScore,
+          };
+        }),
+      };
+    }
+    // Para capitães e jogadores, consumir o amistoso mais antigo ainda não
+    // utilizado preserva a ordem real das rodadas. O admin pode escolher acima.
+    const eaMatch = selectedEaMatchId
+      ? available.find((candidate) => candidate.externalMatchId === selectedEaMatchId)
+      : available[0];
+    if (!eaMatch) {
+      throw new BadRequestException('A partida da EA escolhida não pertence às opções válidas deste confronto.');
+    }
 
     const tournamentHomeIsEaHome = eaMatch.homeClubId === match.homeTeam.eaClubId;
     const homeScore = tournamentHomeIsEaHome ? eaMatch.homeScore : eaMatch.awayScore;

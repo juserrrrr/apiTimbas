@@ -38,6 +38,24 @@ describe('EaFcClubsProvider', () => {
     );
   });
 
+  it('skips an incomplete live match and keeps completed matches', async () => {
+    const incomplete = {
+      ...EA_MATCH_FIXTURE,
+      matchId: 'still-live',
+      clubs: {},
+    };
+    const get = jest.fn().mockReturnValue(of({ data: [incomplete, EA_MATCH_FIXTURE] }));
+    const provider = new EaFcClubsProvider(
+      { get } as unknown as HttpService,
+      config,
+    );
+
+    const matches = await provider.getClubMatches('123456', 'common-gen5');
+
+    expect(matches).toHaveLength(1);
+    expect(matches[0].externalMatchId).toBe(String(EA_MATCH_FIXTURE.matchId));
+  });
+
   it('returns every club found by name', async () => {
     const get = jest.fn().mockReturnValue(
       of({

@@ -21,6 +21,7 @@ import { MatchProofService } from './match-proof.service';
 import {
   AddTeamDto,
   ClaimResultDto,
+  CheckEaResultDto,
   MatchMessageDto,
   ProposeScheduleDto,
   RespondClaimDto,
@@ -179,6 +180,18 @@ export class TournamentController {
     return this.proofs.report(id, matchId, dto, await this.me(req));
   }
 
+  @Patch(':id/matches/:matchId/correct-result')
+  async correctLabResult(
+    @Req() req: AuthedRequest,
+    @Param('id') id: string,
+    @Param('matchId') matchId: string,
+    @Body() dto: ClaimResultDto,
+  ) {
+    const actor = await this.me(req);
+    await this.access.requireModerate(id, actor);
+    return this.results.correctLabGroupResult(id, matchId, dto.homeScore, dto.awayScore, actor.discordId);
+  }
+
   @Patch(':id/matches/:matchId/schedule')
   async schedule(
     @Req() req: AuthedRequest,
@@ -271,8 +284,9 @@ export class TournamentController {
     @Req() req: AuthedRequest,
     @Param('id') id: string,
     @Param('matchId') matchId: string,
+    @Body() dto: CheckEaResultDto,
   ) {
-    return this.matches.checkEaResult(id, matchId, await this.me(req));
+    return this.matches.checkEaResult(id, matchId, await this.me(req), dto.eaMatchId);
   }
 
   @Post(':id/matches/:matchId/request-review')
