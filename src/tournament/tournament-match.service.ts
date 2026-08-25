@@ -230,9 +230,11 @@ export class TournamentMatchService {
       this.eaClubs.friendlyMatches(match.awayTeam.eaClubId, platform),
     ]);
     const awayById = new Map(awayHistory.map((item) => [item.externalMatchId, item]));
-    // Nunca aceita amistoso anterior à liberação deste confronto. O Club ID e o
-    // EA Match ID evitam troca de times; este corte impede reaproveitar resultado antigo.
-    const earliest = searchAnchor.getTime();
+    // Em operações do Laboratório aceitamos até duas horas antes do horário
+    // marcado. Isso permite validar rapidamente um evento reconstruído depois
+    // que os amistosos reais já aconteceram. Campeonatos normais continuam sem
+    // tolerância para trás, evitando reaproveitar resultados antigos.
+    const earliest = searchAnchor.getTime() - (match.tournament.labMode ? 2 * 60 * 60 * 1000 : 0);
     // Live Lab operations are followed manually by an admin and may run all night.
     // Keep the lower bound to prevent old result reuse, but do not expire the search.
     const latest = match.tournament.labMode
