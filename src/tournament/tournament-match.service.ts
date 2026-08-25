@@ -255,7 +255,7 @@ export class TournamentMatchService {
     if (candidates.length === 0) {
       throw new NotFoundException('A partida ainda não apareceu no histórico de amistosos dos dois clubes.');
     }
-    const completeCandidates = candidates.filter((candidate) => !this.eaScoreAnalysis(candidate).interrupted);
+    const completeCandidates = candidates.filter((candidate) => !this.eaScoreAnalysis(candidate).shortAttempt);
     if (completeCandidates.length === 0) {
       throw new NotFoundException('A EA encontrou somente uma tentativa interrompida entre os clubes. Ela foi ignorada. Joguem novamente e depois use Rescanear EA.');
     }
@@ -381,7 +381,7 @@ export class TournamentMatchService {
     });
     return {
       eaMatchId: refreshed.externalMatchId,
-      kind: analysis.interrupted ? 'INTERRUPTED' as const : analysis.scoreMismatch ? 'SCORE_MISMATCH' as const : 'CONSISTENT' as const,
+      kind: analysis.shortAttempt ? 'INTERRUPTED' as const : analysis.scoreMismatch ? 'SCORE_MISMATCH' as const : 'CONSISTENT' as const,
       officialHomeScore: official.homeScore,
       officialAwayScore: official.awayScore,
       inferredHomeScore: playerScore?.homeScore ?? official.homeScore,
@@ -556,15 +556,18 @@ export class TournamentMatchService {
 
   private effectiveEaScore(match: EaClubMatch) {
     const analysis = this.eaScoreAnalysis(match);
-    return analysis.playerScore && !analysis.interrupted
+    return analysis.playerScore && !analysis.shortAttempt
       ? analysis.playerScore
       : { homeScore: match.homeScore, awayScore: match.awayScore };
   }
 
   private eaScoreWarning(match: EaClubMatch): string {
     const analysis = this.eaScoreAnalysis(match);
-    if (analysis.interrupted) {
+    if (analysis.shortAttempt) {
       return `Tentativa interrompida com no máximo ${Math.max(analysis.homeDurationSeconds, analysis.awayDurationSeconds)} segundos. Este registro não pode ser usado.`;
+    }
+    if (analysis.interrupted && analysis.playerScore) {
+      return `A sessão terminou antes do tempo completo. O SCORE dos atletas indica ${analysis.playerScore.homeScore} a ${analysis.playerScore.awayScore}. Somente a organização pode confirmar esse placar parcial.`;
     }
     if (analysis.playerScore && analysis.scoreMismatch) {
       return 'O cabeçalho da EA diverge do SCORE predominante dos atletas. Ao confirmar, será usado o placar dos atletas exibido acima.';

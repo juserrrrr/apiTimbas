@@ -232,7 +232,7 @@ export class TournamentResultService {
         match.homeScore,
         match.awayScore,
       );
-      if (!analysis.interrupted && (!analysis.playerScore || !analysis.scoreMismatch)) return [];
+      if (!analysis.shortAttempt && (!analysis.playerScore || !analysis.scoreMismatch)) return [];
       return [{
         matchId: match.id,
         label: match.label,
@@ -243,13 +243,15 @@ export class TournamentResultService {
         inferredHomeScore: analysis.playerScore?.homeScore ?? 0,
         inferredAwayScore: analysis.playerScore?.awayScore ?? 0,
         eaMatchId: match.eaMatchId,
-        kind: analysis.interrupted ? 'INTERRUPTED' as const : 'SCORE_MISMATCH' as const,
+        kind: analysis.shortAttempt ? 'INTERRUPTED' as const : 'SCORE_MISMATCH' as const,
         durationSeconds: Math.max(analysis.homeDurationSeconds, analysis.awayDurationSeconds),
         nonZeroUserResults: analysis.nonZeroUserResults,
         playerCount: analysis.playerCount,
-        reason: analysis.interrupted
+        reason: analysis.shortAttempt
           ? 'A EA publicou um resultado administrativo antes de a partida atingir duração mínima válida.'
-          : 'O placar geral da EA diverge do SCORE predominante registrado pelos atletas de cada clube.',
+          : analysis.interrupted
+            ? 'A sessão terminou antes do tempo completo e o placar geral da EA diverge do SCORE dos atletas.'
+            : 'O placar geral da EA diverge do SCORE predominante registrado pelos atletas de cada clube.',
       }];
     });
   }

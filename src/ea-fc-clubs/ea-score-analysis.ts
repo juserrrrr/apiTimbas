@@ -1,10 +1,12 @@
 export const MIN_COMPLETED_EA_MATCH_SECONDS = 4500;
+export const MIN_MEANINGFUL_EA_MATCH_SECONDS = 300;
 
 export interface EaScoreAnalysis {
   playerScore: { homeScore: number; awayScore: number } | null;
   homeDurationSeconds: number;
   awayDurationSeconds: number;
   interrupted: boolean;
+  shortAttempt: boolean;
   scoreMismatch: boolean;
   nonZeroUserResults: number;
   playerCount: number;
@@ -25,12 +27,14 @@ export function analyzeEaMatchScore(
     : { homeScore: home.score, awayScore: away.score };
   const interrupted = home.durationSeconds < MIN_COMPLETED_EA_MATCH_SECONDS ||
     away.durationSeconds < MIN_COMPLETED_EA_MATCH_SECONDS;
+  const shortAttempt = Math.max(home.durationSeconds, away.durationSeconds) < MIN_MEANINGFUL_EA_MATCH_SECONDS;
 
   return {
     playerScore,
     homeDurationSeconds: home.durationSeconds,
     awayDurationSeconds: away.durationSeconds,
     interrupted,
+    shortAttempt,
     scoreMismatch: Boolean(playerScore &&
       (playerScore.homeScore !== officialHomeScore || playerScore.awayScore !== officialAwayScore)),
     nonZeroUserResults: home.nonZeroUserResults + away.nonZeroUserResults,

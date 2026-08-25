@@ -27,6 +27,17 @@ describe('analyzeEaMatchScore', () => {
     expect(analyzeEaMatchScore(raw, 'home', 'away', 0, 3)).toMatchObject({
       playerScore: { homeScore: 0, awayScore: 0 },
       interrupted: true,
+      shortAttempt: true,
+      scoreMismatch: true,
+    });
+  });
+
+  it('keeps a meaningful partial match for organization review', () => {
+    const raw = { players: { home: { a: player(0, 1128, 6) }, away: { b: player(2, 1128, 12) } } };
+    expect(analyzeEaMatchScore(raw, 'home', 'away', 0, 3)).toMatchObject({
+      playerScore: { homeScore: 0, awayScore: 2 },
+      interrupted: true,
+      shortAttempt: false,
       scoreMismatch: true,
     });
   });
