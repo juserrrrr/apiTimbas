@@ -259,6 +259,25 @@ describe('orderGroupQualifiers', () => {
     ]);
   });
 
+  it('reproduz o cruzamento histÃ³rico das quartas com quatro grupos', () => {
+    const qualifiers = orderGroupQualifiers(
+      [
+        ['a1', 'a2'],
+        ['b1', 'b2'],
+        ['c1', 'c2'],
+        ['d1', 'd2'],
+      ],
+      2,
+    );
+
+    expect(openers(qualifiers).map((pair) => pair.map((entry) => entry?.teamId))).toEqual([
+      ['a1', 'b2'],
+      ['d1', 'c2'],
+      ['b1', 'a2'],
+      ['c1', 'd2'],
+    ]);
+  });
+
   it('nunca abre o mata-mata com dois times do mesmo grupo', () => {
     for (const groupCount of [2, 3, 4, 5, 6, 8]) {
       for (const advancePerGroup of [1, 2, 3, 4]) {

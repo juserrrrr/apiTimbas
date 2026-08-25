@@ -266,6 +266,12 @@ export class TournamentController {
     return this.results.buildLabKnockout(id);
   }
 
+  @Post(':id/lab/knockout/rebuild')
+  async rebuildLabKnockout(@Req() req: AuthedRequest, @Param('id') id: string) {
+    await this.access.requireModerate(id, await this.me(req));
+    return this.results.rebuildLabKnockout(id);
+  }
+
   @Get(':id/lab/score-audit')
   async auditLabEaScores(@Req() req: AuthedRequest, @Param('id') id: string) {
     await this.access.requireModerate(id, await this.me(req));

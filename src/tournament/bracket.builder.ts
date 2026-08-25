@@ -350,6 +350,15 @@ export function orderGroupQualifiers(standings: string[][], advancePerGroup: num
     });
   }
 
+  // A chave histÃ³rica de quatro grupos usa A1 x B2, D1 x C2,
+  // B1 x A2 e C1 x D2. `seedSlots(8)` espera os segundos colocados
+  // nesta ordem para produzir exatamente esses quatro jogos.
+  if (standings.length === 4 && advancePerGroup === 2 && seeds.length === 8) {
+    const leaders = seeds.filter((entry) => entry.place === 0);
+    const runnersUp = seeds.filter((entry) => entry.place === 1);
+    return [...leaders, runnersUp[2], runnersUp[3], runnersUp[0], runnersUp[1]];
+  }
+
   return avoidSameGroupOpeners(seeds);
 }
 

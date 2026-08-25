@@ -397,6 +397,71 @@ export class TournamentResultService {
     });
   }
 
+  async rebuildLabKnockout(tournamentId: string) {
+    const tournament = await this.prisma.tournament.findUnique({ where: { id: tournamentId } });
+    if (!tournament || !tournament.labMode) throw new BadRequestException('Campeonato de laboratÃ³rio nÃ£o encontrado.');
+
+    const openGroupMatches = await this.prisma.tournamentMatch.count({
+      where: { tournamentId, phase: TournamentPhase.GROUP, status: { in: OPEN_STATUSES } },
+    });
+    if (openGroupMatches > 0) {
+      throw new BadRequestException(`Ainda existem ${openGroupMatches} partidas da fase de grupos sem resultado.`);
+    }
+
+    const knockoutInteraction = await this.prisma.tournamentMatch.count({
+      where: {
+        tournamentId,
+        phase: { not: TournamentPhase.GROUP },
+        OR: [
+          { status: { in: [TournamentMatchStatus.AWAITING_PROOF, TournamentMatchStatus.DISPUTED, TournamentMatchStatus.FINISHED, TournamentMatchStatus.WALKOVER] } },
+          { homeScore: { not: null } },
+          { awayScore: { not: null } },
+          { winnerTeamId: { not: null } },
+          { claimedAt: { not: null } },
+          { eaMatchId: { not: null } },
+          { proofs: { some: {} } },
+          { messages: { some: {} } },
+        ],
+      },
+    });
+    if (knockoutInteraction > 0) {
+      throw new BadRequestException('NÃ£o Ã© possÃ­vel refazer o mata-mata depois que uma partida teve resultado, prova ou conversa.');
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.tournamentMatch.updateMany({
+        where: { tournamentId, phase: { not: TournamentPhase.GROUP } },
+        data: {
+          homeTeamId: null,
+          awayTeamId: null,
+          status: TournamentMatchStatus.PENDING,
+          readyAt: null,
+          homeReadyAt: null,
+          awayReadyAt: null,
+          scheduledAt: null,
+          scheduleProposedAt: null,
+          scheduleProposedByTeamId: null,
+        },
+      });
+      await tx.tournamentTeam.updateMany({
+        where: { tournamentId, groupId: { not: null } },
+        data: { eliminated: false },
+      });
+      await this.qualifyFromGroups(tx, tournament, true);
+    });
+
+    const now = new Date();
+    await this.prisma.tournamentMatch.updateMany({
+      where: { tournamentId, phase: { not: TournamentPhase.GROUP }, status: TournamentMatchStatus.READY },
+      data: { scheduledAt: now, readyAt: now },
+    });
+    return this.prisma.tournamentMatch.findMany({
+      where: { tournamentId, phase: { not: TournamentPhase.GROUP } },
+      include: { homeTeam: true, awayTeam: true },
+      orderBy: [{ round: 'asc' }, { position: 'asc' }],
+    });
+  }
+
   private async qualifyFromGroups(tx: Prisma.TransactionClient, tournament: Tournament, force = false) {
     if (tournament.labMode && !force) return;
     const groups = await tx.tournamentGroup.findMany({
