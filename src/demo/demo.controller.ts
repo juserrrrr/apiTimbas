@@ -6,7 +6,7 @@ import { ActorService } from '../common/actor.service';
 import { DemoService } from './demo.service';
 import { EaFcClubsService } from '../ea-fc-clubs/ea-fc-clubs.service';
 import { TournamentMatchService } from '../tournament/tournament-match.service';
-import { AssignLiveEaGroupsDto, BuildDemoDraftDto, BuildDemoTournamentDto, BuildEaFourGroupsTournamentDto, BuildRealEaTournamentDto, CreateLiveEaTournamentDto, DemoEaClubDto, DemoEaHistoryDto, DemoEaSyncDto, PrepareDemoEaMatchDto } from './dto/demo.dto';
+import { AssignLiveEaGroupsDto, BuildDemoDraftDto, BuildDemoTournamentDto, BuildEaFourGroupsTournamentDto, BuildRealEaTournamentDto, CreateLiveEaTournamentDto, DemoEaClubDto, DemoEaHistoryDto, DemoEaMatchLookupDto, DemoEaSyncDto, PrepareDemoEaMatchDto } from './dto/demo.dto';
 import { AwardCardSettingsService } from '../settings/award-card-settings.service';
 
 type AuthedRequest = Request & { tokenPayload?: { discordId?: string } };
@@ -62,6 +62,14 @@ export class DemoController {
   async eaHistory(@Body() dto: DemoEaHistoryDto) {
     const matches = await this.eaClubs.friendlyMatches(dto.clubId, 'common-gen5');
     return { count: matches.length, latest: matches[0] ?? null, matches };
+  }
+
+  @Post('ea/match/raw')
+  async rawEaMatch(@Body() dto: DemoEaMatchLookupDto) {
+    const matches = await this.eaClubs.friendlyMatches(dto.clubId, 'common-gen5');
+    const match = matches.find((item) => item.externalMatchId === dto.externalMatchId);
+    if (!match) throw new BadRequestException('Esse EA Match ID não apareceu entre os amistosos recentes do clube informado.');
+    return match;
   }
 
   @Post('ea/tournament')
