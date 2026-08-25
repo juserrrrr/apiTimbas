@@ -84,6 +84,11 @@ export class DemoService {
         }),
       ].join('\n'));
     }
+    const now = Date.now();
+    if (dto.startsAt.getTime() <= now + 60_000) {
+      throw new BadRequestException('Defina o início da operação para pelo menos 2 minutos no futuro.');
+    }
+    const registrationEndsAt = new Date(now + Math.min(5 * 60_000, Math.floor((dto.startsAt.getTime() - now) / 2)));
 
     const tournament = await this.tournaments.create({
       name: `${DEMO_PREFIX} AO VIVO · ${dto.name.trim()}`,
@@ -100,6 +105,8 @@ export class DemoService {
       woAfterHours: 0,
       matchWindowMinutes: 0,
       graceMinutes: 0,
+      registrationEndsAt,
+      startsAt: dto.startsAt,
     }, actor);
     await this.prisma.tournament.update({ where: { id: tournament.id }, data: { labMode: true } });
 

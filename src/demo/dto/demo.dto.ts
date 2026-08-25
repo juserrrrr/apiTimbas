@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { ArrayMaxSize, ArrayMinSize, IsArray, IsBoolean, IsEnum, IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min, MinLength, ValidateNested } from 'class-validator';
+import { ArrayMaxSize, ArrayMinSize, IsArray, IsBoolean, IsDate, IsEnum, IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min, MinLength, ValidateNested } from 'class-validator';
 import { DraftResultMode, TournamentFormat } from '@prisma/client';
 
 export const TOURNAMENT_STAGES = ['REGISTRATION', 'STARTED', 'PARTIAL', 'FINISHED'] as const;
@@ -28,6 +28,10 @@ export class CreateLiveEaTournamentDto {
   @MinLength(3)
   @MaxLength(80)
   name!: string;
+
+  @Type(() => Date)
+  @IsDate()
+  startsAt!: Date;
 
   @IsArray()
   @ArrayMinSize(4)
