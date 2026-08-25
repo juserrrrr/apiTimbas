@@ -17,6 +17,12 @@ export class DemoEaHistoryDto {
   clubId!: string;
 }
 
+export class BuildEaFourGroupsTournamentDto extends DemoEaClubDto {
+  @IsString()
+  @MinLength(1)
+  externalMatchId!: string;
+}
+
 export class CreateLiveEaTournamentDto {
   @IsString()
   @MinLength(3)

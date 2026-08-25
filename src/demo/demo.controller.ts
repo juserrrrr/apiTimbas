@@ -6,7 +6,7 @@ import { ActorService } from '../common/actor.service';
 import { DemoService } from './demo.service';
 import { EaFcClubsService } from '../ea-fc-clubs/ea-fc-clubs.service';
 import { TournamentMatchService } from '../tournament/tournament-match.service';
-import { AssignLiveEaGroupsDto, BuildDemoDraftDto, BuildDemoTournamentDto, BuildRealEaTournamentDto, CreateLiveEaTournamentDto, DemoEaClubDto, DemoEaHistoryDto, DemoEaSyncDto, PrepareDemoEaMatchDto } from './dto/demo.dto';
+import { AssignLiveEaGroupsDto, BuildDemoDraftDto, BuildDemoTournamentDto, BuildEaFourGroupsTournamentDto, BuildRealEaTournamentDto, CreateLiveEaTournamentDto, DemoEaClubDto, DemoEaHistoryDto, DemoEaSyncDto, PrepareDemoEaMatchDto } from './dto/demo.dto';
 import { AwardCardSettingsService } from '../settings/award-card-settings.service';
 
 type AuthedRequest = Request & { tokenPayload?: { discordId?: string } };
@@ -67,6 +67,11 @@ export class DemoController {
   @Post('ea/tournament')
   async realEaTournament(@Req() req: AuthedRequest, @Body() dto: BuildRealEaTournamentDto) {
     return this.demo.buildRealEaTournament(dto, await this.actor.require(req.tokenPayload?.discordId));
+  }
+
+  @Post('ea/tournament/four-groups')
+  async fourGroupsEaTournament(@Req() req: AuthedRequest, @Body() dto: BuildEaFourGroupsTournamentDto) {
+    return this.demo.buildEaFourGroupsTournament(dto.name.trim(), dto.externalMatchId, await this.actor.require(req.tokenPayload?.discordId));
   }
 
   @Post('ea/live')

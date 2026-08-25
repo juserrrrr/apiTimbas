@@ -226,18 +226,49 @@ export class DemoService {
     }
   }
 
-  private async buildRealEaTournamentInner(dto: BuildRealEaTournamentDto, actor: Actor) {
+  async buildEaFourGroupsTournament(clubName: string, externalMatchId: string, actor: Actor) {
+    try {
+      return await this.buildRealEaTournamentInner(
+        { clubName, teamCount: 16, maxMatches: 200 },
+        actor,
+        { groupCount: 4, advancePerGroup: 2, discoveryLimit: 64, scanLimit: 48, expansionPerClub: 6, requireTarget: true, anchorMatchId: externalMatchId },
+      );
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      this.logger.error(`Falha ao varrer campeonato EA 4x4: ${detail}`, (error as Error)?.stack);
+      if (error instanceof BadRequestException) throw error;
+      throw new BadRequestException(`Não foi possível montar os 4 grupos de 4: ${detail}`);
+    }
+  }
+
+  private async buildRealEaTournamentInner(
+    dto: BuildRealEaTournamentDto,
+    actor: Actor,
+    options: {
+      groupCount?: number;
+      advancePerGroup?: number;
+      discoveryLimit?: number;
+      scanLimit?: number;
+      expansionPerClub?: number;
+      requireTarget?: boolean;
+      anchorMatchId?: string;
+    } = {},
+  ) {
     const targetTeams = dto.teamCount ?? 8;
     const maxMatches = dto.maxMatches ?? 24;
+    const groupCount = options.groupCount ?? 2;
+    const discoveryLimit = options.discoveryLimit ?? targetTeams;
+    const scanLimit = options.scanLimit ?? targetTeams;
+    const expansionPerClub = options.expansionPerClub ?? 2;
     const root = await this.eaClubs.resolveTournamentClub(dto.clubName.trim(), 'common-gen5');
-    const clubs = new Map<string, { externalId: string; name: string }>([
+    const discoveredClubs = new Map<string, { externalId: string; name: string }>([
       [root.externalClubId, { externalId: root.externalClubId, name: root.name }],
     ]);
     const queue = [root.externalClubId];
     const processed = new Set<string>();
     const discoveredMatches = new Map<string, EaClubMatch>();
 
-    while (queue.length > 0 && processed.size < targetTeams) {
+    while (queue.length > 0 && processed.size < scanLimit) {
       const clubId = queue.shift()!;
       if (processed.has(clubId)) continue;
       processed.add(clubId);
@@ -249,6 +280,18 @@ export class DemoService {
         this.logger.warn(`Histórico EA indisponível para o clube ${clubId}; seguindo com os amistosos já descobertos.`);
         continue;
       }
+      const anchored = options.anchorMatchId ? history.find((match) => match.externalMatchId === options.anchorMatchId) : undefined;
+      if (anchored) {
+        for (const club of [
+          { externalId: anchored.homeClubId, name: anchored.homeClubName },
+          { externalId: anchored.awayClubId, name: anchored.awayClubName },
+        ]) {
+          if (!discoveredClubs.has(club.externalId)) {
+            discoveredClubs.set(club.externalId, club);
+            queue.unshift(club.externalId);
+          }
+        }
+      }
       let newlyQueued = 0;
       for (const match of history) {
         discoveredMatches.set(match.externalMatchId, match);
@@ -256,19 +299,66 @@ export class DemoService {
           { externalId: match.homeClubId, name: match.homeClubName },
           { externalId: match.awayClubId, name: match.awayClubName },
         ]) {
-          if (clubs.has(club.externalId) || clubs.size >= targetTeams || newlyQueued >= 2) continue;
-          clubs.set(club.externalId, club);
+          if (discoveredClubs.has(club.externalId) || discoveredClubs.size >= discoveryLimit || newlyQueued >= expansionPerClub) continue;
+          discoveredClubs.set(club.externalId, club);
           queue.push(club.externalId);
           newlyQueued++;
         }
       }
     }
 
-    if (clubs.size < 2) {
+    if (discoveredClubs.size < 2) {
       throw new BadRequestException('A EA não retornou adversários suficientes para montar o campeonato.');
     }
 
-    const selectedIds = new Set(clubs.keys());
+    const anchorMatch = options.anchorMatchId ? discoveredMatches.get(options.anchorMatchId) : undefined;
+    if (options.anchorMatchId && !anchorMatch) {
+      throw new BadRequestException('A partida selecionada não apareceu no histórico atual da EA. Carregue as partidas novamente e escolha outra âncora.');
+    }
+    if (anchorMatch && ![anchorMatch.homeClubId, anchorMatch.awayClubId].includes(root.externalClubId)) {
+      throw new BadRequestException('A partida selecionada não pertence ao clube inicial.');
+    }
+    if (anchorMatch) {
+      discoveredClubs.set(anchorMatch.homeClubId, { externalId: anchorMatch.homeClubId, name: anchorMatch.homeClubName });
+      discoveredClubs.set(anchorMatch.awayClubId, { externalId: anchorMatch.awayClubId, name: anchorMatch.awayClubName });
+    }
+    const selectedIds = new Set<string>([
+      root.externalClubId,
+      ...(anchorMatch ? [anchorMatch.homeClubId, anchorMatch.awayClubId] : []),
+    ]);
+    const degree = new Map<string, number>();
+    for (const match of discoveredMatches.values()) {
+      degree.set(match.homeClubId, (degree.get(match.homeClubId) ?? 0) + 1);
+      degree.set(match.awayClubId, (degree.get(match.awayClubId) ?? 0) + 1);
+    }
+    while (selectedIds.size < targetTeams) {
+      const candidate = [...discoveredClubs.keys()]
+        .filter((clubId) => !selectedIds.has(clubId))
+        .map((clubId) => ({
+          clubId,
+          links: [...discoveredMatches.values()].filter((match) => {
+            if (match.homeClubId === clubId) return selectedIds.has(match.awayClubId);
+            if (match.awayClubId === clubId) return selectedIds.has(match.homeClubId);
+            return false;
+          }).length,
+          degree: degree.get(clubId) ?? 0,
+        }))
+        .sort((a, b) => b.links - a.links || b.degree - a.degree)[0];
+      if (!candidate) break;
+      selectedIds.add(candidate.clubId);
+    }
+    if (options.requireTarget && selectedIds.size < targetTeams) {
+      throw new BadRequestException(
+        `A varredura encontrou somente ${selectedIds.size} dos ${targetTeams} clubes necessários. Tente outro clube inicial, de preferência um que tenha muitos amistosos recentes.`,
+      );
+    }
+    const clubs = new Map(
+      [...selectedIds].flatMap((clubId) => {
+        const club = discoveredClubs.get(clubId);
+        return club ? [[clubId, club] as const] : [];
+      }),
+    );
+
     let matches = Array.from(discoveredMatches.values())
       .filter((match) => selectedIds.has(match.homeClubId) && selectedIds.has(match.awayClubId))
       .sort((a, b) => a.playedAt.getTime() - b.playedAt.getTime())
@@ -312,8 +402,8 @@ export class DemoService {
         game: CompetitionGame.EA_FC,
         format: TournamentFormat.GROUPS_KNOCKOUT,
         maxTeams: clubs.size,
-        groupCount: 2,
-        advancePerGroup: clubs.size === 4 ? 1 : 2,
+        groupCount,
+        advancePerGroup: options.advancePerGroup ?? (clubs.size === 4 ? 1 : 2),
         thirdPlace: true,
         allowDraws: true,
         requireProof: false,
@@ -325,8 +415,36 @@ export class DemoService {
 
     const teamByClub = new Map<string, string>();
     const usedTeamNames = new Set<string>();
+    let orderedClubs = [...clubs.values()];
+    if (groupCount === 4 && orderedClubs.length === 16) {
+      const pairWeights = new Map<string, number>();
+      const pairKey = (first: string, second: string) => [first, second].sort().join(':');
+      for (const match of matches) {
+        const key = pairKey(match.homeClubId, match.awayClubId);
+        pairWeights.set(key, (pairWeights.get(key) ?? 0) + 1);
+      }
+      const byConnectivity = [...orderedClubs].sort((a, b) => (degree.get(b.externalId) ?? 0) - (degree.get(a.externalId) ?? 0));
+      const groupCandidates = Array.from({ length: 4 }, (_, index) => [byConnectivity[index]]);
+      for (const club of byConnectivity.slice(4)) {
+        const destination = groupCandidates
+          .map((members, index) => ({
+            index,
+            size: members.length,
+            links: members.reduce((total, member) => total + (pairWeights.get(pairKey(club.externalId, member.externalId)) ?? 0), 0),
+          }))
+          .filter((group) => group.size < 4)
+          .sort((a, b) => b.links - a.links || a.size - b.size)[0];
+        groupCandidates[destination.index].push(club);
+      }
+      const seedSlots = distributeIntoGroups(16, 4);
+      const seeded: Array<(typeof orderedClubs)[number] | undefined> = Array(16);
+      groupCandidates.forEach((members, groupIndex) => {
+        members.forEach((club, memberIndex) => { seeded[seedSlots[groupIndex][memberIndex]] = club; });
+      });
+      orderedClubs = seeded.filter((club): club is (typeof orderedClubs)[number] => Boolean(club));
+    }
     let seed = 1;
-    for (const club of clubs.values()) {
+    for (const club of orderedClubs) {
       const baseName = club.name.slice(0, 72);
       let teamName = baseName;
       for (let suffix = 2; usedTeamNames.has(teamName.toLocaleLowerCase('pt-BR')); suffix++) {
@@ -366,11 +484,14 @@ export class DemoService {
       const homeTeamId = teamByClub.get(source.homeClubId);
       const awayTeamId = teamByClub.get(source.awayClubId);
       if (!homeTeamId || !awayTeamId) continue;
+      const homeGroupId = groupByClub.get(source.homeClubId);
+      const awayGroupId = groupByClub.get(source.awayClubId);
+      if (!homeGroupId || homeGroupId !== awayGroupId) continue;
       const match = await this.prisma.tournamentMatch.create({
         data: {
           tournamentId: tournament.id,
           phase: TournamentPhase.GROUP,
-          groupId: groupByClub.get(source.homeClubId) ?? null,
+          groupId: homeGroupId,
           round: index + 1,
           position: 0,
           label: `[EA] ${source.homeClubName} x ${source.awayClubName}`,
@@ -382,6 +503,17 @@ export class DemoService {
         },
       });
       createdMatches.push({ id: match.id, source });
+    }
+
+    if (options.requireTarget) {
+      const representedClubs = new Set(createdMatches.flatMap(({ source }) => [source.homeClubId, source.awayClubId]));
+      const representedGroups = new Set(createdMatches.map(({ source }) => groupByClub.get(source.homeClubId)).filter(Boolean));
+      if (representedClubs.size < targetTeams || representedGroups.size < groupCount) {
+        await this.prisma.tournament.delete({ where: { id: tournament.id } });
+        throw new BadRequestException(
+          `A rede encontrou 16 clubes, mas os amistosos em torno da partida âncora não cobrem os 4 grupos completos (${representedClubs.size}/16 clubes aproveitáveis). Escolha outra partida do campeonato como âncora.`,
+        );
+      }
     }
 
     for (const item of createdMatches) {
@@ -535,6 +667,7 @@ export class DemoService {
       ...summary,
       debug: {
         ...summary.debug,
+        ...(anchorMatch ? { partidaAncora: `${anchorMatch.homeClubName} ${anchorMatch.homeScore} x ${anchorMatch.awayScore} ${anchorMatch.awayClubName} · ${anchorMatch.externalMatchId}` } : {}),
         clubesDescobertos: Array.from(clubs.values()).map((club) => `${club.name} · ${club.externalId}`),
         amistososImportados: createdMatches.map(({ source }) =>
           `${source.homeClubName} ${source.homeScore} x ${source.awayScore} ${source.awayClubName}`,
