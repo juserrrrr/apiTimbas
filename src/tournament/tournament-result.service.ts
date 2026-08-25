@@ -100,7 +100,10 @@ export class TournamentResultService {
       include: { tournament: true },
     });
     if (!match) throw new NotFoundException('Partida não encontrada neste campeonato.');
-    this.assertMatchIsOpen(match);
+    const correctingLabResult = match.tournament.labMode &&
+      match.phase === TournamentPhase.GROUP &&
+      (match.status === TournamentMatchStatus.FINISHED || match.status === TournamentMatchStatus.WALKOVER);
+    if (!correctingLabResult) this.assertMatchIsOpen(match);
     if (match.homeTeamId !== winnerTeamId && match.awayTeamId !== winnerTeamId) {
       throw new BadRequestException('O vencedor precisa ser um dos times da partida.');
     }
@@ -109,11 +112,24 @@ export class TournamentResultService {
 
     return this.prisma.$transaction(
       async (tx) => {
-        const claimed = await tx.tournamentMatch.updateMany({
-          where: { id: matchId, status: { in: OPEN_STATUSES } },
-          data: { status: TournamentMatchStatus.WALKOVER },
-        });
-        if (claimed.count === 0) throw new BadRequestException('Esta partida já foi encerrada.');
+        if (correctingLabResult) {
+          if (match.homeScore === null || match.awayScore === null) throw new BadRequestException('O resultado anterior está incompleto.');
+          const publishedKnockout = await tx.tournamentMatch.count({
+            where: { tournamentId, phase: { not: TournamentPhase.GROUP }, OR: [{ homeTeamId: { not: null } }, { awayTeamId: { not: null } }] },
+          });
+          if (publishedKnockout > 0) throw new BadRequestException('O mata-mata já foi publicado. Corrija o W.O. antes de montar a chave.');
+          await this.reverseTeamStats(tx, match.tournament, match.homeTeamId!, match.homeScore, match.awayScore);
+          await this.reverseTeamStats(tx, match.tournament, match.awayTeamId!, match.awayScore, match.homeScore);
+          await tx.tournamentEaPlayerStat.deleteMany({ where: { matchId } });
+          await tx.matchProof.deleteMany({ where: { matchId } });
+        } else {
+          const claimed = await tx.tournamentMatch.updateMany({
+            where: { id: matchId, status: { in: OPEN_STATUSES } },
+            data: { status: TournamentMatchStatus.WALKOVER },
+          });
+          if (claimed.count === 0) throw new BadRequestException('Esta partida já foi encerrada.');
+        }
+        const baseLabel = match.label?.split(' (W.O.:')[0] ?? 'Partida';
         const updated = await tx.tournamentMatch.update({
           where: { id: matchId },
           data: {
@@ -123,7 +139,7 @@ export class TournamentResultService {
             awayScore: match.awayTeamId === winnerTeamId ? 1 : 0,
             playedAt: new Date(),
             reportedByDiscordId,
-            label: reason ? `${match.label ?? 'Partida'} (W.O.: ${reason})` : match.label,
+            label: reason ? `${baseLabel} (W.O.: ${reason})` : `${baseLabel} (W.O.)`,
           },
         });
         await this.applyTeamStats(tx, match.tournament, match.phase, winnerTeamId, 1, 0);
@@ -131,6 +147,11 @@ export class TournamentResultService {
         await propagate(tx, updated, winnerTeamId, loserTeamId);
         await this.qualifyFromGroups(tx, match.tournament);
         await this.maybeFinish(tx, match.tournament);
+        if (correctingLabResult) {
+          await tx.tournamentMatchMessage.create({
+            data: { matchId, teamId: null, system: true, body: `A organização corrigiu o resultado e declarou W.O. para ${winnerTeamId === match.homeTeamId ? 'o mandante' : 'o visitante'}.` },
+          });
+        }
 
         return updated;
       },
@@ -279,6 +300,11 @@ export class TournamentResultService {
     });
     if (publishedKnockout > 0) throw new BadRequestException('O mata-mata deste campeonato já foi publicado.');
     await this.prisma.$transaction((tx) => this.qualifyFromGroups(tx, tournament, true));
+    const now = new Date();
+    await this.prisma.tournamentMatch.updateMany({
+      where: { tournamentId, phase: { not: TournamentPhase.GROUP }, status: TournamentMatchStatus.READY },
+      data: { scheduledAt: now, readyAt: now },
+    });
     return this.prisma.tournamentMatch.findMany({
       where: { tournamentId, phase: { not: TournamentPhase.GROUP } },
       include: { homeTeam: true, awayTeam: true },

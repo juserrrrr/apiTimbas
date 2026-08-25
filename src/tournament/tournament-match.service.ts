@@ -265,10 +265,7 @@ export class TournamentMatchService {
     if (available.length === 0) {
       throw new BadRequestException('Todos os amistosos encontrados entre esses clubes já foram usados no campeonato.');
     }
-    if (selectedEaMatchId && !canModerate) {
-      throw new ForbiddenException('Somente a organização pode escolher manualmente uma partida da EA.');
-    }
-    if (available.length > 1 && canModerate && !selectedEaMatchId) {
+    if (available.length > 1 && !selectedEaMatchId) {
       return {
         selectionRequired: true as const,
         candidates: available.map((candidate) => {
@@ -282,8 +279,8 @@ export class TournamentMatchService {
         }),
       };
     }
-    // Para capitães e jogadores, consumir o amistoso mais antigo ainda não
-    // utilizado preserva a ordem real das rodadas. O admin pode escolher acima.
+    // Uma única opção é consumida automaticamente. Havendo mais de uma, tanto a
+    // organização quanto o capitão escolhem explicitamente pela lista acima.
     const eaMatch = selectedEaMatchId
       ? available.find((candidate) => candidate.externalMatchId === selectedEaMatchId)
       : available[0];

@@ -260,6 +260,12 @@ export class TournamentController {
     return this.matches.claimResult(id, matchId, dto, await this.me(req));
   }
 
+  @Post(':id/lab/knockout')
+  async buildLabKnockout(@Req() req: AuthedRequest, @Param('id') id: string) {
+    await this.access.requireModerate(id, await this.me(req));
+    return this.results.buildLabKnockout(id);
+  }
+
   @Post(':id/matches/:matchId/grace')
   async requestGrace(
     @Req() req: AuthedRequest,
