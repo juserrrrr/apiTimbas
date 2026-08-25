@@ -210,6 +210,39 @@ export class TournamentResultService {
     }, { timeout: 30000, isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
   }
 
+  async auditLabEaScores(tournamentId: string) {
+    const tournament = await this.prisma.tournament.findUnique({ where: { id: tournamentId } });
+    if (!tournament?.labMode) throw new BadRequestException('A auditoria de placares está disponível somente no Laboratório.');
+    const matches = await this.prisma.tournamentMatch.findMany({
+      where: {
+        tournamentId,
+        phase: TournamentPhase.GROUP,
+        status: { in: [TournamentMatchStatus.FINISHED, TournamentMatchStatus.WALKOVER] },
+        eaRaw: { not: Prisma.DbNull },
+      },
+      include: { homeTeam: true, awayTeam: true },
+      orderBy: [{ round: 'asc' }, { position: 'asc' }],
+    });
+    return matches.flatMap((match) => {
+      if (!match.homeTeam?.eaClubId || !match.awayTeam?.eaClubId || match.homeScore === null || match.awayScore === null) return [];
+      const inferred = inferScoreFromEaPlayers(match.eaRaw, match.homeTeam.eaClubId, match.awayTeam.eaClubId);
+      const isThreeNil = (match.homeScore === 3 && match.awayScore === 0) || (match.homeScore === 0 && match.awayScore === 3);
+      if (!isThreeNil || !inferred || (match.homeScore === inferred.homeScore && match.awayScore === inferred.awayScore)) return [];
+      return [{
+        matchId: match.id,
+        label: match.label,
+        homeTeamName: match.homeTeam.name,
+        awayTeamName: match.awayTeam.name,
+        officialHomeScore: match.homeScore,
+        officialAwayScore: match.awayScore,
+        inferredHomeScore: inferred.homeScore,
+        inferredAwayScore: inferred.awayScore,
+        eaMatchId: match.eaMatchId,
+        reason: 'O placar agregado 3 a 0 diverge do maior goalsconceded registrado pelos atletas de cada clube.',
+      }];
+    });
+  }
+
   assertScoreIsValid(match: TournamentMatch, tournament: Tournament, homeScore: number, awayScore: number) {
     this.assertMatchIsOpen(match);
     if (homeScore !== awayScore) return;
@@ -411,4 +444,23 @@ export class TournamentResultService {
     });
 
   }
+}
+
+function inferScoreFromEaPlayers(raw: Prisma.JsonValue, homeClubId: string, awayClubId: string): { homeScore: number; awayScore: number } | null {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const players = (raw as Prisma.JsonObject).players;
+  if (players === null || typeof players !== 'object' || Array.isArray(players)) return null;
+  const concededBy = (clubId: string): number | null => {
+    const clubPlayers = (players as Prisma.JsonObject)[clubId];
+    if (clubPlayers === null || typeof clubPlayers !== 'object' || Array.isArray(clubPlayers)) return null;
+    const values = Object.values(clubPlayers as Prisma.JsonObject)
+      .flatMap((player) => player !== null && typeof player === 'object' && !Array.isArray(player)
+        ? [Number((player as Prisma.JsonObject).goalsconceded)]
+        : [])
+      .filter((value) => Number.isFinite(value) && value >= 0);
+    return values.length > 0 ? Math.max(...values) : null;
+  };
+  const homeConceded = concededBy(homeClubId);
+  const awayConceded = concededBy(awayClubId);
+  return homeConceded === null || awayConceded === null ? null : { homeScore: awayConceded, awayScore: homeConceded };
 }
