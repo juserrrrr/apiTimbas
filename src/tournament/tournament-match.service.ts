@@ -7,6 +7,7 @@ import { EaFcClubsService } from '../ea-fc-clubs/ea-fc-clubs.service';
 import { FEATURE_TOURNAMENT_AI_RESULTS, FEATURE_TOURNAMENT_EA_RESULTS } from '../feature-flags/feature-flags.constants';
 import { FeatureFlagsService } from '../feature-flags/feature-flags.service';
 import { EaClubMatch, EaClubMatchPlayer } from '../ea-fc-clubs/ea-fc-clubs.types';
+import { analyzeEaMatchScore } from '../ea-fc-clubs/ea-score-analysis';
 import { TournamentAccessService } from './tournament-access.service';
 import { TournamentResultService } from './tournament-result.service';
 import { ClaimResultDto, MatchMessageDto, ProposeScheduleDto, RequestMatchReviewDto, RespondClaimDto, RespondScheduleDto } from './dto/tournament.dto';
@@ -254,12 +255,16 @@ export class TournamentMatchService {
     if (candidates.length === 0) {
       throw new NotFoundException('A partida ainda não apareceu no histórico de amistosos dos dois clubes.');
     }
+    const completeCandidates = candidates.filter((candidate) => !this.eaScoreAnalysis(candidate).interrupted);
+    if (completeCandidates.length === 0) {
+      throw new NotFoundException('A EA encontrou somente uma tentativa interrompida entre os clubes. Ela foi ignorada. Joguem novamente e depois use Rescanear EA.');
+    }
     const usedEaMatches = await this.prisma.tournamentMatch.findMany({
-      where: { eaMatchId: { in: candidates.map((candidate) => candidate.externalMatchId) } },
+      where: { eaMatchId: { in: completeCandidates.map((candidate) => candidate.externalMatchId) } },
       select: { eaMatchId: true },
     });
     const usedIds = new Set(usedEaMatches.flatMap((item) => item.eaMatchId ? [item.eaMatchId] : []));
-    const available = candidates
+    const available = completeCandidates
       .filter((candidate) => !usedIds.has(candidate.externalMatchId))
       .sort((left, right) => left.playedAt.getTime() - right.playedAt.getTime());
     if (available.length === 0) {
@@ -271,13 +276,16 @@ export class TournamentMatchService {
         candidates: available.map((candidate) => {
           const tournamentHomeIsEaHome = candidate.homeClubId === match.homeTeam!.eaClubId;
           const suspiciousScore = this.isSuspiciousEaScore(candidate);
+          const effective = this.effectiveEaScore(candidate);
           return {
             eaMatchId: candidate.externalMatchId,
             playedAt: candidate.playedAt,
-            homeScore: tournamentHomeIsEaHome ? candidate.homeScore : candidate.awayScore,
-            awayScore: tournamentHomeIsEaHome ? candidate.awayScore : candidate.homeScore,
+            homeScore: tournamentHomeIsEaHome ? effective.homeScore : effective.awayScore,
+            awayScore: tournamentHomeIsEaHome ? effective.awayScore : effective.homeScore,
+            officialHomeScore: tournamentHomeIsEaHome ? candidate.homeScore : candidate.awayScore,
+            officialAwayScore: tournamentHomeIsEaHome ? candidate.awayScore : candidate.homeScore,
             suspiciousScore,
-            warning: suspiciousScore ? 'Placar 3 a 0 sem gols atribuídos aos jogadores e sem DNF declarado pela EA.' : undefined,
+            warning: suspiciousScore ? this.eaScoreWarning(candidate) : undefined,
           };
         }),
       };
@@ -294,13 +302,16 @@ export class TournamentMatchService {
     }
     const suspiciousScore = this.isSuspiciousEaScore(eaMatch);
     if (suspiciousScore && !canModerate) {
-      throw new BadRequestException('A EA retornou um 3 a 0 sem artilheiros e sem DNF. Somente a organização pode aceitar esse placar ou corrigi-lo por imagem.');
+      throw new BadRequestException('O placar geral da EA diverge do SCORE dos atletas. Somente a organização pode revisar e confirmar esse resultado.');
     }
 
     const tournamentHomeIsEaHome = eaMatch.homeClubId === match.homeTeam.eaClubId;
-    const homeScore = tournamentHomeIsEaHome ? eaMatch.homeScore : eaMatch.awayScore;
-    const awayScore = tournamentHomeIsEaHome ? eaMatch.awayScore : eaMatch.homeScore;
-    const matchTags = this.matchTags(eaMatch);
+    const effective = this.effectiveEaScore(eaMatch);
+    const homeScore = tournamentHomeIsEaHome ? effective.homeScore : effective.awayScore;
+    const awayScore = tournamentHomeIsEaHome ? effective.awayScore : effective.homeScore;
+    const officialHomeScore = tournamentHomeIsEaHome ? eaMatch.homeScore : eaMatch.awayScore;
+    const officialAwayScore = tournamentHomeIsEaHome ? eaMatch.awayScore : eaMatch.homeScore;
+    const matchTags = this.matchTags(eaMatch, effective.homeScore, effective.awayScore);
     const settled = await this.results.settle(matchId, homeScore, awayScore, actor.discordId, async (tx) => {
       await tx.tournamentMatch.update({
         where: { id: matchId },
@@ -318,9 +329,59 @@ export class TournamentMatchService {
       if (rows.length) await tx.tournamentEaPlayerStat.createMany({ data: rows });
     });
     await this.systemMessage(matchId, null, suspiciousScore
-      ? `A organização aceitou um placar suspeito da EA: ${homeScore} a ${awayScore}, sem gols humanos atribuídos e sem DNF declarado.`
+      ? `A organização confirmou ${homeScore} a ${awayScore} pelo SCORE dos atletas. O cabeçalho da EA informava ${officialHomeScore} a ${officialAwayScore}.`
       : `Resultado confirmado pela EA: ${homeScore} a ${awayScore}. Estatísticas sincronizadas.`);
     return settled;
+  }
+
+  async rescanClosedLabEaResult(tournamentId: string, matchId: string, actor: Actor) {
+    await this.featureFlags.ensureEnabled(FEATURE_TOURNAMENT_EA_RESULTS);
+    const match = await this.prisma.tournamentMatch.findFirst({
+      where: { id: matchId, tournamentId },
+      include: { tournament: true, homeTeam: true, awayTeam: true },
+    });
+    if (!match) throw new NotFoundException('Partida não encontrada neste campeonato.');
+    const access = await this.access.of(tournamentId, actor);
+    if (!access.canModerate) throw new ForbiddenException('Somente a organização pode reanalisar um resultado encerrado.');
+    if (!match.tournament.labMode) throw new BadRequestException('A reanálise de resultado encerrado está disponível somente no Laboratório.');
+    if (match.status !== TournamentMatchStatus.FINISHED && match.status !== TournamentMatchStatus.WALKOVER) {
+      throw new BadRequestException('A partida ainda não possui resultado encerrado para reanalisar.');
+    }
+    if (!match.eaMatchId || !match.homeTeam?.eaClubId || !match.awayTeam?.eaClubId) {
+      throw new BadRequestException('Esta partida não possui um EA Match ID e dois clubes validados.');
+    }
+    const platform = (match.homeTeam.eaPlatform ?? 'common-gen5') as 'common-gen5';
+    const [homeHistory, awayHistory] = await Promise.all([
+      this.eaClubs.friendlyMatches(match.homeTeam.eaClubId, platform),
+      this.eaClubs.friendlyMatches(match.awayTeam.eaClubId, platform),
+    ]);
+    const refreshed = homeHistory.find((item) => item.externalMatchId === match.eaMatchId);
+    const awayCopy = awayHistory.find((item) => item.externalMatchId === match.eaMatchId);
+    if (!refreshed || !awayCopy) {
+      throw new NotFoundException('A EA não retornou mais esse Match ID entre os amistosos recentes dos dois clubes.');
+    }
+    const analysis = this.eaScoreAnalysis(refreshed);
+    const tournamentHomeIsEaHome = refreshed.homeClubId === match.homeTeam.eaClubId;
+    const orient = (score: { homeScore: number; awayScore: number }) => tournamentHomeIsEaHome
+      ? score
+      : { homeScore: score.awayScore, awayScore: score.homeScore };
+    const official = orient({ homeScore: refreshed.homeScore, awayScore: refreshed.awayScore });
+    const playerScore = analysis.playerScore ? orient(analysis.playerScore) : null;
+    await this.prisma.tournamentMatch.update({
+      where: { id: matchId },
+      data: { eaRaw: refreshed.rawData as Prisma.InputJsonValue, eaVerifiedAt: new Date() },
+    });
+    return {
+      eaMatchId: refreshed.externalMatchId,
+      kind: analysis.interrupted ? 'INTERRUPTED' as const : analysis.scoreMismatch ? 'SCORE_MISMATCH' as const : 'CONSISTENT' as const,
+      officialHomeScore: official.homeScore,
+      officialAwayScore: official.awayScore,
+      inferredHomeScore: playerScore?.homeScore ?? official.homeScore,
+      inferredAwayScore: playerScore?.awayScore ?? official.awayScore,
+      durationSeconds: Math.max(analysis.homeDurationSeconds, analysis.awayDurationSeconds),
+      nonZeroUserResults: analysis.nonZeroUserResults,
+      playerCount: analysis.playerCount,
+    };
   }
 
   async requestGrace(tournamentId: string, matchId: string, actor: Actor) {
@@ -454,16 +515,19 @@ export class TournamentMatchService {
     ];
   }
 
-  private matchTags(match: EaClubMatch): string[] {
+  private matchTags(match: EaClubMatch, homeScore = match.homeScore, awayScore = match.awayScore): string[] {
     return [
       ...(this.isSuspiciousEaScore(match) ? ['EA_SCORE_SUSPEITO'] : []),
-      ...(match.homeScore === 0 || match.awayScore === 0 ? ['CLEAN_SHEET'] : []),
-      ...(match.homeScore + match.awayScore >= 7 ? ['CHUVA_DE_GOLS'] : []),
-      ...(Math.abs(match.homeScore - match.awayScore) >= 4 ? ['GOLEADA'] : []),
+      ...(homeScore === 0 || awayScore === 0 ? ['CLEAN_SHEET'] : []),
+      ...(homeScore + awayScore >= 7 ? ['CHUVA_DE_GOLS'] : []),
+      ...(Math.abs(homeScore - awayScore) >= 4 ? ['GOLEADA'] : []),
     ];
   }
 
   private isSuspiciousEaScore(match: EaClubMatch): boolean {
+    const analysis = this.eaScoreAnalysis(match);
+    if (analysis.interrupted) return true;
+    if (analysis.playerScore) return analysis.scoreMismatch;
     const isThreeNil = (match.homeScore === 3 && match.awayScore === 0) ||
       (match.homeScore === 0 && match.awayScore === 3);
     if (!isThreeNil) return false;
@@ -475,6 +539,28 @@ export class TournamentMatchService {
       Object.values(rawClubs).some((club) => club !== null && typeof club === 'object' &&
         String((club as Record<string, unknown>).winnerByDnf ?? '0') === '1');
     return humanGoals === 0 && !hasDnf;
+  }
+
+  private eaScoreAnalysis(match: EaClubMatch) {
+    return analyzeEaMatchScore(match.rawData, match.homeClubId, match.awayClubId, match.homeScore, match.awayScore);
+  }
+
+  private effectiveEaScore(match: EaClubMatch) {
+    const analysis = this.eaScoreAnalysis(match);
+    return analysis.playerScore && !analysis.interrupted
+      ? analysis.playerScore
+      : { homeScore: match.homeScore, awayScore: match.awayScore };
+  }
+
+  private eaScoreWarning(match: EaClubMatch): string {
+    const analysis = this.eaScoreAnalysis(match);
+    if (analysis.interrupted) {
+      return `Tentativa interrompida com no máximo ${Math.max(analysis.homeDurationSeconds, analysis.awayDurationSeconds)} segundos. Este registro não pode ser usado.`;
+    }
+    if (analysis.playerScore && analysis.scoreMismatch) {
+      return 'O cabeçalho da EA diverge do SCORE predominante dos atletas. Ao confirmar, será usado o placar dos atletas exibido acima.';
+    }
+    return 'Placar 3 a 0 sem gols atribuídos aos jogadores e sem DNF declarado pela EA.';
   }
 
   @Cron(CronExpression.EVERY_MINUTE)

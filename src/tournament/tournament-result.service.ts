@@ -8,6 +8,7 @@ import {
   TournamentStatus,
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { analyzeEaMatchScore } from '../ea-fc-clubs/ea-score-analysis';
 import { bracketSizeFor, compareStandings, orderGroupQualifiers, seedSlots } from './bracket.builder';
 import { isKnockout, placeTeam, propagate, resolveWalkovers } from './bracket-advance';
 
@@ -198,7 +199,6 @@ export class TournamentResultService {
       await this.reverseTeamStats(tx, match.tournament, match.awayTeamId!, match.awayScore!, match.homeScore!);
       await this.applyTeamStats(tx, match.tournament, match.phase, match.homeTeamId!, homeScore, awayScore);
       await this.applyTeamStats(tx, match.tournament, match.phase, match.awayTeamId!, awayScore, homeScore);
-      await tx.tournamentEaPlayerStat.deleteMany({ where: { matchId } });
       await tx.matchProof.deleteMany({ where: { matchId } });
       const winnerTeamId = homeScore === awayScore ? null : homeScore > awayScore ? match.homeTeamId : match.awayTeamId;
       const updated = await tx.tournamentMatch.update({
@@ -225,9 +225,14 @@ export class TournamentResultService {
     });
     return matches.flatMap((match) => {
       if (!match.homeTeam?.eaClubId || !match.awayTeam?.eaClubId || match.homeScore === null || match.awayScore === null) return [];
-      const inferred = inferScoreFromEaPlayers(match.eaRaw, match.homeTeam.eaClubId, match.awayTeam.eaClubId);
-      const isThreeNil = (match.homeScore === 3 && match.awayScore === 0) || (match.homeScore === 0 && match.awayScore === 3);
-      if (!isThreeNil || !inferred || (match.homeScore === inferred.homeScore && match.awayScore === inferred.awayScore)) return [];
+      const analysis = analyzeEaMatchScore(
+        match.eaRaw,
+        match.homeTeam.eaClubId,
+        match.awayTeam.eaClubId,
+        match.homeScore,
+        match.awayScore,
+      );
+      if (!analysis.interrupted && (!analysis.playerScore || !analysis.scoreMismatch)) return [];
       return [{
         matchId: match.id,
         label: match.label,
@@ -235,12 +240,57 @@ export class TournamentResultService {
         awayTeamName: match.awayTeam.name,
         officialHomeScore: match.homeScore,
         officialAwayScore: match.awayScore,
-        inferredHomeScore: inferred.homeScore,
-        inferredAwayScore: inferred.awayScore,
+        inferredHomeScore: analysis.playerScore?.homeScore ?? 0,
+        inferredAwayScore: analysis.playerScore?.awayScore ?? 0,
         eaMatchId: match.eaMatchId,
-        reason: 'O placar agregado 3 a 0 diverge do maior goalsconceded registrado pelos atletas de cada clube.',
+        kind: analysis.interrupted ? 'INTERRUPTED' as const : 'SCORE_MISMATCH' as const,
+        durationSeconds: Math.max(analysis.homeDurationSeconds, analysis.awayDurationSeconds),
+        nonZeroUserResults: analysis.nonZeroUserResults,
+        playerCount: analysis.playerCount,
+        reason: analysis.interrupted
+          ? 'A EA publicou um resultado administrativo antes de a partida atingir duração mínima válida.'
+          : 'O placar geral da EA diverge do SCORE predominante registrado pelos atletas de cada clube.',
       }];
     });
+  }
+
+  async discardInterruptedLabEaResult(tournamentId: string, matchId: string) {
+    const match = await this.prisma.tournamentMatch.findFirst({ where: { id: matchId, tournamentId }, include: { tournament: true } });
+    if (!match) throw new NotFoundException('Partida não encontrada neste campeonato.');
+    if (!match.tournament.labMode) throw new BadRequestException('O descarte direto está disponível somente no Laboratório.');
+    if (match.phase !== TournamentPhase.GROUP) throw new BadRequestException('Somente partidas da fase de grupos podem ser reabertas diretamente.');
+    if (match.status !== TournamentMatchStatus.FINISHED && match.status !== TournamentMatchStatus.WALKOVER) throw new BadRequestException('Esta partida ainda não possui resultado encerrado.');
+    if (!match.homeTeamId || !match.awayTeamId || match.homeScore === null || match.awayScore === null) throw new BadRequestException('O resultado anterior está incompleto.');
+    const publishedKnockout = await this.prisma.tournamentMatch.count({
+      where: { tournamentId, phase: { not: TournamentPhase.GROUP }, OR: [{ homeTeamId: { not: null } }, { awayTeamId: { not: null } }] },
+    });
+    if (publishedKnockout > 0) throw new BadRequestException('O mata-mata já foi publicado. Reabra a partida antes de montar a chave.');
+
+    return this.prisma.$transaction(async (tx) => {
+      await this.reverseTeamStats(tx, match.tournament, match.homeTeamId!, match.homeScore!, match.awayScore!);
+      await this.reverseTeamStats(tx, match.tournament, match.awayTeamId!, match.awayScore!, match.homeScore!);
+      await tx.tournamentEaPlayerStat.deleteMany({ where: { matchId } });
+      await tx.matchProof.deleteMany({ where: { matchId } });
+      const updated = await tx.tournamentMatch.update({
+        where: { id: matchId },
+        data: {
+          status: TournamentMatchStatus.READY,
+          homeScore: null,
+          awayScore: null,
+          winnerTeamId: null,
+          reportedByDiscordId: null,
+          eaMatchId: null,
+          eaVerifiedAt: null,
+          eaRaw: Prisma.DbNull,
+          eaTags: [],
+          readyAt: new Date(),
+        },
+      });
+      await tx.tournamentMatchMessage.create({
+        data: { matchId, teamId: null, system: true, body: 'A organização descartou o registro interrompido da EA e reabriu a partida.' },
+      });
+      return updated;
+    }, { timeout: 30000, isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
   }
 
   assertScoreIsValid(match: TournamentMatch, tournament: Tournament, homeScore: number, awayScore: number) {
@@ -444,23 +494,4 @@ export class TournamentResultService {
     });
 
   }
-}
-
-function inferScoreFromEaPlayers(raw: Prisma.JsonValue, homeClubId: string, awayClubId: string): { homeScore: number; awayScore: number } | null {
-  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return null;
-  const players = (raw as Prisma.JsonObject).players;
-  if (players === null || typeof players !== 'object' || Array.isArray(players)) return null;
-  const concededBy = (clubId: string): number | null => {
-    const clubPlayers = (players as Prisma.JsonObject)[clubId];
-    if (clubPlayers === null || typeof clubPlayers !== 'object' || Array.isArray(clubPlayers)) return null;
-    const values = Object.values(clubPlayers as Prisma.JsonObject)
-      .flatMap((player) => player !== null && typeof player === 'object' && !Array.isArray(player)
-        ? [Number((player as Prisma.JsonObject).goalsconceded)]
-        : [])
-      .filter((value) => Number.isFinite(value) && value >= 0);
-    return values.length > 0 ? Math.max(...values) : null;
-  };
-  const homeConceded = concededBy(homeClubId);
-  const awayConceded = concededBy(awayClubId);
-  return homeConceded === null || awayConceded === null ? null : { homeScore: awayConceded, awayScore: homeConceded };
 }

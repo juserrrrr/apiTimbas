@@ -272,6 +272,16 @@ export class TournamentController {
     return this.results.auditLabEaScores(id);
   }
 
+  @Post(':id/matches/:matchId/lab/discard-ea-result')
+  async discardInterruptedLabEaResult(
+    @Req() req: AuthedRequest,
+    @Param('id') id: string,
+    @Param('matchId') matchId: string,
+  ) {
+    await this.access.requireModerate(id, await this.me(req));
+    return this.results.discardInterruptedLabEaResult(id, matchId);
+  }
+
   @Post(':id/matches/:matchId/grace')
   async requestGrace(
     @Req() req: AuthedRequest,
@@ -299,6 +309,15 @@ export class TournamentController {
     @Body() dto: CheckEaResultDto,
   ) {
     return this.matches.checkEaResult(id, matchId, await this.me(req), dto.eaMatchId);
+  }
+
+  @Post(':id/matches/:matchId/lab/rescan-ea')
+  async rescanClosedLabEaResult(
+    @Req() req: AuthedRequest,
+    @Param('id') id: string,
+    @Param('matchId') matchId: string,
+  ) {
+    return this.matches.rescanClosedLabEaResult(id, matchId, await this.me(req));
   }
 
   @Post(':id/matches/:matchId/request-review')
