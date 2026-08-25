@@ -265,7 +265,7 @@ export class TournamentMatchService {
     if (available.length === 0) {
       throw new BadRequestException('Todos os amistosos encontrados entre esses clubes já foram usados no campeonato.');
     }
-    if (available.length > 1 && !selectedEaMatchId) {
+    if ((available.length > 1 || match.tournament.labMode) && !selectedEaMatchId) {
       return {
         selectionRequired: true as const,
         candidates: available.map((candidate) => {
@@ -279,8 +279,10 @@ export class TournamentMatchService {
         }),
       };
     }
-    // Uma única opção é consumida automaticamente. Havendo mais de uma, tanto a
-    // organização quanto o capitão escolhem explicitamente pela lista acima.
+    // No Laboratório toda opção exige confirmação, inclusive quando a EA ainda
+    // só publicou um amistoso. Isso impede consumir uma partida antiga enquanto
+    // o resultado recém-jogado ainda não apareceu no histórico. Fora do Lab, uma
+    // única opção é automática; havendo mais de uma, a escolha é explícita.
     const eaMatch = selectedEaMatchId
       ? available.find((candidate) => candidate.externalMatchId === selectedEaMatchId)
       : available[0];
