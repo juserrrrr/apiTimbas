@@ -265,16 +265,19 @@ export class TournamentMatchService {
     if (available.length === 0) {
       throw new BadRequestException('Todos os amistosos encontrados entre esses clubes já foram usados no campeonato.');
     }
-    if ((available.length > 1 || match.tournament.labMode) && !selectedEaMatchId) {
+    if ((available.length > 1 || match.tournament.labMode || available.some((candidate) => this.isSuspiciousEaScore(candidate))) && !selectedEaMatchId) {
       return {
         selectionRequired: true as const,
         candidates: available.map((candidate) => {
           const tournamentHomeIsEaHome = candidate.homeClubId === match.homeTeam!.eaClubId;
+          const suspiciousScore = this.isSuspiciousEaScore(candidate);
           return {
             eaMatchId: candidate.externalMatchId,
             playedAt: candidate.playedAt,
             homeScore: tournamentHomeIsEaHome ? candidate.homeScore : candidate.awayScore,
             awayScore: tournamentHomeIsEaHome ? candidate.awayScore : candidate.homeScore,
+            suspiciousScore,
+            warning: suspiciousScore ? 'Placar 3 a 0 sem gols atribuídos aos jogadores e sem DNF declarado pela EA.' : undefined,
           };
         }),
       };
@@ -288,6 +291,10 @@ export class TournamentMatchService {
       : available[0];
     if (!eaMatch) {
       throw new BadRequestException('A partida da EA escolhida não pertence às opções válidas deste confronto.');
+    }
+    const suspiciousScore = this.isSuspiciousEaScore(eaMatch);
+    if (suspiciousScore && !canModerate) {
+      throw new BadRequestException('A EA retornou um 3 a 0 sem artilheiros e sem DNF. Somente a organização pode aceitar esse placar ou corrigi-lo por imagem.');
     }
 
     const tournamentHomeIsEaHome = eaMatch.homeClubId === match.homeTeam.eaClubId;
@@ -310,7 +317,9 @@ export class TournamentMatchService {
       ];
       if (rows.length) await tx.tournamentEaPlayerStat.createMany({ data: rows });
     });
-    await this.systemMessage(matchId, null, `Resultado confirmado pela EA: ${homeScore} a ${awayScore}. Estatísticas sincronizadas.`);
+    await this.systemMessage(matchId, null, suspiciousScore
+      ? `A organização aceitou um placar suspeito da EA: ${homeScore} a ${awayScore}, sem gols humanos atribuídos e sem DNF declarado.`
+      : `Resultado confirmado pela EA: ${homeScore} a ${awayScore}. Estatísticas sincronizadas.`);
     return settled;
   }
 
@@ -447,10 +456,25 @@ export class TournamentMatchService {
 
   private matchTags(match: EaClubMatch): string[] {
     return [
+      ...(this.isSuspiciousEaScore(match) ? ['EA_SCORE_SUSPEITO'] : []),
       ...(match.homeScore === 0 || match.awayScore === 0 ? ['CLEAN_SHEET'] : []),
       ...(match.homeScore + match.awayScore >= 7 ? ['CHUVA_DE_GOLS'] : []),
       ...(Math.abs(match.homeScore - match.awayScore) >= 4 ? ['GOLEADA'] : []),
     ];
+  }
+
+  private isSuspiciousEaScore(match: EaClubMatch): boolean {
+    const isThreeNil = (match.homeScore === 3 && match.awayScore === 0) ||
+      (match.homeScore === 0 && match.awayScore === 3);
+    if (!isThreeNil) return false;
+    const humanGoals = Object.values(match.playersByClub)
+      .flat()
+      .reduce((total, player) => total + player.goals, 0);
+    const rawClubs = match.rawData.clubs;
+    const hasDnf = rawClubs !== null && typeof rawClubs === 'object' &&
+      Object.values(rawClubs).some((club) => club !== null && typeof club === 'object' &&
+        String((club as Record<string, unknown>).winnerByDnf ?? '0') === '1');
+    return humanGoals === 0 && !hasDnf;
   }
 
   @Cron(CronExpression.EVERY_MINUTE)
