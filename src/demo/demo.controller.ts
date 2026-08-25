@@ -53,6 +53,11 @@ export class DemoController {
     return this.eaClubs.resolveTournamentClub(dto.name, 'common-gen5');
   }
 
+  @Post('ea/clubs/search')
+  searchEaClubs(@Body() dto: DemoEaClubDto) {
+    return this.eaClubs.searchClubs({ name: dto.name, platform: 'common-gen5' });
+  }
+
   @Post('ea/history')
   async eaHistory(@Body() dto: DemoEaHistoryDto) {
     const matches = await this.eaClubs.friendlyMatches(dto.clubId, 'common-gen5');

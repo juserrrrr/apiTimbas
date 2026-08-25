@@ -53,12 +53,37 @@ export class DemoService {
   async createLiveEaTournament(dto: CreateLiveEaTournamentDto, actor: Actor) {
     const normalizedNames = dto.clubNames.map((name) => name.trim()).filter(Boolean);
     if (normalizedNames.length !== dto.clubNames.length) throw new BadRequestException('Remova linhas vazias da lista de clubes.');
-    const clubs = [];
-    for (const name of normalizedNames) {
-      clubs.push(await this.eaClubs.resolveTournamentClub(name, 'common-gen5'));
+    const clubs: Awaited<ReturnType<EaFcClubsService['resolveTournamentClub']>>[] = [];
+    const invalidClubs: Array<{ line: number; name: string; reason: string }> = [];
+    for (const [index, name] of normalizedNames.entries()) {
+      try {
+        clubs.push(await this.eaClubs.resolveTournamentClub(name, 'common-gen5'));
+      } catch (error) {
+        invalidClubs.push({
+          line: index + 1,
+          name,
+          reason: error instanceof Error ? error.message : 'A EA não conseguiu validar este nome.',
+        });
+      }
     }
-    const uniqueClubIds = new Set(clubs.map((club) => club.externalClubId));
-    if (uniqueClubIds.size !== clubs.length) throw new BadRequestException('A lista contém o mesmo clube da EA mais de uma vez.');
+    if (invalidClubs.length > 0) {
+      throw new BadRequestException([
+        `Não foi possível validar ${invalidClubs.length === 1 ? 'este clube' : `estes ${invalidClubs.length} clubes`}:`,
+        ...invalidClubs.map(({ line, name, reason }) => `Linha ${line} — ${name}: ${reason}`),
+      ].join('\n'));
+    }
+    const linesByClubId = new Map<string, number[]>();
+    clubs.forEach((club, index) => linesByClubId.set(club.externalClubId, [...(linesByClubId.get(club.externalClubId) ?? []), index + 1]));
+    const duplicates = [...linesByClubId.entries()].filter(([, lines]) => lines.length > 1);
+    if (duplicates.length > 0) {
+      throw new BadRequestException([
+        'A lista contém clubes repetidos:',
+        ...duplicates.map(([clubId, lines]) => {
+          const club = clubs.find((item) => item.externalClubId === clubId)!;
+          return `${club.name} — linhas ${lines.join(', ')}`;
+        }),
+      ].join('\n'));
+    }
 
     const tournament = await this.tournaments.create({
       name: `${DEMO_PREFIX} AO VIVO · ${dto.name.trim()}`,

@@ -49,11 +49,11 @@ export class EaFcClubsService {
     const clubs = await this.callProvider(() =>
       this.provider.searchClubs(dto.name.trim(), dto.platform),
     );
-    return clubs.map((club) => ({
+    return Array.from(new Map(clubs.map((club) => [club.externalId, {
       externalClubId: club.externalId,
       name: club.name,
       platform: club.platform,
-    }));
+    }])).values());
   }
 
   async resolveTournamentClub(name: string, platform: 'common-gen5') {
