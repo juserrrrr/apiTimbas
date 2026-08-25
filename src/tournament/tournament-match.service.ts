@@ -231,11 +231,11 @@ export class TournamentMatchService {
       this.eaClubs.friendlyMatches(match.awayTeam.eaClubId, platform),
     ]);
     const awayById = new Map(awayHistory.map((item) => [item.externalMatchId, item]));
-    // Em operações do Laboratório aceitamos até duas horas antes do horário
+    // Em operações do Laboratório aceitamos até quatro horas antes do horário
     // marcado. Isso permite validar rapidamente um evento reconstruído depois
     // que os amistosos reais já aconteceram. Campeonatos normais continuam sem
     // tolerância para trás, evitando reaproveitar resultados antigos.
-    const earliest = searchAnchor.getTime() - (match.tournament.labMode ? 2 * 60 * 60 * 1000 : 0);
+    const earliest = searchAnchor.getTime() - (match.tournament.labMode ? 4 * 60 * 60 * 1000 : 0);
     // Live Lab operations are followed manually by an admin and may run all night.
     // Keep the lower bound to prevent old result reuse, but do not expire the search.
     const latest = match.tournament.labMode
@@ -347,7 +347,7 @@ export class TournamentMatchService {
     if (match.status !== TournamentMatchStatus.FINISHED && match.status !== TournamentMatchStatus.WALKOVER) {
       throw new BadRequestException('A partida ainda não possui resultado encerrado para reanalisar.');
     }
-    if (!match.eaMatchId || !match.homeTeam?.eaClubId || !match.awayTeam?.eaClubId) {
+    if (!match.eaMatchId || !match.homeTeamId || !match.awayTeamId || !match.homeTeam?.eaClubId || !match.awayTeam?.eaClubId) {
       throw new BadRequestException('Esta partida não possui um EA Match ID e dois clubes validados.');
     }
     const platform = (match.homeTeam.eaPlatform ?? 'common-gen5') as 'common-gen5';
@@ -367,9 +367,17 @@ export class TournamentMatchService {
       : { homeScore: score.awayScore, awayScore: score.homeScore };
     const official = orient({ homeScore: refreshed.homeScore, awayScore: refreshed.awayScore });
     const playerScore = analysis.playerScore ? orient(analysis.playerScore) : null;
-    await this.prisma.tournamentMatch.update({
-      where: { id: matchId },
-      data: { eaRaw: refreshed.rawData as Prisma.InputJsonValue, eaVerifiedAt: new Date() },
+    const rows = [
+      ...this.playerRows(matchId, refreshed, match.homeTeam.eaClubId, match.homeTeamId),
+      ...this.playerRows(matchId, refreshed, match.awayTeam.eaClubId, match.awayTeamId),
+    ];
+    await this.prisma.$transaction(async (tx) => {
+      await tx.tournamentMatch.update({
+        where: { id: matchId },
+        data: { eaRaw: refreshed.rawData as Prisma.InputJsonValue, eaVerifiedAt: new Date() },
+      });
+      await tx.tournamentEaPlayerStat.deleteMany({ where: { matchId } });
+      if (rows.length > 0) await tx.tournamentEaPlayerStat.createMany({ data: rows });
     });
     return {
       eaMatchId: refreshed.externalMatchId,
@@ -381,6 +389,7 @@ export class TournamentMatchService {
       durationSeconds: Math.max(analysis.homeDurationSeconds, analysis.awayDurationSeconds),
       nonZeroUserResults: analysis.nonZeroUserResults,
       playerCount: analysis.playerCount,
+      restoredPlayerStats: rows.length,
     };
   }
 
