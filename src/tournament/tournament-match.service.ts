@@ -18,6 +18,14 @@ const OPEN_STATUSES: TournamentMatchStatus[] = [
   TournamentMatchStatus.DISPUTED,
 ];
 
+type EaAutomaticQueueItem = Pick<TournamentMatch, 'eaLastCheckedAt' | 'round' | 'position'>;
+
+export function compareEaAutomaticQueue(left: EaAutomaticQueueItem, right: EaAutomaticQueueItem) {
+  const lastCheck = (left.eaLastCheckedAt?.getTime() ?? Number.NEGATIVE_INFINITY)
+    - (right.eaLastCheckedAt?.getTime() ?? Number.NEGATIVE_INFINITY);
+  return lastCheck || left.round - right.round || left.position - right.position;
+}
+
 /// Tudo que os dois times resolvem entre si numa partida: conversar, combinar
 /// horário, informar placar e confirmar o do outro. A organização entra só quando
 /// eles não se entendem, ou quando o prazo estoura e sai W.O.
@@ -44,7 +52,7 @@ export class TournamentMatchService {
       throw new ForbiddenException('Só quem joga a partida ou a organização vê esta conversa.');
     }
 
-    const [messages, tournament, eaEnabled, aiEnabled] = await Promise.all([
+    const [messages, tournament, eaEnabled, eaAutoSyncEnabled, aiEnabled] = await Promise.all([
       this.prisma.tournamentMatchMessage.findMany({
         where: { matchId },
         orderBy: { createdAt: 'asc' },
@@ -53,6 +61,7 @@ export class TournamentMatchService {
       }),
       this.access.requireExists(tournamentId),
       this.featureFlags.isEnabled(FEATURE_TOURNAMENT_EA_RESULTS),
+      this.featureFlags.isEnabled(FEATURE_TOURNAMENT_EA_AUTO_SYNC),
       this.featureFlags.isEnabled(FEATURE_TOURNAMENT_AI_RESULTS),
     ]);
 
@@ -66,6 +75,7 @@ export class TournamentMatchService {
       graceMinutes: tournament.graceMinutes,
       requireOpponentConfirm: tournament.requireOpponentConfirm,
       resultMode: tournament.game === CompetitionGame.EA_FC && eaEnabled ? 'EA_API' : aiEnabled ? 'AI_IMAGE' : 'MANUAL',
+      eaAutoSyncEnabled: tournament.game === CompetitionGame.EA_FC && eaEnabled && eaAutoSyncEnabled,
     };
   }
 
@@ -751,7 +761,7 @@ export class TournamentMatchService {
       const open = await this.prisma.tournamentMatch.findMany({
         where: {
           tournament: { status: 'RUNNING', game: CompetitionGame.EA_FC },
-          status: { in: [TournamentMatchStatus.READY, TournamentMatchStatus.AWAITING_PROOF, TournamentMatchStatus.DISPUTED] },
+          status: { in: [TournamentMatchStatus.READY, TournamentMatchStatus.AWAITING_PROOF] },
           homeTeamId: { not: null },
           awayTeamId: { not: null },
           homeTeam: { eaClubId: { not: null } },
@@ -761,13 +771,7 @@ export class TournamentMatchService {
         orderBy: [{ tournamentId: 'asc' }, { round: 'asc' }, { position: 'asc' }],
         take: 300,
       });
-      const firstRound = new Map<string, number>();
-      for (const match of open) {
-        firstRound.set(match.tournamentId, Math.min(firstRound.get(match.tournamentId) ?? match.round, match.round));
-      }
       const due = open.filter((match) => {
-        if (match.round !== firstRound.get(match.tournamentId)) return false;
-        if (match.status === TournamentMatchStatus.DISPUTED) return false;
         if (match.eaNextCheckAt && match.eaNextCheckAt > now) return false;
         const anchor = match.tournament.matchWindowMinutes > 0
           ? match.homeReadyAt && match.awayReadyAt
@@ -777,7 +781,7 @@ export class TournamentMatchService {
         if (anchor === null) return false;
         const earliest = anchor - (match.tournament.labMode ? 4 * 60 * 60 * 1000 : 0);
         return now.getTime() >= earliest && now.getTime() <= anchor + 4 * 60 * 60 * 1000;
-      });
+      }).sort(compareEaAutomaticQueue);
       const firstHalfOfMinute = now.getSeconds() < 30;
       const checksThisRun = firstHalfOfMinute
         ? Math.ceil(this.eaAutoChecksPerMinute / 2)
