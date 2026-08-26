@@ -136,7 +136,7 @@ export class AccessService {
           : {}),
       },
       orderBy: [{ status: 'asc' }, { dateCreated: 'desc' }],
-      take: 200,
+      take: 500,
       select: {
         id: true,
         name: true,

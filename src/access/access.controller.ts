@@ -65,7 +65,7 @@ export class AccessController {
   }
 
   @Get('groups')
-  @RequirePermissions('groups.manage')
+  @RequirePermissions('groups.manage', 'users.manage')
   groups() {
     return this.access.listGroups();
   }
