@@ -31,6 +31,7 @@ export interface ChampionCardLayoutSetting {
   championTitleX: number;
   championTitleY: number;
   championTitleSize: number;
+  championTitleWidth: number;
   teamX: number;
   teamY: number;
   teamSize: number;
@@ -127,6 +128,7 @@ export class AwardCardSettingsService {
           championTitleX: this.numberWithFallback(row.championTitleX, 0.5, 0.15, 0.85, strict),
           championTitleY: this.numberWithFallback(row.championTitleY, 0.612, 0.55, 0.72, strict),
           championTitleSize: this.numberWithFallback(row.championTitleSize, 0.026, 0.012, 0.06, strict),
+          championTitleWidth: this.numberWithFallback(row.championTitleWidth, 0.18, 0.08, 0.5, strict),
           teamX: this.number(row.teamX, 0.15, 0.85, strict),
           teamY: this.number(row.teamY, 0.55, 0.75, strict),
           teamSize: this.number(row.teamSize, 0.025, 0.1, strict),
