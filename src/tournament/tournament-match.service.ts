@@ -26,6 +26,25 @@ export function compareEaAutomaticQueue(left: EaAutomaticQueueItem, right: EaAut
   return lastCheck || left.round - right.round || left.position - right.position;
 }
 
+/// Teto de primeiras consultas numa mesma passada. Segura a mão quando uma fase
+/// de grupos inteira abre de uma vez, sem deixar um mata-mata pequeno esperando.
+export const EA_FIRST_PASS_LIMIT = 8;
+
+/// Quem nunca foi consultado entra todo mundo nesta rodada, fora do limite por
+/// minuto: com 2 consultas por minuto, o último jogo de um mata-mata de quatro
+/// levava minutos só para receber a primeira checagem. O rodízio por minuto
+/// continua valendo para quem já foi consultado ao menos uma vez.
+export function selectEaAutomaticQueue<T extends EaAutomaticQueueItem>(
+  due: T[],
+  checksThisRun: number,
+  firstPassLimit = EA_FIRST_PASS_LIMIT,
+) {
+  const ordered = [...due].sort(compareEaAutomaticQueue);
+  const firstPass = ordered.filter((match) => !match.eaLastCheckedAt).slice(0, firstPassLimit);
+  const recycled = ordered.filter((match) => match.eaLastCheckedAt).slice(0, Math.max(checksThisRun, 0));
+  return [...firstPass, ...recycled];
+}
+
 export function formatEaMatchDuration(seconds: number) {
   return `${Math.floor(seconds / 60)} min ${seconds % 60} s (${seconds} segundos)`;
 }
@@ -787,12 +806,12 @@ export class TournamentMatchService {
         if (anchor === null) return false;
         const earliest = anchor - (match.tournament.labMode ? 4 * 60 * 60 * 1000 : 0);
         return now.getTime() >= earliest && now.getTime() <= anchor + 4 * 60 * 60 * 1000;
-      }).sort(compareEaAutomaticQueue);
+      });
       const firstHalfOfMinute = now.getSeconds() < 30;
       const checksThisRun = firstHalfOfMinute
         ? Math.ceil(this.eaAutoChecksPerMinute / 2)
         : Math.floor(this.eaAutoChecksPerMinute / 2);
-      const scheduled = due.slice(0, checksThisRun);
+      const scheduled = selectEaAutomaticQueue(due, checksThisRun);
 
       const systemActor: Actor = {
         id: -1,
