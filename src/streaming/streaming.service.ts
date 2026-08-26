@@ -82,6 +82,9 @@ export const STREAM_MANAGE_PERMISSION = 'stream.manage';
 const TICKET_TTL_MS = 30_000;
 const PEER_STALE_MS = 60_000;
 const HOST_GRACE_MS = 90_000;
+/// Página aberta não é live no ar. Quando o host para de codificar e não volta,
+/// a sala fica ocupando a lista sem nada acontecendo dentro.
+const HOST_IDLE_MS = 10 * 60_000;
 
 @Injectable()
 export class StreamingService implements OnModuleInit {
@@ -746,6 +749,19 @@ export class StreamingService implements OnModuleInit {
         continue;
       }
 
+      // O estúdio reporta o que está codificando a cada poucos segundos. Se
+      // essas leituras somem por muito tempo com a live no ar, quem transmite
+      // largou a página aberta. Só vale para quem já reportou ao menos uma vez,
+      // senão derrubaria o estúdio de uma versão antiga.
+      if (
+        stream.broadcasting &&
+        stream.hostTelemetry &&
+        now - stream.hostTelemetry.at > HOST_IDLE_MS
+      ) {
+        await this.destroy(stream, 'host_idle');
+        continue;
+      }
+
       for (const peer of [...stream.peers.values()]) {
         if (peer.attached) continue;
         const grace =
@@ -872,7 +888,8 @@ export class StreamingService implements OnModuleInit {
       | 'manual_end'
       | 'host_leave'
       | 'host_never_connected'
-      | 'host_events_timeout',
+      | 'host_events_timeout'
+      | 'host_idle',
   ) {
     this.logger.warn(
       `Live destroyed stream=${stream.id} reason=${reason} viewers=${this.viewerList(stream).length}`,
