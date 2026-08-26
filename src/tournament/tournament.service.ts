@@ -1152,6 +1152,22 @@ export class TournamentService {
     });
   }
 
+  async staffCandidates(id: string, search: string, actor: Actor) {
+    await this.access.requireManage(id, actor);
+    const term = search.trim().slice(0, 48);
+    return this.prisma.user.findMany({
+      where: {
+        status: 'APPROVED',
+        role: { not: 'BOT' },
+        tournamentStaff: { none: { tournamentId: id } },
+        ...(term ? { name: { contains: term, mode: 'insensitive' as const } } : {}),
+      },
+      orderBy: [{ lastLoginAt: 'desc' }, { name: 'asc' }],
+      take: 20,
+      select: { id: true, name: true, discordId: true, avatar: true },
+    });
+  }
+
   async removeStaff(id: string, userId: number, actor: Actor) {
     await this.access.requireManage(id, actor);
     const staff = await this.prisma.tournamentStaff.findUnique({

@@ -186,6 +186,15 @@ export class TournamentController {
     return this.tournaments.setStaff(id, dto, await this.me(req));
   }
 
+  @Get(':id/staff-candidates')
+  async staffCandidates(
+    @Req() req: AuthedRequest,
+    @Param('id') id: string,
+    @Query('search') search?: string,
+  ) {
+    return this.tournaments.staffCandidates(id, search ?? '', await this.me(req));
+  }
+
   @Delete(':id/staff/:userId')
   async removeStaff(
     @Req() req: AuthedRequest,
