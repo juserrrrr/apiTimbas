@@ -31,7 +31,12 @@ import {
   knockoutRoundLabel,
   tournamentPlanIssue,
 } from './bracket.builder';
-import { resolveWalkovers } from './bracket-advance';
+import { isKnockout, resolveWalkovers } from './bracket-advance';
+import {
+  EMPTY_STANDINGS,
+  clearedMatchState,
+  reversedStandingsDelta,
+} from './team-replacement';
 import {
   AddTeamDto,
   CreateTournamentDto,
@@ -808,23 +813,24 @@ export class TournamentService {
       throw new BadRequestException('Não dá para substituir um time depois que o campeonato foi encerrado.');
     }
 
-    const resultHistory = await this.prisma.tournamentMatch.findFirst({
+    // O mata-mata decidido trava a troca: zerar as partidas deste time desfaz a
+    // classificação que já colocou (ou tirou) outros times da chave, e um
+    // resultado de mata-mata já jogado não teria como voltar para o lugar.
+    const decidedKnockout = await this.prisma.tournamentMatch.findFirst({
       where: {
         tournamentId: id,
-        OR: [{ homeTeamId: teamId }, { awayTeamId: teamId }],
-        AND: [{
-          OR: [
-            { status: { in: [TournamentMatchStatus.FINISHED, TournamentMatchStatus.WALKOVER] } },
-            { eaMatchId: { not: null } },
-            { claimedAt: { not: null } },
-            { reviewRequestedAt: { not: null } },
-          ],
-        }],
+        phase: { notIn: [TournamentPhase.GROUP, TournamentPhase.LEAGUE] },
+        OR: [
+          { status: { in: [TournamentMatchStatus.FINISHED, TournamentMatchStatus.WALKOVER] } },
+          { homeScore: { not: null } },
+          { awayScore: { not: null } },
+          { winnerTeamId: { not: null } },
+        ],
       },
       select: { id: true },
     });
-    if (resultHistory) {
-      throw new BadRequestException('Este time já possui resultado ou aprovação pendente. Resolva ou recrie o campeonato antes de substituí-lo.');
+    if (decidedKnockout) {
+      throw new BadRequestException('O mata-mata já tem resultado. Não dá para substituir um clube depois que a chave começou a ser decidida.');
     }
 
     const club = await this.eaClubs.resolveTournamentClub(name, platform);
@@ -843,37 +849,100 @@ export class TournamentService {
       throw new BadRequestException('Este clube da EA já está inscrito no campeonato.');
     }
 
-    return this.prisma.$transaction(async (tx) => {
-      const updated = await tx.tournamentTeam.update({
-        where: { id: team.id },
-        data: {
-          name: club.name,
-          tag: null,
-          logoUrl: null,
-          eaClubId: club.externalClubId,
-          eaPlatform: club.platform,
-        },
-        include: {
-          members: {
-            include: { user: { select: { id: true, name: true, avatar: true } } },
+    const previousName = team.name;
+    const eaCheckMessage = `Clube substituído por ${club.name}. A partida voltou a valer e aguarda um novo resultado.`;
+
+    return this.prisma.$transaction(
+      async (tx) => {
+        const matches = await tx.tournamentMatch.findMany({
+          where: { tournamentId: id, OR: [{ homeTeamId: team.id }, { awayTeamId: team.id }] },
+        });
+
+        let clearedResults = 0;
+        for (const match of matches) {
+          const settled =
+            (match.status === TournamentMatchStatus.FINISHED || match.status === TournamentMatchStatus.WALKOVER) &&
+            match.homeScore !== null &&
+            match.awayScore !== null;
+
+          // O adversário devolve à tabela só o que ganhou nesta partida: o resto
+          // da campanha dele continua valendo.
+          if (settled && !isKnockout(match.phase)) {
+            const teamIsHome = match.homeTeamId === team.id;
+            const opponentId = teamIsHome ? match.awayTeamId : match.homeTeamId;
+            if (opponentId) {
+              await tx.tournamentTeam.update({
+                where: { id: opponentId },
+                data: reversedStandingsDelta(
+                  tournament,
+                  teamIsHome ? match.awayScore! : match.homeScore!,
+                  teamIsHome ? match.homeScore! : match.awayScore!,
+                ),
+              });
+            }
+          }
+
+          await tx.tournamentEaPlayerStat.deleteMany({ where: { matchId: match.id } });
+          await tx.matchProof.deleteMany({ where: { matchId: match.id } });
+          await tx.tournamentMatch.update({
+            where: { id: match.id },
+            data: clearedMatchState(match, eaCheckMessage),
+          });
+
+          if (settled) {
+            clearedResults++;
+            await tx.tournamentMatchMessage.create({
+              data: {
+                matchId: match.id,
+                teamId: null,
+                system: true,
+                body: `A organização substituiu ${previousName} por ${club.name}. O resultado anterior foi zerado e a partida precisa ser jogada de novo.`,
+              },
+            });
+          }
+        }
+
+        // Grupo com partida zerada volta a ter fase de pontos em aberto, então a
+        // classificação publicada não vale mais: a chave é limpa e refeita
+        // sozinha quando o último jogo do grupo for encerrado.
+        const hasGroups = await tx.tournamentGroup.count({ where: { tournamentId: id } });
+        if (hasGroups > 0 && clearedResults > 0) {
+          await tx.tournamentMatch.updateMany({
+            where: { tournamentId: id, phase: { notIn: [TournamentPhase.GROUP, TournamentPhase.LEAGUE] } },
+            data: {
+              homeTeamId: null,
+              awayTeamId: null,
+              status: TournamentMatchStatus.PENDING,
+              readyAt: null,
+              homeReadyAt: null,
+              awayReadyAt: null,
+              scheduledAt: null,
+              scheduleProposedAt: null,
+              scheduleProposedByTeamId: null,
+            },
+          });
+          await tx.tournamentTeam.updateMany({ where: { tournamentId: id }, data: { eliminated: false } });
+        }
+
+        return tx.tournamentTeam.update({
+          where: { id: team.id },
+          data: {
+            name: club.name,
+            tag: null,
+            logoUrl: null,
+            eaClubId: club.externalClubId,
+            eaPlatform: club.platform,
+            ...EMPTY_STANDINGS,
           },
-        },
-      });
-      const reset = {
-        eaLastCheckedAt: null,
-        eaNextCheckAt: null,
-        eaCheckMessage: 'Clube substituído. Aguardando uma nova checagem na EA.',
-      };
-      await tx.tournamentMatch.updateMany({
-        where: { tournamentId: id, homeTeamId: team.id },
-        data: { ...reset, homeReadyAt: null, homeGraceUsed: false },
-      });
-      await tx.tournamentMatch.updateMany({
-        where: { tournamentId: id, awayTeamId: team.id },
-        data: { ...reset, awayReadyAt: null, awayGraceUsed: false },
-      });
-      return updated;
-    });
+          include: {
+            members: {
+              include: { user: { select: { id: true, name: true, avatar: true } } },
+            },
+          },
+        });
+      },
+      { timeout: 30000, isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+    );
   }
 
   async removeTeam(id: string, teamId: string, actor: Actor) {

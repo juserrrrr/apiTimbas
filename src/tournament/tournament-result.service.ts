@@ -11,6 +11,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { analyzeEaMatchScore } from '../ea-fc-clubs/ea-score-analysis';
 import { bracketSizeFor, compareStandings, orderGroupQualifiers, seedSlots } from './bracket.builder';
 import { isKnockout, placeTeam, propagate, resolveWalkovers } from './bracket-advance';
+import { reversedStandingsDelta } from './team-replacement';
 
 const OPEN_STATUSES: TournamentMatchStatus[] = [
   TournamentMatchStatus.PENDING,
@@ -457,19 +458,9 @@ export class TournamentResultService {
     scored: number,
     conceded: number,
   ) {
-    const isWin = scored > conceded;
-    const isDraw = scored === conceded;
     await tx.tournamentTeam.update({
       where: { id: teamId },
-      data: {
-        played: { decrement: 1 },
-        wins: { decrement: isWin ? 1 : 0 },
-        draws: { decrement: isDraw ? 1 : 0 },
-        losses: { decrement: !isWin && !isDraw ? 1 : 0 },
-        scoreFor: { decrement: scored },
-        scoreAgainst: { decrement: conceded },
-        points: { decrement: isWin ? tournament.pointsWin : isDraw ? tournament.pointsDraw : tournament.pointsLoss },
-      },
+      data: reversedStandingsDelta(tournament, scored, conceded),
     });
   }
 
