@@ -23,13 +23,22 @@ export class AuthGuard implements CanActivate {
   }
 
   private getTokenHeader(request: Request): string | undefined {
+    const [type, token] = request.headers.authorization?.split(' ') ?? [];
+    // Impersonation uses a short-lived JWT in the header while the original
+    // admin stays safely stored in the httpOnly cookie. Session hints are not
+    // JWTs, so regular Discord sessions still fall back to that cookie.
+    if (
+      type === 'Bearer' &&
+      token &&
+      !token.startsWith('session.') &&
+      token.split('.').length === 3
+    ) {
+      return token;
+    }
     if (request.cookies?.timbas_token) {
       return request.cookies.timbas_token;
     }
-    const [type, token] = request.headers.authorization?.split(' ') ?? [];
-    if (type === 'Bearer' && token) {
-      return token;
-    }
+    if (type === 'Bearer' && token) return token;
     // Fallback: Tenta pegar o token do cookie (pois o oauth loga apenas salvando cookie httpOnly)
     return undefined;
   }

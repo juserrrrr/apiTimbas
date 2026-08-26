@@ -378,16 +378,20 @@ export class TournamentService {
       );
     }
 
-    const captainUser =
-      access.canModerate && dto.captainUsername
-        ? await this.prisma.user.findFirst({
-            where: {
-              name: { equals: dto.captainUsername, mode: 'insensitive' },
-            },
+    const captainUser = access.canModerate
+      ? dto.captainUserId
+        ? await this.prisma.user.findUnique({
+            where: { id: dto.captainUserId },
             select: { id: true, discordId: true },
           })
-        : null;
-    if (access.canModerate && dto.captainUsername && !captainUser) {
+        : dto.captainUsername
+          ? await this.prisma.user.findFirst({
+              where: { name: { equals: dto.captainUsername, mode: 'insensitive' } },
+              select: { id: true, discordId: true },
+            })
+          : null
+      : null;
+    if (access.canModerate && (dto.captainUserId || dto.captainUsername) && !captainUser) {
       throw new BadRequestException(
         'Não encontramos um usuário com esse nome exato.',
       );
@@ -1160,6 +1164,22 @@ export class TournamentService {
         status: 'APPROVED',
         role: { not: 'BOT' },
         tournamentStaff: { none: { tournamentId: id } },
+        ...(term ? { name: { contains: term, mode: 'insensitive' as const } } : {}),
+      },
+      orderBy: [{ lastLoginAt: 'desc' }, { name: 'asc' }],
+      take: 20,
+      select: { id: true, name: true, discordId: true, avatar: true },
+    });
+  }
+
+  async teamCandidates(id: string, search: string, actor: Actor) {
+    await this.access.requireModerate(id, actor);
+    const term = search.trim().slice(0, 48);
+    return this.prisma.user.findMany({
+      where: {
+        status: 'APPROVED',
+        role: { not: 'BOT' },
+        tournamentTeams: { none: { team: { tournamentId: id } } },
         ...(term ? { name: { contains: term, mode: 'insensitive' as const } } : {}),
       },
       orderBy: [{ lastLoginAt: 'desc' }, { name: 'asc' }],

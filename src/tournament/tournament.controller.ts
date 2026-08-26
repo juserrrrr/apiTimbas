@@ -195,6 +195,15 @@ export class TournamentController {
     return this.tournaments.staffCandidates(id, search ?? '', await this.me(req));
   }
 
+  @Get(':id/team-candidates')
+  async teamCandidates(
+    @Req() req: AuthedRequest,
+    @Param('id') id: string,
+    @Query('search') search?: string,
+  ) {
+    return this.tournaments.teamCandidates(id, search ?? '', await this.me(req));
+  }
+
   @Delete(':id/staff/:userId')
   async removeStaff(
     @Req() req: AuthedRequest,

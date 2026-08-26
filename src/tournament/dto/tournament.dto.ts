@@ -256,6 +256,11 @@ export class AddTeamDto {
   @MinLength(2)
   @MaxLength(48)
   captainUsername?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  captainUserId?: number;
 }
 
 export class UpdateTeamDto extends AddTeamDto {
