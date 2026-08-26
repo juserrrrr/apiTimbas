@@ -664,6 +664,7 @@ model TournamentRegistrationInvite {
   claimedById  Int?
   claimedBy    User?      @relation("TournamentRegistrationInviteClaimer", fields: [claimedById], references: [id], onDelete: SetNull)
   usedAt       DateTime?
+  revokedAt    DateTime?
   createdAt    DateTime   @default(now())
 
   @@index([tournamentId, usedAt])

@@ -108,6 +108,20 @@ export class TournamentController {
     return this.tournaments.createRegistrationInvite(id, await this.me(req));
   }
 
+  @Get(':id/invites')
+  async listRegistrationInvites(@Req() req: AuthedRequest, @Param('id') id: string) {
+    return this.tournaments.listRegistrationInvites(id, await this.me(req));
+  }
+
+  @Delete(':id/invites/:inviteId')
+  async revokeRegistrationInvite(
+    @Req() req: AuthedRequest,
+    @Param('id') id: string,
+    @Param('inviteId') inviteId: string,
+  ) {
+    return this.tournaments.revokeRegistrationInvite(id, inviteId, await this.me(req));
+  }
+
   @Post(':id/teams')
   async addTeam(@Req() req: AuthedRequest, @Param('id') id: string, @Body() dto: AddTeamDto) {
     return this.tournaments.addTeam(id, dto, await this.me(req));

@@ -787,6 +787,7 @@ export class TournamentService {
     const tournament = registrationInvite.tournament;
     if (
       registrationInvite.usedAt ||
+      registrationInvite.revokedAt ||
       tournament.accessMode !== TournamentAccessMode.INVITE_ONLY ||
       tournament.status !== TournamentStatus.REGISTRATION
     ) {
@@ -831,6 +832,36 @@ export class TournamentService {
       select: { code: true },
     });
     return { tournamentId: id, code: invite.code };
+  }
+
+  async listRegistrationInvites(id: string, actor: Actor) {
+    await this.access.requireManage(id, actor);
+    return this.prisma.tournamentRegistrationInvite.findMany({
+      where: { tournamentId: id },
+      orderBy: { createdAt: 'desc' },
+      take: 200,
+      select: {
+        id: true,
+        code: true,
+        createdAt: true,
+        usedAt: true,
+        revokedAt: true,
+        createdBy: { select: { id: true, name: true, avatar: true } },
+        claimedBy: { select: { id: true, name: true, avatar: true } },
+      },
+    });
+  }
+
+  async revokeRegistrationInvite(id: string, inviteId: string, actor: Actor) {
+    await this.access.requireManage(id, actor);
+    const revoked = await this.prisma.tournamentRegistrationInvite.updateMany({
+      where: { id: inviteId, tournamentId: id, usedAt: null, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+    if (revoked.count === 0) {
+      throw new BadRequestException('O convite n\u00e3o existe, j\u00e1 foi usado ou foi cancelado.');
+    }
+    return { revoked: true };
   }
 
   private async joinByLegacyInvite(code: string, actor: Actor) {
