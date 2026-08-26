@@ -426,4 +426,16 @@ export class WalkoverDto {
   @IsString()
   @MaxLength(240)
   reason?: string;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(99)
+  homeScore: number = 3;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(99)
+  awayScore: number = 0;
 }

@@ -22,7 +22,7 @@ describe('analyzeEaMatchScore', () => {
     });
   });
 
-  it('rejects an administrative three nil created after an early interruption', () => {
+  it('sends an administrative three nil created before seven minutes to review', () => {
     const raw = { players: { home: { a: player(0, 75, 6) }, away: { b: player(0, 86, 13) } } };
     expect(analyzeEaMatchScore(raw, 'home', 'away', 0, 3)).toMatchObject({
       playerScore: { homeScore: 0, awayScore: 0 },
@@ -30,6 +30,23 @@ describe('analyzeEaMatchScore', () => {
       shortAttempt: true,
       scoreMismatch: true,
     });
+  });
+
+  it('only considers a match complete after 89 minutes', () => {
+    expect(analyzeEaMatchScore(
+      { players: { home: { a: player(1, 5339) }, away: { b: player(0, 5339) } } },
+      'home',
+      'away',
+      1,
+      0,
+    ).interrupted).toBe(true);
+    expect(analyzeEaMatchScore(
+      { players: { home: { a: player(1, 5340) }, away: { b: player(0, 5340) } } },
+      'home',
+      'away',
+      1,
+      0,
+    ).interrupted).toBe(false);
   });
 
   it('keeps a meaningful partial match for organization review', () => {

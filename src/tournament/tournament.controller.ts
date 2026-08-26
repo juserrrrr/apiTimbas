@@ -212,7 +212,15 @@ export class TournamentController {
   ) {
     const actor = await this.me(req);
     await this.access.requireModerate(id, actor);
-    return this.results.walkover(id, matchId, dto.winnerTeamId, dto.reason, actor.discordId);
+    return this.results.walkover(
+      id,
+      matchId,
+      dto.winnerTeamId,
+      dto.reason,
+      actor.discordId,
+      dto.homeScore,
+      dto.awayScore,
+    );
   }
 
   @Get(':id/matches/:matchId/chat')
@@ -339,6 +347,11 @@ export class TournamentController {
   @Post(':id/matches/:matchId/resolve-review')
   async resolveMatchReview(@Req() req: AuthedRequest, @Param('id') id: string, @Param('matchId') matchId: string, @Body() dto: ClaimResultDto) {
     return this.matches.resolveReview(id, matchId, dto, await this.me(req));
+  }
+
+  @Post(':id/matches/:matchId/reject-ea-audit')
+  async rejectEaAudit(@Req() req: AuthedRequest, @Param('id') id: string, @Param('matchId') matchId: string) {
+    return this.matches.rejectEaAudit(id, matchId, await this.me(req));
   }
 
   @Post(':id/matches/:matchId/claim/respond')

@@ -567,6 +567,14 @@ enum CompetitionRole {
   MODERATOR
 }
 
+model TournamentEaAutomationSettings {
+  id                    Int      @id @default(1)
+  checkIntervalSeconds  Int      @default(30)
+  checksPerMinute       Int      @default(2)
+  updatedByDiscordId    String?
+  updatedAt             DateTime @updatedAt
+}
+
 enum TournamentAccessMode {
   PUBLIC
   INVITE_ONLY
@@ -748,6 +756,9 @@ model TournamentMatch {
   eaMatchId                String?                    @unique
   eaVerifiedAt             DateTime?
   eaRaw                    Json?
+  eaLastCheckedAt          DateTime?
+  eaNextCheckAt            DateTime?
+  eaCheckMessage           String?
   nextMatchId              String?
   nextMatch                TournamentMatch?         @relation("BracketAdvance", fields: [nextMatchId], references: [id])
   nextMatchSlot            MatchSlot?
@@ -772,6 +783,7 @@ model TournamentMatch {
   @@index([homeTeamId])
   @@index([awayTeamId])
   @@index([scheduledAt])
+  @@index([eaNextCheckAt])
 }
 
 /// Conversa da partida: os dois times combinam horário e resolvem pendência aqui.

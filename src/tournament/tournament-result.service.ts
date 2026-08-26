@@ -95,6 +95,8 @@ export class TournamentResultService {
     winnerTeamId: string,
     reason: string | undefined,
     reportedByDiscordId: string,
+    homeScore?: number,
+    awayScore?: number,
   ) {
     const match = await this.prisma.tournamentMatch.findFirst({
       where: { id: matchId, tournamentId },
@@ -107,6 +109,15 @@ export class TournamentResultService {
     if (!correctingLabResult) this.assertMatchIsOpen(match);
     if (match.homeTeamId !== winnerTeamId && match.awayTeamId !== winnerTeamId) {
       throw new BadRequestException('O vencedor precisa ser um dos times da partida.');
+    }
+
+    const score = homeScore === undefined || awayScore === undefined
+      ? match.homeTeamId === winnerTeamId
+        ? { home: 3, away: 0 }
+        : { home: 0, away: 3 }
+      : { home: homeScore, away: awayScore };
+    if (score.home === score.away || (score.home > score.away ? match.homeTeamId : match.awayTeamId) !== winnerTeamId) {
+      throw new BadRequestException('O placar do W.O. precisa dar a vitória ao time escolhido.');
     }
 
     const loserTeamId = (match.homeTeamId === winnerTeamId ? match.awayTeamId : match.homeTeamId)!;
@@ -130,21 +141,21 @@ export class TournamentResultService {
           });
           if (claimed.count === 0) throw new BadRequestException('Esta partida já foi encerrada.');
         }
-        const baseLabel = match.label?.split(' (W.O.:')[0] ?? 'Partida';
+        const baseLabel = match.label?.replace(/ \(W\.O\.(?::.*)?\)$/, '') ?? 'Partida';
         const updated = await tx.tournamentMatch.update({
           where: { id: matchId },
           data: {
             status: TournamentMatchStatus.WALKOVER,
             winnerTeamId,
-            homeScore: match.homeTeamId === winnerTeamId ? 1 : 0,
-            awayScore: match.awayTeamId === winnerTeamId ? 1 : 0,
+            homeScore: score.home,
+            awayScore: score.away,
             playedAt: new Date(),
             reportedByDiscordId,
             label: reason ? `${baseLabel} (W.O.: ${reason})` : `${baseLabel} (W.O.)`,
           },
         });
-        await this.applyTeamStats(tx, match.tournament, match.phase, winnerTeamId, 1, 0);
-        await this.applyTeamStats(tx, match.tournament, match.phase, loserTeamId, 0, 1);
+        await this.applyTeamStats(tx, match.tournament, match.phase, match.homeTeamId!, score.home, score.away);
+        await this.applyTeamStats(tx, match.tournament, match.phase, match.awayTeamId!, score.away, score.home);
         await propagate(tx, updated, winnerTeamId, loserTeamId);
         await this.qualifyFromGroups(tx, match.tournament);
         await this.maybeFinish(tx, match.tournament);
@@ -187,6 +198,7 @@ export class TournamentResultService {
     if (!match.tournament.labMode) throw new BadRequestException('A correção direta está disponível somente no Laboratório.');
     if (match.phase !== TournamentPhase.GROUP) throw new BadRequestException('Somente resultados da fase de grupos podem ser corrigidos diretamente.');
     if (match.status !== TournamentMatchStatus.FINISHED && match.status !== TournamentMatchStatus.WALKOVER) throw new BadRequestException('Esta partida ainda não possui resultado encerrado.');
+    if (match.status === TournamentMatchStatus.WALKOVER && homeScore === awayScore) throw new BadRequestException('O placar de um W.O. precisa ter um vencedor.');
     if (homeScore === awayScore && !match.tournament.allowDraws) throw new BadRequestException('Este campeonato não aceita empates.');
     const publishedKnockout = await this.prisma.tournamentMatch.count({
       where: { tournamentId, phase: { not: TournamentPhase.GROUP }, OR: [{ homeTeamId: { not: null } }, { awayTeamId: { not: null } }] },
@@ -201,11 +213,25 @@ export class TournamentResultService {
       await this.applyTeamStats(tx, match.tournament, match.phase, match.awayTeamId!, awayScore, homeScore);
       await tx.matchProof.deleteMany({ where: { matchId } });
       const winnerTeamId = homeScore === awayScore ? null : homeScore > awayScore ? match.homeTeamId : match.awayTeamId;
+      const keepsWalkover = match.status === TournamentMatchStatus.WALKOVER;
       const updated = await tx.tournamentMatch.update({
         where: { id: matchId },
-        data: { homeScore, awayScore, winnerTeamId, status: TournamentMatchStatus.FINISHED, reportedByDiscordId },
+        data: {
+          homeScore,
+          awayScore,
+          winnerTeamId,
+          status: keepsWalkover ? TournamentMatchStatus.WALKOVER : TournamentMatchStatus.FINISHED,
+          reportedByDiscordId,
+        },
       });
-      await tx.tournamentMatchMessage.create({ data: { matchId, teamId: null, system: true, body: `A organização corrigiu o resultado para ${homeScore} a ${awayScore}.` } });
+      await tx.tournamentMatchMessage.create({
+        data: {
+          matchId,
+          teamId: null,
+          system: true,
+          body: `A organização corrigiu o ${keepsWalkover ? 'placar do W.O.' : 'resultado'} para ${homeScore} a ${awayScore}.`,
+        },
+      });
       return updated;
     }, { timeout: 30000, isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
   }

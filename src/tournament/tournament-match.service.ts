@@ -4,7 +4,7 @@ import { CompetitionGame, Prisma, TournamentMatch, TournamentMatchStatus } from 
 import { Actor } from '../common/actor.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { EaFcClubsService } from '../ea-fc-clubs/ea-fc-clubs.service';
-import { FEATURE_TOURNAMENT_AI_RESULTS, FEATURE_TOURNAMENT_EA_RESULTS } from '../feature-flags/feature-flags.constants';
+import { FEATURE_TOURNAMENT_AI_RESULTS, FEATURE_TOURNAMENT_EA_AUTO_SYNC, FEATURE_TOURNAMENT_EA_RESULTS } from '../feature-flags/feature-flags.constants';
 import { FeatureFlagsService } from '../feature-flags/feature-flags.service';
 import { EaClubMatch, EaClubMatchPlayer } from '../ea-fc-clubs/ea-fc-clubs.types';
 import { analyzeEaMatchScore } from '../ea-fc-clubs/ea-score-analysis';
@@ -24,6 +24,9 @@ const OPEN_STATUSES: TournamentMatchStatus[] = [
 @Injectable()
 export class TournamentMatchService {
   private readonly logger = new Logger(TournamentMatchService.name);
+  private eaAutoSyncRunning = false;
+  private eaAutoCheckIntervalMs = 30_000;
+  private eaAutoChecksPerMinute = 2;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -206,6 +209,13 @@ export class TournamentMatchService {
       include: { tournament: true, homeTeam: true, awayTeam: true },
     });
     if (!match) throw new NotFoundException('Partida não encontrada neste campeonato.');
+    const automatic = actor.discordId === 'auditoria-ea';
+    const autoEnabled = automatic || await this.featureFlags.isEnabled(FEATURE_TOURNAMENT_EA_AUTO_SYNC);
+    if (autoEnabled && !automatic) {
+      const settings = await this.featureFlags.getTournamentEaAutomationSettings();
+      this.eaAutoCheckIntervalMs = settings.checkIntervalSeconds * 1000;
+      this.eaAutoChecksPerMinute = settings.checksPerMinute;
+    }
     const { side, canModerate } = await this.requireParticipant(tournamentId, match, actor);
     if (!side && !canModerate) throw new ForbiddenException('Só quem joga ou a organização pode checar o resultado.');
     this.assertOpen(match);
@@ -226,6 +236,15 @@ export class TournamentMatchService {
     if ((match.awayTeam.eaPlatform ?? 'common-gen5') !== platform) {
       throw new BadRequestException('Os clubes estão cadastrados em plataformas diferentes.');
     }
+    const checkedAt = new Date();
+    await this.prisma.tournamentMatch.update({
+      where: { id: matchId },
+      data: {
+        eaLastCheckedAt: checkedAt,
+        eaNextCheckAt: autoEnabled ? new Date(checkedAt.getTime() + this.eaAutoCheckIntervalMs) : null,
+        eaCheckMessage: 'Consultando o histórico dos dois clubes na EA.',
+      },
+    });
     const [homeHistory, awayHistory] = await Promise.all([
       this.eaClubs.friendlyMatches(match.homeTeam.eaClubId, platform),
       this.eaClubs.friendlyMatches(match.awayTeam.eaClubId, platform),
@@ -236,11 +255,7 @@ export class TournamentMatchService {
     // que os amistosos reais já aconteceram. Campeonatos normais continuam sem
     // tolerância para trás, evitando reaproveitar resultados antigos.
     const earliest = searchAnchor.getTime() - (match.tournament.labMode ? 4 * 60 * 60 * 1000 : 0);
-    // Live Lab operations are followed manually by an admin and may run all night.
-    // Keep the lower bound to prevent old result reuse, but do not expire the search.
-    const latest = match.tournament.labMode
-      ? Number.POSITIVE_INFINITY
-      : searchAnchor.getTime() + 4 * 60 * 60 * 1000;
+    const latest = searchAnchor.getTime() + 4 * 60 * 60 * 1000;
     if (Date.now() < earliest) {
       throw new BadRequestException('A checagem na EA só fica disponível quando o confronto começar.');
     }
@@ -253,12 +268,10 @@ export class TournamentMatchService {
         item.playedAt.getTime() >= earliest && item.playedAt.getTime() <= latest;
     });
     if (candidates.length === 0) {
+      await this.recordEaCheck(matchId, 'Nenhuma partida correspondente apareceu na EA ainda.', latest, autoEnabled);
       throw new NotFoundException('A partida ainda não apareceu no histórico de amistosos dos dois clubes.');
     }
-    const completeCandidates = candidates.filter((candidate) => !this.eaScoreAnalysis(candidate).shortAttempt);
-    if (completeCandidates.length === 0) {
-      throw new NotFoundException('A EA encontrou somente uma tentativa interrompida entre os clubes. Ela foi ignorada. Joguem novamente e depois use Rescanear EA.');
-    }
+    const completeCandidates = candidates;
     const usedEaMatches = await this.prisma.tournamentMatch.findMany({
       where: { eaMatchId: { in: completeCandidates.map((candidate) => candidate.externalMatchId) } },
       select: { eaMatchId: true },
@@ -266,11 +279,15 @@ export class TournamentMatchService {
     const usedIds = new Set(usedEaMatches.flatMap((item) => item.eaMatchId ? [item.eaMatchId] : []));
     const available = completeCandidates
       .filter((candidate) => !usedIds.has(candidate.externalMatchId))
-      .sort((left, right) => left.playedAt.getTime() - right.playedAt.getTime());
+      .sort((left, right) => {
+        const leftComplete = Number(!this.eaScoreAnalysis(left).interrupted);
+        const rightComplete = Number(!this.eaScoreAnalysis(right).interrupted);
+        return rightComplete - leftComplete || left.playedAt.getTime() - right.playedAt.getTime();
+      });
     if (available.length === 0) {
       throw new BadRequestException('Todos os amistosos encontrados entre esses clubes já foram usados no campeonato.');
     }
-    if ((available.length > 1 || match.tournament.labMode || available.some((candidate) => this.isSuspiciousEaScore(candidate))) && !selectedEaMatchId) {
+    if (!automatic && (available.length > 1 || match.tournament.labMode || available.some((candidate) => this.isSuspiciousEaScore(candidate))) && !selectedEaMatchId) {
       return {
         selectionRequired: true as const,
         candidates: available.map((candidate) => {
@@ -285,6 +302,10 @@ export class TournamentMatchService {
             officialHomeScore: tournamentHomeIsEaHome ? candidate.homeScore : candidate.awayScore,
             officialAwayScore: tournamentHomeIsEaHome ? candidate.awayScore : candidate.homeScore,
             suspiciousScore,
+            durationSeconds: Math.max(
+              this.eaScoreAnalysis(candidate).homeDurationSeconds,
+              this.eaScoreAnalysis(candidate).awayDurationSeconds,
+            ),
             warning: suspiciousScore ? this.eaScoreWarning(candidate) : undefined,
           };
         }),
@@ -312,6 +333,15 @@ export class TournamentMatchService {
     const officialHomeScore = tournamentHomeIsEaHome ? eaMatch.homeScore : eaMatch.awayScore;
     const officialAwayScore = tournamentHomeIsEaHome ? eaMatch.awayScore : eaMatch.homeScore;
     const matchTags = this.matchTags(eaMatch, effective.homeScore, effective.awayScore);
+    if (automatic && suspiciousScore) {
+      return this.queueEaAudit(
+        match,
+        eaMatch,
+        homeScore,
+        awayScore,
+        matchTags,
+      );
+    }
     const settled = await this.results.settle(matchId, homeScore, awayScore, actor.discordId, async (tx) => {
       await tx.tournamentMatch.update({
         where: { id: matchId },
@@ -331,6 +361,12 @@ export class TournamentMatchService {
     await this.systemMessage(matchId, null, suspiciousScore
       ? `A organização confirmou ${homeScore} a ${awayScore} pelo SCORE dos atletas. O cabeçalho da EA informava ${officialHomeScore} a ${officialAwayScore}.`
       : `Resultado confirmado pela EA: ${homeScore} a ${awayScore}. Estatísticas sincronizadas.`);
+    await this.recordEaCheck(
+      matchId,
+      `Resultado ${homeScore} a ${awayScore} confirmado ${automatic ? 'automaticamente ' : ''}pela EA.`,
+      latest,
+      false,
+    );
     return settled;
   }
 
@@ -474,20 +510,79 @@ export class TournamentMatchService {
   }
 
   async pendingReviews(tournamentId: string, actor: Actor) {
-    await this.access.requireManage(tournamentId, actor);
-    return this.prisma.tournamentMatch.findMany({
+    await this.access.requireModerate(tournamentId, actor);
+    const matches = await this.prisma.tournamentMatch.findMany({
       where: { tournamentId, status: TournamentMatchStatus.DISPUTED, reviewRequestedAt: { not: null } },
       orderBy: { reviewRequestedAt: 'asc' },
       include: { homeTeam: true, awayTeam: true },
     });
+    return matches.map((match) => ({
+      ...match,
+      reviewSource: match.eaMatchId && match.eaTags.includes('EA_AUDIT_PENDING') ? 'AUDIT' as const : 'HUMAN' as const,
+      reviewCanReject: !match.eaTags.includes('EA_RESULT_MUST_COUNT'),
+    }));
   }
 
   async resolveReview(tournamentId: string, matchId: string, dto: ClaimResultDto, actor: Actor) {
-    await this.access.requireManage(tournamentId, actor);
+    await this.access.requireModerate(tournamentId, actor);
     const match = await this.requireMatch(tournamentId, matchId);
     const tournament = await this.access.requireExists(tournamentId);
     this.results.assertScoreIsValid(match, tournament, dto.homeScore, dto.awayScore);
-    return this.results.settle(matchId, dto.homeScore, dto.awayScore, actor.discordId);
+    return this.results.settle(matchId, dto.homeScore, dto.awayScore, actor.discordId, async (tx) => {
+      await tx.tournamentMatch.update({
+        where: { id: matchId },
+        data: {
+          reviewRequestedAt: null,
+          reviewRequestedById: null,
+          reviewReason: null,
+          eaTags: match.eaTags.filter((tag) => tag !== 'EA_AUDIT_PENDING' && tag !== 'EA_RESULT_MUST_COUNT'),
+          eaNextCheckAt: null,
+          eaCheckMessage: match.eaMatchId ? 'Auditoria da EA aprovada pela organização.' : null,
+        },
+      });
+    });
+  }
+
+  async rejectEaAudit(tournamentId: string, matchId: string, actor: Actor) {
+    await this.access.requireModerate(tournamentId, actor);
+    const match = await this.requireMatch(tournamentId, matchId);
+    if (!match.eaMatchId || !match.eaTags.includes('EA_AUDIT_PENDING')) {
+      throw new BadRequestException('Esta pendência não foi criada pela auditoria da EA.');
+    }
+    if (match.eaTags.includes('EA_RESULT_MUST_COUNT')) {
+      throw new BadRequestException('Depois de 7 minutos a partida não pode ser cancelada. Corrija o placar e aprove o resultado.');
+    }
+    await this.prisma.$transaction(async (tx) => {
+      await tx.tournamentEaPlayerStat.deleteMany({ where: { matchId } });
+      await tx.tournamentMatch.update({
+        where: { id: matchId },
+        data: {
+          status: TournamentMatchStatus.READY,
+          claimedHomeScore: null,
+          claimedAwayScore: null,
+          claimedByTeamId: null,
+          claimedAt: null,
+          eaMatchId: null,
+          eaVerifiedAt: null,
+          eaRaw: Prisma.DbNull,
+          eaTags: [],
+          reviewRequestedAt: null,
+          reviewRequestedById: null,
+          reviewReason: null,
+          eaNextCheckAt: new Date(Date.now() + this.eaAutoCheckIntervalMs),
+          eaCheckMessage: 'Registro recusado pela organização. A busca automática continuará.',
+        },
+      });
+      await tx.tournamentMatchMessage.create({
+        data: {
+          matchId,
+          teamId: null,
+          system: true,
+          body: 'A organização recusou o registro encontrado pela auditoria da EA. A partida foi reaberta.',
+        },
+      });
+    });
+    return this.requireMatch(tournamentId, matchId);
   }
 
   private playerRows(matchId: string, match: EaClubMatch, clubId: string, teamId: string) {
@@ -564,7 +659,7 @@ export class TournamentMatchService {
   private eaScoreWarning(match: EaClubMatch): string {
     const analysis = this.eaScoreAnalysis(match);
     if (analysis.shortAttempt) {
-      return `Tentativa interrompida com no máximo ${Math.max(analysis.homeDurationSeconds, analysis.awayDurationSeconds)} segundos. Este registro não pode ser usado.`;
+      return `Saída registrada com ${Math.max(analysis.homeDurationSeconds, analysis.awayDurationSeconds)} segundos. O resultado só pode ser usado após aprovação da organização.`;
     }
     if (analysis.interrupted && analysis.playerScore) {
       return `A sessão terminou antes do tempo completo. O SCORE dos atletas indica ${analysis.playerScore.homeScore} a ${analysis.playerScore.awayScore}. Somente a organização pode confirmar esse placar parcial.`;
@@ -573,6 +668,163 @@ export class TournamentMatchService {
       return 'O cabeçalho da EA diverge do SCORE predominante dos atletas. Ao confirmar, será usado o placar dos atletas exibido acima.';
     }
     return 'Placar 3 a 0 sem gols atribuídos aos jogadores e sem DNF declarado pela EA.';
+  }
+
+  private async queueEaAudit(
+    match: TournamentMatch & {
+      homeTeam: { eaClubId: string | null } | null;
+      awayTeam: { eaClubId: string | null } | null;
+    },
+    eaMatch: EaClubMatch,
+    homeScore: number,
+    awayScore: number,
+    matchTags: string[],
+  ) {
+    const analysis = this.eaScoreAnalysis(eaMatch);
+    const duration = Math.max(analysis.homeDurationSeconds, analysis.awayDurationSeconds);
+    const reason = analysis.shortAttempt
+      ? `A EA registrou uma saída com ${duration} segundos. Pela regra dos 7 minutos, somente a organização pode validar este resultado.`
+      : analysis.scoreMismatch
+        ? `O placar geral da EA diverge do SCORE dos atletas. Duração detectada: ${duration} segundos.`
+        : `A partida terminou antes de 89 minutos. Duração detectada: ${duration} segundos. Confirme se o resultado deve valer.`;
+    const rows = [
+      ...this.playerRows(match.id, eaMatch, match.homeTeam!.eaClubId!, match.homeTeamId!),
+      ...this.playerRows(match.id, eaMatch, match.awayTeam!.eaClubId!, match.awayTeamId!),
+    ];
+    const updated = await this.prisma.$transaction(async (tx) => {
+      await tx.tournamentEaPlayerStat.deleteMany({ where: { matchId: match.id } });
+      if (rows.length > 0) await tx.tournamentEaPlayerStat.createMany({ data: rows });
+      return tx.tournamentMatch.update({
+        where: { id: match.id },
+        data: {
+          status: TournamentMatchStatus.DISPUTED,
+          claimedHomeScore: homeScore,
+          claimedAwayScore: awayScore,
+          claimedByTeamId: null,
+          claimedAt: new Date(),
+          eaMatchId: eaMatch.externalMatchId,
+          eaVerifiedAt: new Date(),
+          eaRaw: eaMatch.rawData as Prisma.InputJsonValue,
+          eaTags: [
+            ...new Set([
+              ...matchTags,
+              'EA_AUDIT_PENDING',
+              ...(!analysis.shortAttempt ? ['EA_RESULT_MUST_COUNT'] : []),
+            ]),
+          ],
+          reviewRequestedAt: new Date(),
+          reviewRequestedById: null,
+          reviewReason: reason,
+          eaNextCheckAt: null,
+          eaCheckMessage: 'Resultado encontrado e enviado para Aprovações, na seção Auditoria EA.',
+        },
+      });
+    });
+    await this.systemMessage(match.id, null, `A auditoria automática encontrou ${homeScore} a ${awayScore}. O resultado precisa da aprovação da organização.`);
+    return updated;
+  }
+
+  private recordEaCheck(matchId: string, message: string, latest: number, scheduleNext = true) {
+    const next = scheduleNext && Date.now() + this.eaAutoCheckIntervalMs <= latest
+      ? new Date(Date.now() + this.eaAutoCheckIntervalMs)
+      : null;
+    return this.prisma.tournamentMatch.update({
+      where: { id: matchId },
+      data: { eaLastCheckedAt: new Date(), eaNextCheckAt: next, eaCheckMessage: message },
+    });
+  }
+
+  @Cron('*/30 * * * * *')
+  async synchronizeTournamentEaMatches() {
+    if (this.eaAutoSyncRunning) return;
+    const [resultsEnabled, automationEnabled] = await Promise.all([
+      this.featureFlags.isEnabled(FEATURE_TOURNAMENT_EA_RESULTS),
+      this.featureFlags.isEnabled(FEATURE_TOURNAMENT_EA_AUTO_SYNC),
+    ]);
+    if (!resultsEnabled || !automationEnabled) return;
+    this.eaAutoSyncRunning = true;
+    try {
+      const settings = await this.featureFlags.getTournamentEaAutomationSettings();
+      this.eaAutoCheckIntervalMs = settings.checkIntervalSeconds * 1000;
+      this.eaAutoChecksPerMinute = settings.checksPerMinute;
+      const now = new Date();
+      const open = await this.prisma.tournamentMatch.findMany({
+        where: {
+          tournament: { status: 'RUNNING', game: CompetitionGame.EA_FC },
+          status: { in: [TournamentMatchStatus.READY, TournamentMatchStatus.AWAITING_PROOF, TournamentMatchStatus.DISPUTED] },
+          homeTeamId: { not: null },
+          awayTeamId: { not: null },
+          homeTeam: { eaClubId: { not: null } },
+          awayTeam: { eaClubId: { not: null } },
+        },
+        include: { tournament: true },
+        orderBy: [{ tournamentId: 'asc' }, { round: 'asc' }, { position: 'asc' }],
+        take: 300,
+      });
+      const firstRound = new Map<string, number>();
+      for (const match of open) {
+        firstRound.set(match.tournamentId, Math.min(firstRound.get(match.tournamentId) ?? match.round, match.round));
+      }
+      const due = open.filter((match) => {
+        if (match.round !== firstRound.get(match.tournamentId)) return false;
+        if (match.status === TournamentMatchStatus.DISPUTED) return false;
+        if (match.eaNextCheckAt && match.eaNextCheckAt > now) return false;
+        const anchor = match.tournament.matchWindowMinutes > 0
+          ? match.homeReadyAt && match.awayReadyAt
+            ? Math.max(match.homeReadyAt.getTime(), match.awayReadyAt.getTime())
+            : null
+          : match.scheduledAt?.getTime() ?? null;
+        if (anchor === null) return false;
+        const earliest = anchor - (match.tournament.labMode ? 4 * 60 * 60 * 1000 : 0);
+        return now.getTime() >= earliest && now.getTime() <= anchor + 4 * 60 * 60 * 1000;
+      });
+      const firstHalfOfMinute = now.getSeconds() < 30;
+      const checksThisRun = firstHalfOfMinute
+        ? Math.ceil(this.eaAutoChecksPerMinute / 2)
+        : Math.floor(this.eaAutoChecksPerMinute / 2);
+      const scheduled = due.slice(0, checksThisRun);
+
+      const systemActor: Actor = {
+        id: -1,
+        discordId: 'auditoria-ea',
+        name: 'Auditoria EA',
+        role: 'ADMIN',
+        avatar: null,
+      };
+      for (const match of scheduled) {
+        try {
+          const claimed = await this.prisma.tournamentMatch.updateMany({
+            where: {
+              id: match.id,
+              status: { in: [TournamentMatchStatus.READY, TournamentMatchStatus.AWAITING_PROOF] },
+              OR: [{ eaNextCheckAt: null }, { eaNextCheckAt: { lte: now } }],
+            },
+            data: { eaNextCheckAt: new Date(Date.now() + this.eaAutoCheckIntervalMs) },
+          });
+          if (claimed.count === 0) continue;
+          await this.checkEaResult(match.tournamentId, match.id, systemActor);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'Não foi possível consultar a EA.';
+          const anchor = match.tournament.matchWindowMinutes > 0 && match.homeReadyAt && match.awayReadyAt
+            ? Math.max(match.homeReadyAt.getTime(), match.awayReadyAt.getTime())
+            : match.scheduledAt?.getTime() ?? 0;
+          const nextAt = Date.now() + this.eaAutoCheckIntervalMs <= anchor + 4 * 60 * 60 * 1000
+            ? new Date(Date.now() + this.eaAutoCheckIntervalMs)
+            : null;
+          await this.prisma.tournamentMatch.update({
+            where: { id: match.id },
+            data: {
+              eaLastCheckedAt: new Date(),
+              eaNextCheckAt: nextAt,
+              eaCheckMessage: message,
+            },
+          });
+          this.logger.debug(`Checagem automática da EA na partida ${match.id}: ${message}`);
+        }
+      }
+    } finally {
+      this.eaAutoSyncRunning = false;
+    }
   }
 
   @Cron(CronExpression.EVERY_MINUTE)

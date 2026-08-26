@@ -1,6 +1,6 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { KNOWN_FEATURE_FLAGS } from './feature-flags.constants';
+import { FEATURE_TOURNAMENT_EA_AUTO_SYNC, KNOWN_FEATURE_FLAGS } from './feature-flags.constants';
 
 const CACHE_TTL_MS = 15_000;
 
@@ -34,6 +34,12 @@ export class FeatureFlagsService {
       update: { enabled },
       create: { key, enabled, description: known.description },
     });
+    if (key === FEATURE_TOURNAMENT_EA_AUTO_SYNC && !enabled) {
+      await this.prisma.tournamentMatch.updateMany({
+        where: { eaNextCheckAt: { not: null } },
+        data: { eaNextCheckAt: null, eaCheckMessage: 'Busca automática desativada pelo administrador.' },
+      });
+    }
     this.cache = null;
     return row;
   }
@@ -53,5 +59,27 @@ export class FeatureFlagsService {
     if (!(await this.isEnabled(key))) {
       throw new ForbiddenException('Recurso desativado pelo administrador.');
     }
+  }
+
+  async getTournamentEaAutomationSettings() {
+    return (await this.prisma.tournamentEaAutomationSettings.findUnique({ where: { id: 1 } })) ?? {
+      id: 1,
+      checkIntervalSeconds: 30,
+      checksPerMinute: 2,
+      updatedByDiscordId: null,
+      updatedAt: null,
+    };
+  }
+
+  updateTournamentEaAutomationSettings(
+    checkIntervalSeconds: number,
+    checksPerMinute: number,
+    updatedByDiscordId: string,
+  ) {
+    return this.prisma.tournamentEaAutomationSettings.upsert({
+      where: { id: 1 },
+      create: { id: 1, checkIntervalSeconds, checksPerMinute, updatedByDiscordId },
+      update: { checkIntervalSeconds, checksPerMinute, updatedByDiscordId },
+    });
   }
 }

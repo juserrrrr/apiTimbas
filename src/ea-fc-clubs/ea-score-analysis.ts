@@ -1,5 +1,5 @@
-export const MIN_COMPLETED_EA_MATCH_SECONDS = 4500;
-export const MIN_MEANINGFUL_EA_MATCH_SECONDS = 300;
+export const MIN_COMPLETED_EA_MATCH_SECONDS = 89 * 60;
+export const MIN_MEANINGFUL_EA_MATCH_SECONDS = 7 * 60;
 
 export interface EaScoreAnalysis {
   playerScore: { homeScore: number; awayScore: number } | null;

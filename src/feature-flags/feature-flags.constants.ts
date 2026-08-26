@@ -1,6 +1,7 @@
 export const FEATURE_SCREEN_SHARE = 'screen_share';
 export const FEATURE_LIVE_SFU = 'live_sfu';
 export const FEATURE_TOURNAMENT_EA_RESULTS = 'tournament_ea_results';
+export const FEATURE_TOURNAMENT_EA_AUTO_SYNC = 'tournament_ea_auto_sync';
 export const FEATURE_TOURNAMENT_AI_RESULTS = 'tournament_ai_results';
 export const FEATURE_LIVE_LIMIT_720P_30FPS = 'live_limit_720p_30fps';
 
@@ -17,6 +18,10 @@ export const KNOWN_FEATURE_FLAGS: { key: string; description: string }[] = [
   {
     key: FEATURE_TOURNAMENT_EA_RESULTS,
     description: 'Sincronizar resultados de campeonatos pela API da EA',
+  },
+  {
+    key: FEATURE_TOURNAMENT_EA_AUTO_SYNC,
+    description: 'Buscar automaticamente na EA as partidas dos campeonatos',
   },
   {
     key: FEATURE_TOURNAMENT_AI_RESULTS,
