@@ -28,6 +28,9 @@ export type AwardCardLayoutSettings = Partial<Record<AwardCardCategory, AwardCar
 
 export interface ChampionCardLayoutSetting {
   font: AwardCardFont;
+  championTitleX: number;
+  championTitleY: number;
+  championTitleSize: number;
   teamX: number;
   teamY: number;
   teamSize: number;
@@ -42,6 +45,10 @@ export interface ChampionCardLayoutSetting {
   rosterHeight: number;
   rosterSize: number;
   rosterColumns: number;
+  rosterTitleX: number;
+  rosterTitleY: number;
+  rosterTitleSize: number;
+  rosterTitleWidth: number;
   qrX: number;
   qrY: number;
   qrSize: number;
@@ -117,6 +124,9 @@ export class AwardCardSettingsService {
       } else {
         result.campeao = {
           font,
+          championTitleX: this.numberWithFallback(row.championTitleX, 0.5, 0.15, 0.85, strict),
+          championTitleY: this.numberWithFallback(row.championTitleY, 0.612, 0.55, 0.72, strict),
+          championTitleSize: this.numberWithFallback(row.championTitleSize, 0.026, 0.012, 0.06, strict),
           teamX: this.number(row.teamX, 0.15, 0.85, strict),
           teamY: this.number(row.teamY, 0.55, 0.75, strict),
           teamSize: this.number(row.teamSize, 0.025, 0.1, strict),
@@ -131,6 +141,10 @@ export class AwardCardSettingsService {
           rosterHeight: this.number(row.rosterHeight, 0.04, 0.16, strict),
           rosterSize: this.number(row.rosterSize, 0.007, 0.04, strict),
           rosterColumns: this.integer(row.rosterColumns, 1, 4, strict),
+          rosterTitleX: this.numberWithFallback(row.rosterTitleX, 0.415, 0.1, 0.75, strict),
+          rosterTitleY: this.numberWithFallback(row.rosterTitleY, 0.73, 0.68, 0.82, strict),
+          rosterTitleSize: this.numberWithFallback(row.rosterTitleSize, 0.017, 0.009, 0.04, strict),
+          rosterTitleWidth: this.numberWithFallback(row.rosterTitleWidth, 0.18, 0.1, 0.35, strict),
           qrX: this.number(row.qrX, 0.5, 0.86, strict),
           qrY: this.number(row.qrY, 0.65, 0.86, strict),
           qrSize: this.number(row.qrSize, 0.06, 0.2, strict),
@@ -147,6 +161,17 @@ export class AwardCardSettingsService {
       return minimum;
     }
     return Math.min(maximum, Math.max(minimum, parsed));
+  }
+
+  private numberWithFallback(
+    value: unknown,
+    fallback: number,
+    minimum: number,
+    maximum: number,
+    strict: boolean,
+  ) {
+    if (value === undefined) return fallback;
+    return this.number(value, minimum, maximum, strict);
   }
 
   private boolean(value: unknown, fallback: boolean, strict: boolean) {
