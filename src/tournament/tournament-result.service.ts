@@ -657,5 +657,20 @@ export class TournamentResultService {
       },
     });
 
+    // O histÃ³rico de cada confronto marca quem perdeu no mata-mata, mas byes,
+    // W.O. sem adversÃ¡rio e a disputa de terceiro lugar podem terminar sem um
+    // perdedor propagado. Ao encerrar, o estado definitivo Ã© simples: somente
+    // o campeÃ£o continua nÃ£o eliminado.
+    if (championTeamId) {
+      await tx.tournamentTeam.updateMany({
+        where: { tournamentId: tournament.id, id: { not: championTeamId } },
+        data: { eliminated: true },
+      });
+      await tx.tournamentTeam.update({
+        where: { id: championTeamId },
+        data: { eliminated: false },
+      });
+    }
+
   }
 }
