@@ -28,10 +28,6 @@ export class MatchProofService {
   ) {}
 
   async report(tournamentId: string, matchId: string, dto: ReportResultDto, actor: Actor) {
-    if (!(await this.featureFlags.isEnabled(FEATURE_TOURNAMENT_AI_RESULTS))) {
-      throw new BadRequestException('O envio por imagem só fica disponível quando a IA está ativada.');
-    }
-    if (!dto.imageBase64) throw new BadRequestException('Envie uma imagem do placar para análise.');
     const match = await this.prisma.tournamentMatch.findFirst({
       where: { id: matchId, tournamentId },
       include: { tournament: true, homeTeam: true, awayTeam: true },
@@ -42,6 +38,29 @@ export class MatchProofService {
     if (!access.canModerate && !participant) throw new ForbiddenException('Só quem joga ou a organização pode lançar o resultado.');
     if (!OPEN.includes(match.status)) throw new BadRequestException('Esta partida já foi encerrada.');
     this.results.assertScoreIsValid(match, match.tournament, dto.homeScore, dto.awayScore);
+
+    // Sem foto não existe imagem para a IA conferir, então a organização registra
+    // o placar direto. Exigir a IA ligada aqui deixava o campeonato sem nenhuma
+    // forma de encerrar a partida com a leitura automática desligada.
+    if (!dto.imageBase64) {
+      if (!access.canModerate) {
+        throw new BadRequestException('Envie uma imagem do placar para análise.');
+      }
+      const settled = await this.results.settle(matchId, dto.homeScore, dto.awayScore, actor.discordId);
+      await this.prisma.tournamentMatchMessage.create({
+        data: {
+          matchId,
+          teamId: null,
+          system: true,
+          body: `A organização registrou o resultado ${dto.homeScore} a ${dto.awayScore}.`,
+        },
+      });
+      return { match: settled, proof: null, autoApproved: true, processing: false };
+    }
+
+    if (!(await this.featureFlags.isEnabled(FEATURE_TOURNAMENT_AI_RESULTS))) {
+      throw new BadRequestException('O envio por imagem só fica disponível quando a IA está ativada.');
+    }
 
     const image = this.decodeImage(dto.imageBase64, dto.mimeType);
     const imageSha256 = createHash('sha256').update(image.buffer).digest('hex');
