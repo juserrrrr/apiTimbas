@@ -22,6 +22,7 @@ export interface CraquePlayerStats {
   assists: number;
   mvps: number;
   tacklesCompleted: number;
+  tackleSuccess: number | null;
   saves: number;
   shots: number;
   passesCompleted: number;
@@ -58,6 +59,7 @@ export const DEFAULT_CRAQUE_WEIGHTS: CraqueWeights = {
 /// Partidas fantasma que puxam a nota de quem jogou pouco para a média do
 /// campeonato. Sem isso, três jogos inspirados valeriam mais que uma campanha.
 const RATING_PRIOR_GAMES = 2;
+const ASSIST_VALUE = 0.5;
 
 function perGame(total: number, appearances: number) {
   return appearances > 0 ? total / appearances : 0;
@@ -96,9 +98,18 @@ export function craqueRanker(
   const best = {
     contributions: Math.max(
       0,
-      ...pool.map((player) => perGame(player.goals + player.assists, player.appearances)),
+      ...pool.map((player) =>
+        perGame(player.goals + player.assists * ASSIST_VALUE, player.appearances),
+      ),
     ),
-    tackles: Math.max(0, ...pool.map((player) => perGame(player.tacklesCompleted, player.appearances))),
+    tackles: Math.max(
+      0,
+      ...pool.map(
+        (player) =>
+          perGame(player.tacklesCompleted, player.appearances) *
+          ((player.tackleSuccess ?? 0) / 100),
+      ),
+    ),
     saves: Math.max(0, ...pool.map((player) => perGame(player.saves, player.appearances))),
     shooting: Math.max(0, ...pool.map((player) => perGame(player.shots, player.appearances))),
     passing: Math.max(0, ...pool.map((player) => perGame(player.passesCompleted, player.appearances))),
@@ -113,9 +124,17 @@ export function craqueRanker(
 
     const contributions =
       weights.contributions *
-      share(perGame(player.goals + player.assists, player.appearances), best.contributions);
+      share(
+        perGame(player.goals + player.assists * ASSIST_VALUE, player.appearances),
+        best.contributions,
+      );
     const tackles =
-      weights.tackles * share(perGame(player.tacklesCompleted, player.appearances), best.tackles);
+      weights.tackles *
+      share(
+        perGame(player.tacklesCompleted, player.appearances) *
+          ((player.tackleSuccess ?? 0) / 100),
+        best.tackles,
+      );
     const saves = weights.saves * share(perGame(player.saves, player.appearances), best.saves);
     // Finalizações medem presença ofensiva, mas recebem menos peso que gols e
     // assistências para não premiar quem apenas chuta muito sem decidir.

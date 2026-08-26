@@ -9,6 +9,7 @@ const base: CraquePlayerStats = {
   assists: 0,
   mvps: 0,
   tacklesCompleted: 0,
+  tackleSuccess: null,
   saves: 0,
   shots: 0,
   passesCompleted: 0,
@@ -28,6 +29,7 @@ describe('craqueRanker', () => {
       teamMatches: 4,
       mvps: 2,
       tacklesCompleted: 20,
+      tackleSuccess: 85,
       passesCompleted: 150,
       passAccuracy: 85,
     });
@@ -36,6 +38,7 @@ describe('craqueRanker', () => {
       assists: 5,
       averageRating: 8.1,
       tacklesCompleted: 8,
+      tackleSuccess: 75,
       passesCompleted: 200,
       passAccuracy: 82,
     });
@@ -57,8 +60,8 @@ describe('craqueRanker', () => {
   });
 
   it('conta desarme de quem marca, não só quem ataca', () => {
-    const volante = player({ averageRating: 7.8, tacklesCompleted: 40, passesCompleted: 180, passAccuracy: 86 });
-    const reserva = player({ averageRating: 7.8, tacklesCompleted: 2, passesCompleted: 180, passAccuracy: 86 });
+    const volante = player({ averageRating: 7.8, tacklesCompleted: 40, tackleSuccess: 82, passesCompleted: 180, passAccuracy: 86 });
+    const reserva = player({ averageRating: 7.8, tacklesCompleted: 2, tackleSuccess: 25, passesCompleted: 180, passAccuracy: 86 });
     const score = craqueRanker([volante, reserva], 7.5);
 
     expect(score(volante).score).toBeGreaterThan(score(reserva).score);
@@ -89,6 +92,40 @@ describe('craqueRanker', () => {
 
     expect(score(regular).mvp).toBeGreaterThan(score(produtivo).mvp);
     expect(score(produtivo).score).toBeGreaterThan(score(regular).score);
+  });
+
+  it('compara o conjunto de Rodrigo e DK sem contar os selos duas vezes', () => {
+    const rodrigo = player({
+      appearances: 5,
+      ratedAppearances: 5,
+      teamMatches: 5,
+      averageRating: 8.1,
+      goals: 5,
+      assists: 5,
+      shots: 9,
+      passesCompleted: 55,
+      passAccuracy: 81,
+      tacklesCompleted: 4,
+      tackleSuccess: 27,
+      mvps: 0,
+    });
+    const dk = player({
+      appearances: 5,
+      ratedAppearances: 5,
+      teamMatches: 5,
+      averageRating: 8.1,
+      goals: 7,
+      assists: 2,
+      shots: 16,
+      passesCompleted: 41,
+      passAccuracy: 77,
+      tacklesCompleted: 2,
+      tackleSuccess: 18,
+      mvps: 2,
+    });
+    const score = craqueRanker([rodrigo, dk], 8.1);
+
+    expect(score(dk).score).toBeGreaterThan(score(rodrigo).score);
   });
 
   it('puxa para a média de quem jogou pouco', () => {
