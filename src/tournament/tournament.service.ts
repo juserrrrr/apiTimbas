@@ -32,6 +32,7 @@ import {
   tournamentPlanIssue,
 } from './bracket.builder';
 import { isKnockout, resolveWalkovers } from './bracket-advance';
+import { craqueRanker } from './craque';
 import {
   EMPTY_STANDINGS,
   clearedMatchState,
@@ -653,18 +654,11 @@ export class TournamentService {
         player.appearances >= requiredAppearances(player) &&
         player.ratedAppearances >= requiredAppearances(player),
     );
-    const craqueScore = (player: (typeof players)[number]) => {
-      const priorGames = 2;
-      const adjustedRating =
-        ((player.averageRating ?? 0) * player.ratedAppearances +
-          tournamentAverageRating * priorGames) /
-        (player.ratedAppearances + priorGames);
-      const participationRate =
-        player.teamMatches > 0 ? player.appearances / player.teamMatches : 0;
-      const mvpRate =
-        player.appearances > 0 ? player.mvps / player.appearances : 0;
-      return adjustedRating + participationRate * 0.1 + mvpRate * 0.2;
-    };
+    // O índice do craque olha a ficha inteira, não só a nota: gols, assistências,
+    // desarmes, defesas, passe e presença entram normalizados pelo melhor do
+    // próprio campeonato.
+    const scoreCraque = craqueRanker(eligibleCraques, tournamentAverageRating);
+    const craqueScore = (player: (typeof players)[number]) => scoreCraque(player).score;
     const craque = rank(eligibleCraques, craqueScore);
     const definitions = [
       {
@@ -685,7 +679,7 @@ export class TournamentService {
       {
         key: 'CRAQUE',
         title: 'Craque do Campeonato',
-        subtitle: 'Melhor índice técnico ajustado',
+        subtitle: 'Nota, produção, defesa e presença',
         player: craque,
         value: (player: (typeof players)[number]) =>
           `Índice ${craqueScore(player).toFixed(2).replace('.', ',')}`,

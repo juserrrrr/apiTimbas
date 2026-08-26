@@ -283,6 +283,16 @@ export class TournamentMatchService {
       this.eaClubs.friendlyMatches(match.awayTeam.eaClubId, platform),
     ]);
     const awayById = new Map(awayHistory.map((item) => [item.externalMatchId, item]));
+    const homeById = new Map(homeHistory.map((item) => [item.externalMatchId, item]));
+    // O registro que a EA devolve já traz os dois clubes com placar e atletas,
+    // então basta aparecer em um dos históricos. Exigir os dois fazia a partida
+    // ficar invisível enquanto a EA não publicava o mesmo jogo nas duas listas,
+    // que é o que deixava um resultado esperando minutos depois de acabar.
+    const seen = new Map<string, (typeof homeHistory)[number]>();
+    for (const item of [...homeHistory, ...awayHistory]) {
+      if (!seen.has(item.externalMatchId)) seen.set(item.externalMatchId, item);
+    }
+    const pool = [...seen.values()];
     // Em operações do Laboratório aceitamos até quatro horas antes do horário
     // marcado. Isso permite validar rapidamente um evento reconstruído depois
     // que os amistosos reais já aconteceram. Campeonatos normais continuam sem
@@ -292,17 +302,24 @@ export class TournamentMatchService {
     if (Date.now() < earliest) {
       throw new BadRequestException('A checagem na EA só fica disponível quando o confronto começar.');
     }
-    const candidates = homeHistory.filter((item) => {
+    const candidates = pool.filter((item) => {
       const clubs = new Set([item.homeClubId, item.awayClubId]);
+      if (!clubs.has(match.homeTeam!.eaClubId!) || !clubs.has(match.awayTeam!.eaClubId!)) return false;
+      if (item.playedAt.getTime() < earliest || item.playedAt.getTime() > latest) return false;
+      // Quando o jogo já está nas duas listas, as duas cópias precisam contar a
+      // mesma história: divergência de placar entre elas é sinal de registro
+      // pela metade, e nesse caso é melhor esperar a próxima checagem.
+      const homeCopy = homeById.get(item.externalMatchId);
       const awayCopy = awayById.get(item.externalMatchId);
-      return Boolean(awayCopy) && awayCopy!.homeClubId === item.homeClubId && awayCopy!.awayClubId === item.awayClubId &&
-        awayCopy!.homeScore === item.homeScore && awayCopy!.awayScore === item.awayScore &&
-        clubs.has(match.homeTeam!.eaClubId!) && clubs.has(match.awayTeam!.eaClubId!) &&
-        item.playedAt.getTime() >= earliest && item.playedAt.getTime() <= latest;
+      if (!homeCopy || !awayCopy) return true;
+      return homeCopy.homeClubId === awayCopy.homeClubId &&
+        homeCopy.awayClubId === awayCopy.awayClubId &&
+        homeCopy.homeScore === awayCopy.homeScore &&
+        homeCopy.awayScore === awayCopy.awayScore;
     });
     if (candidates.length === 0) {
       await this.recordEaCheck(matchId, 'Nenhuma partida correspondente apareceu na EA ainda.', latest, autoEnabled);
-      throw new NotFoundException('A partida ainda não apareceu no histórico de amistosos dos dois clubes.');
+      throw new NotFoundException('A partida ainda não apareceu no histórico de amistosos dos clubes.');
     }
     const completeCandidates = candidates;
     const usedEaMatches = await this.prisma.tournamentMatch.findMany({
