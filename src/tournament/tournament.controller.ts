@@ -103,6 +103,11 @@ export class TournamentController {
     return this.tournaments.start(id, await this.me(req));
   }
 
+  @Post(':id/invites')
+  async createRegistrationInvite(@Req() req: AuthedRequest, @Param('id') id: string) {
+    return this.tournaments.createRegistrationInvite(id, await this.me(req));
+  }
+
   @Post(':id/teams')
   async addTeam(@Req() req: AuthedRequest, @Param('id') id: string, @Body() dto: AddTeamDto) {
     return this.tournaments.addTeam(id, dto, await this.me(req));

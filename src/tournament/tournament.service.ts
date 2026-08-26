@@ -8,6 +8,7 @@ import {
   CompetitionGame,
   CompetitionRole,
   Prisma,
+  TournamentAccessMode,
   TournamentFormat,
   TournamentMatchStatus,
   TournamentPhase,
@@ -117,10 +118,7 @@ export class TournamentService {
         slug,
         createdByDiscordId: actor.discordId,
         status: TournamentStatus.REGISTRATION,
-        inviteCode:
-          dto.accessMode === 'INVITE_ONLY'
-            ? randomBytes(24).toString('base64url')
-            : null,
+        inviteCode: null,
         staff: { create: { userId: actor.id, role: CompetitionRole.OWNER } },
         invites: {
           create: invitedUsers
@@ -318,10 +316,6 @@ export class TournamentService {
         ...settings,
         ...(dto.name ? { name: dto.name } : {}),
         ...(dto.status ? { status: dto.status } : {}),
-        ...(dto.accessMode === 'INVITE_ONLY' &&
-        tournament.accessMode !== 'INVITE_ONLY'
-          ? { inviteCode: randomBytes(24).toString('base64url') }
-          : {}),
         ...(dto.accessMode === 'PUBLIC' ? { inviteCode: null } : {}),
       },
     });
@@ -784,10 +778,70 @@ export class TournamentService {
   }
 
   async joinByInvite(code: string, actor: Actor) {
+    const registrationInvite = await this.prisma.tournamentRegistrationInvite.findUnique({
+      where: { code },
+      include: { tournament: true },
+    });
+    if (!registrationInvite) return this.joinByLegacyInvite(code, actor);
+
+    const tournament = registrationInvite.tournament;
+    if (
+      registrationInvite.usedAt ||
+      tournament.accessMode !== TournamentAccessMode.INVITE_ONLY ||
+      tournament.status !== TournamentStatus.REGISTRATION
+    ) {
+      throw new NotFoundException('Convite inv\u00e1lido ou j\u00e1 utilizado.');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const claimed = await tx.tournamentRegistrationInvite.updateMany({
+        where: { id: registrationInvite.id, usedAt: null },
+        data: { usedAt: new Date(), claimedById: actor.id },
+      });
+      if (claimed.count === 0) throw new BadRequestException('Este convite j\u00e1 foi utilizado.');
+      await tx.tournamentInvite.upsert({
+        where: { tournamentId_userId: { tournamentId: tournament.id, userId: actor.id } },
+        update: { acceptedAt: new Date() },
+        create: {
+          tournamentId: tournament.id,
+          userId: actor.id,
+          invitedById: registrationInvite.createdById,
+          acceptedAt: new Date(),
+        },
+      });
+      return { tournamentId: tournament.id };
+    });
+  }
+
+  async createRegistrationInvite(id: string, actor: Actor) {
+    await this.access.requireManage(id, actor);
+    const tournament = await this.access.requireExists(id);
+    if (tournament.accessMode !== TournamentAccessMode.INVITE_ONLY) {
+      throw new BadRequestException('Convites individuais s\u00f3 s\u00e3o necess\u00e1rios em campeonatos fechados.');
+    }
+    if (tournament.status !== TournamentStatus.REGISTRATION) {
+      throw new BadRequestException('As inscri\u00e7\u00f5es deste campeonato est\u00e3o fechadas.');
+    }
+    const invite = await this.prisma.tournamentRegistrationInvite.create({
+      data: {
+        tournamentId: id,
+        code: randomBytes(24).toString('base64url'),
+        createdById: actor.id,
+      },
+      select: { code: true },
+    });
+    return { tournamentId: id, code: invite.code };
+  }
+
+  private async joinByLegacyInvite(code: string, actor: Actor) {
     const tournament = await this.prisma.tournament.findUnique({
       where: { inviteCode: code },
     });
-    if (!tournament || tournament.accessMode !== 'INVITE_ONLY') {
+    if (
+      !tournament ||
+      tournament.accessMode !== 'INVITE_ONLY' ||
+      tournament.status !== TournamentStatus.REGISTRATION
+    ) {
       throw new NotFoundException('Convite inválido ou expirado.');
     }
     await this.prisma.tournamentInvite.upsert({
@@ -801,6 +855,10 @@ export class TournamentService {
         invitedById: null,
         acceptedAt: new Date(),
       },
+    });
+    await this.prisma.tournament.update({
+      where: { id: tournament.id },
+      data: { inviteCode: null },
     });
     return { tournamentId: tournament.id };
   }
