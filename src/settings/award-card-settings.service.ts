@@ -130,7 +130,7 @@ export class AwardCardSettingsService {
           rosterWidth: this.number(row.rosterWidth, 0.2, 0.65, strict),
           rosterHeight: this.number(row.rosterHeight, 0.04, 0.16, strict),
           rosterSize: this.number(row.rosterSize, 0.007, 0.04, strict),
-          rosterColumns: this.integer(row.rosterColumns, 1, 3, strict),
+          rosterColumns: this.integer(row.rosterColumns, 1, 4, strict),
           qrX: this.number(row.qrX, 0.5, 0.86, strict),
           qrY: this.number(row.qrY, 0.65, 0.86, strict),
           qrSize: this.number(row.qrSize, 0.06, 0.2, strict),
