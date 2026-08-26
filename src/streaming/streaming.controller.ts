@@ -21,9 +21,11 @@ import { FEATURE_LIVE_LIMIT_720P_30FPS, FEATURE_SCREEN_SHARE } from '../feature-
 import { FeatureFlagsService } from '../feature-flags/feature-flags.service';
 import { CreateStreamDto } from './dto/create-stream.dto';
 import { JoinStreamDto } from './dto/join-stream.dto';
+import { StartStreamDto } from './dto/start-stream.dto';
 import { PeerDto } from './dto/peer.dto';
 import { SfuSettingsDto } from './dto/sfu-settings.dto';
 import { ForceQualityDto } from './dto/force-quality.dto';
+import { HostTelemetryDto } from './dto/host-telemetry.dto';
 import { UpdateAnnouncementChannelDto } from './dto/update-announcement-channel.dto';
 import { UpdateStreamDto } from './dto/update-stream.dto';
 import {
@@ -156,8 +158,12 @@ export class StreamingController {
 
   @RequirePermissions(STREAM_PERMISSION)
   @Post('streams/:id/start')
-  start(@Param('id') id: string, @Req() req: any) {
-    return this.streaming.start(id, toRequestUser(req));
+  start(
+    @Param('id') id: string,
+    @Body() dto: StartStreamDto,
+    @Req() req: any,
+  ) {
+    return this.streaming.start(id, toRequestUser(req), dto?.announce ?? false);
   }
 
   @RequirePermissions(STREAM_PERMISSION)
@@ -228,6 +234,21 @@ export class StreamingController {
   @Post('streams/:id/leave')
   leave(@Param('id') id: string, @Body() dto: PeerDto, @Req() req: any) {
     return this.streaming.leave(id, dto.peerId, toRequestUser(req));
+  }
+
+  @Post('streams/:id/telemetry')
+  telemetry(
+    @Param('id') id: string,
+    @Body() dto: HostTelemetryDto,
+    @Req() req: any,
+  ) {
+    const { peerId, ...telemetry } = dto;
+    return this.streaming.reportTelemetry(
+      id,
+      peerId,
+      toRequestUser(req),
+      telemetry,
+    );
   }
 
   @Post('streams/:id/events/ticket')

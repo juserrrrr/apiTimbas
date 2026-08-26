@@ -35,6 +35,20 @@ interface Peer {
   lastSeen: number;
 }
 
+/// O que o navegador de quem transmite está realmente codificando. O servidor
+/// de mídia só conhece o tamanho declarado na publicação, então sem isto o
+/// painel mostrava 1080p enquanto a live saía em 180p.
+export interface HostTelemetry {
+  width: number;
+  height: number;
+  fps: number;
+  kbps: number;
+  rttMs: number;
+  targetHeight: number;
+  limitedBy: 'none' | 'cpu' | 'bandwidth' | 'other';
+  at: number;
+}
+
 interface Stream {
   id: string;
   slug: string;
@@ -50,6 +64,7 @@ interface Stream {
   announced: boolean;
   hostPeerId: string | null;
   hostMissingSince: number | null;
+  hostTelemetry: HostTelemetry | null;
   peers: Map<string, Peer>;
 }
 
@@ -104,6 +119,7 @@ export class StreamingService implements OnModuleInit {
         announced: row.announced,
         hostPeerId: null,
         hostMissingSince: restoredAt,
+        hostTelemetry: null,
         peers: new Map(),
       };
       this.streams.set(stream.id, stream);
@@ -149,6 +165,7 @@ export class StreamingService implements OnModuleInit {
       announced: false,
       hostPeerId: null,
       hostMissingSince: Date.now(),
+      hostTelemetry: null,
       peers: new Map(),
     };
     await this.prisma.activeStream.create({
@@ -220,6 +237,9 @@ export class StreamingService implements OnModuleInit {
         announced: stream.announced,
         guildId: stream.guildId,
         uptimeMs: now - stream.startedAt,
+        telemetry: stream.hostTelemetry
+          ? { ...stream.hostTelemetry, ageMs: now - stream.hostTelemetry.at }
+          : null,
         peers: [...stream.peers.values()].map((peer) => ({
           peerId: peer.id,
           name: peer.name,
@@ -233,6 +253,30 @@ export class StreamingService implements OnModuleInit {
           idleMs: now - peer.lastSeen,
         })),
       }));
+  }
+
+  /**
+   * O host reporta o que está codificando de verdade. Só o peer que transmite
+   * pode escrever aqui, e o dado é volátil de propósito: serve para depurar a
+   * live que está no ar, não para virar histórico.
+   */
+  reportTelemetry(
+    id: string,
+    peerId: string,
+    user: RequestUser,
+    telemetry: Omit<HostTelemetry, 'at'>,
+  ) {
+    const stream = this.getStream(id);
+    if (stream.hostUserId !== user.id) {
+      throw new ForbiddenException(
+        'Somente quem transmite reporta o estado da live.',
+      );
+    }
+    if (stream.hostPeerId && stream.hostPeerId !== peerId) {
+      throw new ForbiddenException('Este peer não é o host da transmissão.');
+    }
+    stream.hostTelemetry = { ...telemetry, at: Date.now() };
+    return { received: true };
   }
 
   /**
@@ -306,7 +350,11 @@ export class StreamingService implements OnModuleInit {
     return this.toSummary(stream);
   }
 
-  async start(id: string, user: RequestUser) {
+  /**
+   * Anunciar é escolha de quem transmite, e o padrão é não anunciar: marcar o
+   * servidor inteiro sem querer é o tipo de coisa que não tem desfazer.
+   */
+  async start(id: string, user: RequestUser, announce = false) {
     const stream = this.getStream(id);
     if (stream.hostUserId !== user.id) {
       throw new ForbiddenException(
@@ -321,8 +369,8 @@ export class StreamingService implements OnModuleInit {
         where: { id: stream.id },
         data: { broadcasting: true, startedAt: new Date(stream.startedAt) },
       });
-      this.logger.log(`Live started stream=${stream.id}`);
-      await this.announceToDiscord(stream).catch(() => {});
+      this.logger.log(`Live started stream=${stream.id} announce=${announce}`);
+      if (announce) await this.announceToDiscord(stream).catch(() => {});
       if (stream.announced) {
         await this.prisma.activeStream.update({
           where: { id: stream.id },
