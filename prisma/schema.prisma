@@ -207,6 +207,7 @@ model PlatformSettings {
   id                 Int      @id @default(1)
   requireApproval    Boolean  @default(false)
   approvalMessage    String?
+  defaultPermissions String[] @default(["dashboard.home", "dashboard.tournaments", "dashboard.draft", "dashboard.live", "dashboard.matches.live", "dashboard.matches.ranking", "dashboard.matches.history", "dashboard.matches.teams", "dashboard.matches.stats", "dashboard.matches.versus", "dashboard.ea", "dashboard.clash", "dashboard.lol.verify", "dashboard.lol.profile", "dashboard.settings"])
   updatedByDiscordId String?
   updatedAt          DateTime @updatedAt
 }

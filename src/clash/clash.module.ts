@@ -8,8 +8,10 @@ import { AuthModule } from '../auth/auth.module';
 import { ClashScoutRateLimitGuard } from './guards/clash-scout-rate-limit.guard';
 import { PlayerStatsModule } from '../playerStats/player-stats.module';
 import { PrismaModule } from '../prisma/prisma.module';
+import { AccessModule } from '../access/access.module';
+import { FeatureFlagsModule } from '../feature-flags/feature-flags.module';
 @Module({
-  imports: [RiotModule, AiModule, AuthModule, PlayerStatsModule, PrismaModule],
+  imports: [RiotModule, AiModule, AuthModule, PlayerStatsModule, PrismaModule, AccessModule, FeatureFlagsModule],
   controllers: [ClashController],
   providers: [ClashService, ScoutQueueService, ClashScoutRateLimitGuard],
 })

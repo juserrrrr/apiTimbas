@@ -46,10 +46,15 @@ import { TournamentResultService } from './tournament-result.service';
 import { TournamentMatchService } from './tournament-match.service';
 import { TournamentService } from './tournament.service';
 import { AwardCardSettingsService } from '../settings/award-card-settings.service';
+import { RequireFeature } from '../decorators/feature.decorator';
+import { FeatureFlagGuard } from '../feature-flags/guards/feature-flag.guard';
+import { FEATURE_DASHBOARD_TOURNAMENTS } from '../feature-flags/feature-flags.constants';
 
 type AuthedRequest = Request & { tokenPayload?: { discordId?: string; role?: string } };
 
-@UseGuards(AuthGuard, RoleGuard, PermissionGuard)
+@UseGuards(AuthGuard, RoleGuard, FeatureFlagGuard, PermissionGuard)
+@RequireFeature(FEATURE_DASHBOARD_TOURNAMENTS)
+@RequirePermissions('dashboard.tournaments')
 @Controller('tournaments')
 export class TournamentController {
   constructor(

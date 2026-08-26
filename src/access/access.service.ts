@@ -8,6 +8,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import {
   ALL_PERMISSIONS,
   PERMISSION_CATEGORIES,
+  sanitizeDashboardPermissions,
   sanitizePermissions,
 } from './permissions';
 import {
@@ -22,7 +23,7 @@ export class AccessService {
   constructor(private readonly prisma: PrismaService) {}
 
   /// ADMIN é super admin fixo: tem tudo sem depender de grupo. Todo o resto vem
-  /// da união dos grupos da pessoa.
+  /// da base inicial da plataforma somada aos grupos da pessoa.
   async permissionsOf(
     userId: number,
   ): Promise<{ role: Role; permissions: string[] }> {
@@ -39,7 +40,8 @@ export class AccessService {
     if (user.role === Role.ADMIN)
       return { role: user.role, permissions: [...ALL_PERMISSIONS] };
 
-    const permissions = new Set<string>();
+    const settings = await this.settings();
+    const permissions = new Set<string>(settings.defaultPermissions);
     for (const membership of user.groups) {
       for (const key of membership.group.permissions) permissions.add(key);
     }
@@ -78,6 +80,9 @@ export class AccessService {
           : {}),
         ...(dto.approvalMessage !== undefined
           ? { approvalMessage: dto.approvalMessage }
+          : {}),
+        ...(dto.defaultPermissions !== undefined
+          ? { defaultPermissions: sanitizeDashboardPermissions(dto.defaultPermissions) }
           : {}),
         updatedByDiscordId,
       },

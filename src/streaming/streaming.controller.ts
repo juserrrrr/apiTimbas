@@ -49,6 +49,7 @@ function toRequestUser(req: any): RequestUser {
 
 @UseGuards(AuthGuard, FeatureFlagGuard, PermissionGuard)
 @RequireFeature(FEATURE_SCREEN_SHARE)
+@RequirePermissions('dashboard.live')
 @Controller('streaming')
 export class StreamingController {
   constructor(

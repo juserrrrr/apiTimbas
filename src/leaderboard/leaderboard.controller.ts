@@ -2,8 +2,12 @@ import { BadRequestException, Controller, Get, Param, ParseIntPipe, Query, UseGu
 import { GameMode } from '@prisma/client';
 import { LeaderboardService } from './leaderboard.service';
 import { AuthGuard } from '../auth/guards/auth.guard';
+import { PermissionGuard, RequirePermissions } from '../access/permission.guard';
+import { RequireFeature } from '../decorators/feature.decorator';
+import { FeatureFlagGuard } from '../feature-flags/guards/feature-flag.guard';
+import { FEATURE_DASHBOARD_HOME, FEATURE_DASHBOARD_MATCHES_HISTORY, FEATURE_DASHBOARD_MATCHES_RANKING, FEATURE_DASHBOARD_MATCHES_STATS, FEATURE_DASHBOARD_MATCHES_TEAMS, FEATURE_DASHBOARD_MATCHES_VERSUS } from '../feature-flags/feature-flags.constants';
 
-@UseGuards(AuthGuard)
+@UseGuards(AuthGuard, FeatureFlagGuard, PermissionGuard)
 @Controller('leaderboard')
 export class LeaderboardController {
   constructor(private readonly leaderboardService: LeaderboardService) {}
@@ -21,6 +25,8 @@ export class LeaderboardController {
   }
 
   @Get(':discordServerId')
+  @RequireFeature(FEATURE_DASHBOARD_HOME, FEATURE_DASHBOARD_MATCHES_RANKING, FEATURE_DASHBOARD_MATCHES_STATS, FEATURE_DASHBOARD_MATCHES_VERSUS)
+  @RequirePermissions('dashboard.home', 'dashboard.matches.ranking', 'dashboard.matches.stats', 'dashboard.matches.versus')
   async getLeaderboard(
     @Param('discordServerId') discordServerId: string,
     @Query('mode') mode?: string,
@@ -35,6 +41,8 @@ export class LeaderboardController {
   }
 
   @Get(':discordServerId/matches')
+  @RequireFeature(FEATURE_DASHBOARD_HOME, FEATURE_DASHBOARD_MATCHES_HISTORY)
+  @RequirePermissions('dashboard.home', 'dashboard.matches.history')
   async getMatchHistory(
     @Param('discordServerId') discordServerId: string,
     @Query('mode') mode?: string,
@@ -48,6 +56,8 @@ export class LeaderboardController {
   }
 
   @Get(':discordServerId/player/:userId')
+  @RequireFeature(FEATURE_DASHBOARD_HOME, FEATURE_DASHBOARD_MATCHES_HISTORY, FEATURE_DASHBOARD_MATCHES_STATS, FEATURE_DASHBOARD_MATCHES_VERSUS)
+  @RequirePermissions('dashboard.home', 'dashboard.matches.history', 'dashboard.matches.stats', 'dashboard.matches.versus')
   async getPlayerStats(
     @Param('discordServerId') discordServerId: string,
     @Param('userId', ParseIntPipe) userId: number,
@@ -58,6 +68,8 @@ export class LeaderboardController {
   }
 
   @Get(':discordServerId/player/:userId/duo')
+  @RequireFeature(FEATURE_DASHBOARD_MATCHES_HISTORY, FEATURE_DASHBOARD_MATCHES_TEAMS)
+  @RequirePermissions('dashboard.matches.history', 'dashboard.matches.teams')
   async getDuoStats(
     @Param('discordServerId') discordServerId: string,
     @Param('userId', ParseIntPipe) userId: number,

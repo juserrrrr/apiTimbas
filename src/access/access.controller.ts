@@ -46,7 +46,7 @@ export class AccessController {
   }
 
   @Get('catalog')
-  @RequirePermissions('groups.manage')
+  @RequirePermissions('groups.manage', 'users.approve')
   catalog() {
     return this.access.catalog();
   }

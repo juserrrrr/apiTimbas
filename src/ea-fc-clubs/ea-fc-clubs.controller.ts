@@ -19,8 +19,14 @@ import {
 import { EaLeaderboardQueryDto } from './dto/leaderboard-query.dto';
 import { EaMatchQueryDto } from './dto/match-query.dto';
 import { EaFcClubsService } from './ea-fc-clubs.service';
+import { PermissionGuard, RequirePermissions } from '../access/permission.guard';
+import { RequireFeature } from '../decorators/feature.decorator';
+import { FEATURE_DASHBOARD_EA } from '../feature-flags/feature-flags.constants';
+import { FeatureFlagGuard } from '../feature-flags/guards/feature-flag.guard';
 
-@UseGuards(AuthGuard, RoleGuard)
+@UseGuards(AuthGuard, RoleGuard, FeatureFlagGuard, PermissionGuard)
+@RequireFeature(FEATURE_DASHBOARD_EA)
+@RequirePermissions('dashboard.ea')
 @Controller('ea-clubs')
 export class EaFcClubsController {
   constructor(private readonly clubs: EaFcClubsService) {}

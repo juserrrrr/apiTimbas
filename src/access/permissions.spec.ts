@@ -1,4 +1,4 @@
-import { ALL_PERMISSIONS, PERMISSION_CATEGORIES, isKnownPermission, sanitizePermissions } from './permissions';
+import { ALL_PERMISSIONS, DASHBOARD_PERMISSIONS, PERMISSION_CATEGORIES, isKnownPermission, sanitizeDashboardPermissions, sanitizePermissions } from './permissions';
 
 describe('catálogo de permissões', () => {
   it('não tem chave repetida', () => {
@@ -27,5 +27,12 @@ describe('sanitizePermissions', () => {
   it('reconhece só o que existe no catálogo', () => {
     expect(isKnownPermission('groups.manage')).toBe(true);
     expect(isKnownPermission('groups.destroy')).toBe(false);
+  });
+});
+
+describe('sanitizeDashboardPermissions', () => {
+  it('impede permissões administrativas no acesso inicial', () => {
+    expect(sanitizeDashboardPermissions(['dashboard.home', 'users.manage', 'dashboard.home'])).toEqual(['dashboard.home']);
+    expect(DASHBOARD_PERMISSIONS).toContain('dashboard.settings');
   });
 });

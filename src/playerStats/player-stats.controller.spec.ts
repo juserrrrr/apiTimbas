@@ -1,6 +1,8 @@
 import { BadRequestException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { AuthGuard } from '../auth/guards/auth.guard';
+import { PermissionGuard } from '../access/permission.guard';
+import { FeatureFlagGuard } from '../feature-flags/guards/feature-flag.guard';
 import { PlayerStatsController } from './player-stats.controller';
 import { PlayerStatsService } from './player-stats.service';
 
@@ -16,6 +18,10 @@ describe('PlayerStatsController', () => {
       providers: [{ provide: PlayerStatsService, useValue: service }],
     })
       .overrideGuard(AuthGuard)
+      .useValue({ canActivate: () => true })
+      .overrideGuard(FeatureFlagGuard)
+      .useValue({ canActivate: () => true })
+      .overrideGuard(PermissionGuard)
       .useValue({ canActivate: () => true })
       .compile();
 

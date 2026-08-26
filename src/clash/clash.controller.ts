@@ -4,7 +4,14 @@ import { ScoutQueueService } from './scout-queue.service';
 import { AuthGuard } from '../auth/guards/auth.guard';
 import { ClashScoutRateLimitGuard } from './guards/clash-scout-rate-limit.guard';
 import { FullPlayerData, TeamTacticalProfile } from '../ai/ai.service';
+import { PermissionGuard, RequirePermissions } from '../access/permission.guard';
+import { RequireFeature } from '../decorators/feature.decorator';
+import { FEATURE_DASHBOARD_CLASH } from '../feature-flags/feature-flags.constants';
+import { FeatureFlagGuard } from '../feature-flags/guards/feature-flag.guard';
 
+@UseGuards(AuthGuard, FeatureFlagGuard, PermissionGuard)
+@RequireFeature(FEATURE_DASHBOARD_CLASH)
+@RequirePermissions('dashboard.clash')
 @Controller('clash')
 export class ClashController {
   constructor(

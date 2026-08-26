@@ -5,9 +5,11 @@ import { ClashScoutRateLimitGuard } from '../clash/guards/clash-scout-rate-limit
 import { RiotModule } from '../riot/riot.module';
 import { PlayerStatsController } from './player-stats.controller';
 import { PlayerStatsService } from './player-stats.service';
+import { AccessModule } from '../access/access.module';
+import { FeatureFlagsModule } from '../feature-flags/feature-flags.module';
 
 @Module({
-  imports: [AuthModule, RiotModule, AiModule],
+  imports: [AuthModule, RiotModule, AiModule, AccessModule, FeatureFlagsModule],
   controllers: [PlayerStatsController],
   providers: [PlayerStatsService, ClashScoutRateLimitGuard],
   exports: [PlayerStatsService],

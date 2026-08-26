@@ -4,6 +4,8 @@ import { ClashController } from './clash.controller';
 import { ClashService } from './clash.service';
 import { ScoutQueueService } from './scout-queue.service';
 import { AuthGuard } from '../auth/guards/auth.guard';
+import { PermissionGuard } from '../access/permission.guard';
+import { FeatureFlagGuard } from '../feature-flags/guards/feature-flag.guard';
 
 const SCOUT_RESULT = {
   team: { id: 't1', name: 'Test Team', abbreviation: 'TT', iconId: 1, tier: 2 },
@@ -40,6 +42,10 @@ describe('ClashController', () => {
       ],
     })
       .overrideGuard(AuthGuard)
+      .useValue({ canActivate: () => true })
+      .overrideGuard(FeatureFlagGuard)
+      .useValue({ canActivate: () => true })
+      .overrideGuard(PermissionGuard)
       .useValue({ canActivate: () => true })
       .compile();
 

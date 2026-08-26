@@ -2,6 +2,27 @@
 /// guarda chaves que existem aqui, e o painel monta a tela a partir desta lista.
 export const PERMISSION_CATEGORIES = [
   {
+    id: 'dashboard',
+    title: 'Áreas do Timbas',
+    permissions: [
+      { key: 'dashboard.home', label: 'Início', hint: 'Resumo da plataforma e atalhos principais' },
+      { key: 'dashboard.tournaments', label: 'Campeonatos', hint: 'Consulta campeonatos, inscrições e chaves' },
+      { key: 'dashboard.draft', label: 'Liga Draft', hint: 'Acessa ligas, elencos, mercado e rodadas do draft' },
+      { key: 'dashboard.live', label: 'Transmissões', hint: 'Assiste às transmissões disponíveis' },
+      { key: 'dashboard.matches.live', label: 'Partidas ao vivo', hint: 'Acompanha partidas customizadas em andamento' },
+      { key: 'dashboard.matches.ranking', label: 'Ranking', hint: 'Consulta a classificação geral de vitórias' },
+      { key: 'dashboard.matches.history', label: 'Histórico', hint: 'Consulta partidas customizadas já disputadas' },
+      { key: 'dashboard.matches.teams', label: 'Duplas', hint: 'Consulta o desempenho das duplas' },
+      { key: 'dashboard.matches.stats', label: 'Estatísticas', hint: 'Consulta números detalhados das partidas' },
+      { key: 'dashboard.matches.versus', label: 'Comparação', hint: 'Compara jogadores em confronto direto' },
+      { key: 'dashboard.ea', label: 'EA FC Clubs', hint: 'Consulta clubes, jogadores e estatísticas sincronizadas' },
+      { key: 'dashboard.clash', label: 'Clash Scout', hint: 'Analisa adversários do League of Legends' },
+      { key: 'dashboard.lol.verify', label: 'Verificar LoL', hint: 'Vincula uma conta da Riot' },
+      { key: 'dashboard.lol.profile', label: 'Perfil LoL', hint: 'Consulta a análise de estilo de jogo' },
+      { key: 'dashboard.settings', label: 'Configurações', hint: 'Acessa as preferências da própria conta' },
+    ],
+  },
+  {
     id: 'competicoes',
     title: 'Competições',
     permissions: [
@@ -40,6 +61,10 @@ export const ALL_PERMISSIONS: string[] = PERMISSION_CATEGORIES.flatMap((category
   category.permissions.map((permission) => permission.key),
 );
 
+export const DASHBOARD_PERMISSIONS: string[] = PERMISSION_CATEGORIES
+  .find((category) => category.id === 'dashboard')!
+  .permissions.map((permission) => permission.key);
+
 export function isKnownPermission(key: string): boolean {
   return ALL_PERMISSIONS.includes(key);
 }
@@ -48,4 +73,8 @@ export function isKnownPermission(key: string): boolean {
 /// inventada.
 export function sanitizePermissions(keys: string[]): string[] {
   return [...new Set(keys.filter(isKnownPermission))];
+}
+
+export function sanitizeDashboardPermissions(keys: string[]): string[] {
+  return [...new Set(keys.filter((key) => DASHBOARD_PERMISSIONS.includes(key)))];
 }

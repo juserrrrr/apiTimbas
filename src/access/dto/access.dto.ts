@@ -78,6 +78,12 @@ export class PlatformSettingsDto {
   @IsString()
   @MaxLength(300)
   approvalMessage?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(30)
+  @IsString({ each: true })
+  defaultPermissions?: string[];
 }
 
 export class PermissionCheckDto {

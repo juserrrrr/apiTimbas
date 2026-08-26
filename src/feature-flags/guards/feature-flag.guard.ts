@@ -1,4 +1,4 @@
-import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
+import { CanActivate, ExecutionContext, ForbiddenException, Injectable } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { FEATURE_KEY } from '../../decorators/feature.decorator';
 import { FeatureFlagsService } from '../feature-flags.service';
@@ -11,13 +11,16 @@ export class FeatureFlagGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const key = this.reflector.getAllAndOverride<string>(FEATURE_KEY, [
+    const requiredSets = (this.reflector.getAll(FEATURE_KEY, [
       context.getHandler(),
       context.getClass(),
-    ]);
-    if (!key) return true;
+    ]) as Array<string[] | undefined>).filter((required): required is string[] => Boolean(required?.length));
+    if (requiredSets.length === 0) return true;
 
-    await this.featureFlags.ensureEnabled(key);
+    for (const required of requiredSets) {
+      const enabled = await Promise.all(required.map((key) => this.featureFlags.isEnabled(key)));
+      if (!enabled.some(Boolean)) throw new ForbiddenException('Recurso desativado pelo administrador.');
+    }
     return true;
   }
 }

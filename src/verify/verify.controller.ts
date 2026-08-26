@@ -4,8 +4,14 @@ import { VerifyService } from './verify.service';
 import { StartVerifyDto } from './dto/start-verify.dto';
 import { ConfirmVerifyDto } from './dto/confirm-verify.dto';
 import { AuthGuard } from '../auth/guards/auth.guard';
+import { PermissionGuard, RequirePermissions } from '../access/permission.guard';
+import { RequireFeature } from '../decorators/feature.decorator';
+import { FEATURE_DASHBOARD_LOL_VERIFY } from '../feature-flags/feature-flags.constants';
+import { FeatureFlagGuard } from '../feature-flags/guards/feature-flag.guard';
 
-@UseGuards(AuthGuard)
+@UseGuards(AuthGuard, FeatureFlagGuard, PermissionGuard)
+@RequireFeature(FEATURE_DASHBOARD_LOL_VERIFY)
+@RequirePermissions('dashboard.lol.verify')
 @Controller('verify')
 export class VerifyController {
   constructor(private readonly verifyService: VerifyService) {}

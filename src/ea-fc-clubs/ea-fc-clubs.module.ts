@@ -7,10 +7,14 @@ import { EaFcClubsController } from './ea-fc-clubs.controller';
 import { EaFcClubsProvider } from './ea-fc-clubs.provider';
 import { EaFcClubsSyncScheduler } from './ea-fc-clubs-sync.scheduler';
 import { EaFcClubsService } from './ea-fc-clubs.service';
+import { AccessModule } from '../access/access.module';
+import { FeatureFlagsModule } from '../feature-flags/feature-flags.module';
 
 @Module({
   imports: [
     AuthModule,
+    AccessModule,
+    FeatureFlagsModule,
     PrismaModule,
     ConfigModule,
     HttpModule.register({ baseURL: 'https://proclubs.ea.com/api/fc' }),

@@ -23,6 +23,9 @@ import { RoleGuard } from '../auth/guards/role.guard';
 import { ActorService } from '../common/actor.service';
 import { Roles } from '../decorators/roles.decorator';
 import { Role } from '../enums/role.enum';
+import { RequireFeature } from '../decorators/feature.decorator';
+import { FeatureFlagGuard } from '../feature-flags/guards/feature-flag.guard';
+import { FEATURE_DASHBOARD_DRAFT } from '../feature-flags/feature-flags.constants';
 import { DraftAccessService } from './draft-access.service';
 import { DraftAuctionService } from './draft-auction.service';
 import { DraftBudgetService } from './draft-budget.service';
@@ -55,7 +58,9 @@ import {
 
 type AuthedRequest = Request & { tokenPayload?: { discordId?: string } };
 
-@UseGuards(AuthGuard, RoleGuard, PermissionGuard)
+@UseGuards(AuthGuard, RoleGuard, FeatureFlagGuard, PermissionGuard)
+@RequireFeature(FEATURE_DASHBOARD_DRAFT)
+@RequirePermissions('dashboard.draft')
 @Controller('draft')
 export class DraftController {
   constructor(

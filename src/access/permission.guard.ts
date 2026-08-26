@@ -17,19 +17,24 @@ export class PermissionGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const required = this.reflector.getAllAndOverride<string[]>(PERMISSIONS_KEY, [
+    const requiredSets = (this.reflector.getAll(PERMISSIONS_KEY, [
       context.getHandler(),
       context.getClass(),
-    ]);
-    if (!required || required.length === 0) return true;
+    ]) as Array<string[] | undefined>).filter((required): required is string[] => Boolean(required?.length));
+    if (requiredSets.length === 0) return true;
 
     const request = context.switchToHttp().getRequest();
     if (request.tokenPayload?.impersonatedBy) {
       throw new ForbiddenException('Ações administrativas ficam bloqueadas durante a visualização como usuário.');
     }
     const actor = await this.actor.require(request.tokenPayload?.discordId);
-    if (await this.access.has(actor.id, required)) return true;
+    const { permissions } = await this.access.permissionsOf(actor.id);
+    for (const required of requiredSets) {
+      if (!required.some((key) => permissions.includes(key))) {
+        throw new ForbiddenException('Você não tem permissão para isso.');
+      }
+    }
+    return true;
 
-    throw new ForbiddenException('Você não tem permissão para isso.');
   }
 }
