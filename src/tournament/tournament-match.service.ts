@@ -26,6 +26,10 @@ export function compareEaAutomaticQueue(left: EaAutomaticQueueItem, right: EaAut
   return lastCheck || left.round - right.round || left.position - right.position;
 }
 
+export function formatEaMatchDuration(seconds: number) {
+  return `${Math.floor(seconds / 60)} min ${seconds % 60} s (${seconds} segundos)`;
+}
+
 /// Tudo que os dois times resolvem entre si numa partida: conversar, combinar
 /// horário, informar placar e confirmar o do outro. A organização entra só quando
 /// eles não se entendem, ou quando o prazo estoura e sai W.O.
@@ -669,7 +673,8 @@ export class TournamentMatchService {
   private eaScoreWarning(match: EaClubMatch): string {
     const analysis = this.eaScoreAnalysis(match);
     if (analysis.shortAttempt) {
-      return `Saída registrada com ${Math.max(analysis.homeDurationSeconds, analysis.awayDurationSeconds)} segundos. O resultado só pode ser usado após aprovação da organização.`;
+      const duration = Math.max(analysis.homeDurationSeconds, analysis.awayDurationSeconds);
+      return `Saída registrada com ${formatEaMatchDuration(duration)}. O resultado só pode ser usado após aprovação da organização.`;
     }
     if (analysis.interrupted && analysis.playerScore) {
       return `A sessão terminou antes do tempo completo. O SCORE dos atletas indica ${analysis.playerScore.homeScore} a ${analysis.playerScore.awayScore}. Somente a organização pode confirmar esse placar parcial.`;
@@ -692,11 +697,12 @@ export class TournamentMatchService {
   ) {
     const analysis = this.eaScoreAnalysis(eaMatch);
     const duration = Math.max(analysis.homeDurationSeconds, analysis.awayDurationSeconds);
+    const durationLabel = formatEaMatchDuration(duration);
     const reason = analysis.shortAttempt
-      ? `A EA registrou uma saída com ${duration} segundos. Pela regra dos 7 minutos, somente a organização pode validar este resultado.`
+      ? `A EA registrou uma saída com ${durationLabel}. Pela regra dos 7 minutos, somente a organização pode validar este resultado.`
       : analysis.scoreMismatch
-        ? `O placar geral da EA diverge do SCORE dos atletas. Duração detectada: ${duration} segundos.`
-        : `A partida terminou antes de 89 minutos. Duração detectada: ${duration} segundos. Confirme se o resultado deve valer.`;
+        ? `O placar geral da EA diverge do SCORE dos atletas. Duração detectada: ${durationLabel}.`
+        : `A partida terminou antes de 89 minutos. Duração detectada: ${durationLabel}. Confirme se o resultado deve valer.`;
     const rows = [
       ...this.playerRows(match.id, eaMatch, match.homeTeam!.eaClubId!, match.homeTeamId!),
       ...this.playerRows(match.id, eaMatch, match.awayTeam!.eaClubId!, match.awayTeamId!),

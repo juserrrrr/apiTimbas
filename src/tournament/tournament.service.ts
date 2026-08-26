@@ -791,6 +791,91 @@ export class TournamentService {
     });
   }
 
+  async replaceTeamEaClub(
+    id: string,
+    teamId: string,
+    name: string,
+    platform: 'common-gen5',
+    actor: Actor,
+  ) {
+    const tournament = await this.access.requireExists(id);
+    await this.access.requireModerate(id, actor);
+    const team = await this.requireTeam(id, teamId);
+    if (tournament.game !== CompetitionGame.EA_FC) {
+      throw new BadRequestException('Este campeonato não é de EA Sports FC.');
+    }
+    if (tournament.status === TournamentStatus.FINISHED || tournament.status === TournamentStatus.CANCELLED) {
+      throw new BadRequestException('Não dá para substituir um time depois que o campeonato foi encerrado.');
+    }
+
+    const resultHistory = await this.prisma.tournamentMatch.findFirst({
+      where: {
+        tournamentId: id,
+        OR: [{ homeTeamId: teamId }, { awayTeamId: teamId }],
+        AND: [{
+          OR: [
+            { status: { in: [TournamentMatchStatus.FINISHED, TournamentMatchStatus.WALKOVER] } },
+            { eaMatchId: { not: null } },
+            { claimedAt: { not: null } },
+            { reviewRequestedAt: { not: null } },
+          ],
+        }],
+      },
+      select: { id: true },
+    });
+    if (resultHistory) {
+      throw new BadRequestException('Este time já possui resultado ou aprovação pendente. Resolva ou recrie o campeonato antes de substituí-lo.');
+    }
+
+    const club = await this.eaClubs.resolveTournamentClub(name, platform);
+    const duplicate = await this.prisma.tournamentTeam.findFirst({
+      where: {
+        tournamentId: id,
+        id: { not: team.id },
+        OR: [
+          { eaClubId: club.externalClubId },
+          { name: { equals: club.name, mode: 'insensitive' } },
+        ],
+      },
+      select: { id: true },
+    });
+    if (duplicate) {
+      throw new BadRequestException('Este clube da EA já está inscrito no campeonato.');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.tournamentTeam.update({
+        where: { id: team.id },
+        data: {
+          name: club.name,
+          tag: null,
+          logoUrl: null,
+          eaClubId: club.externalClubId,
+          eaPlatform: club.platform,
+        },
+        include: {
+          members: {
+            include: { user: { select: { id: true, name: true, avatar: true } } },
+          },
+        },
+      });
+      const reset = {
+        eaLastCheckedAt: null,
+        eaNextCheckAt: null,
+        eaCheckMessage: 'Clube substituído. Aguardando uma nova checagem na EA.',
+      };
+      await tx.tournamentMatch.updateMany({
+        where: { tournamentId: id, homeTeamId: team.id },
+        data: { ...reset, homeReadyAt: null, homeGraceUsed: false },
+      });
+      await tx.tournamentMatch.updateMany({
+        where: { tournamentId: id, awayTeamId: team.id },
+        data: { ...reset, awayReadyAt: null, awayGraceUsed: false },
+      });
+      return updated;
+    });
+  }
+
   async removeTeam(id: string, teamId: string, actor: Actor) {
     const tournament = await this.access.requireExists(id);
     const team = await this.requireTeam(id, teamId);

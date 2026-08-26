@@ -137,6 +137,16 @@ export class TournamentController {
     return this.tournaments.updateTeam(id, teamId, dto, await this.me(req));
   }
 
+  @Patch(':id/teams/:teamId/ea-club')
+  async replaceTeamEaClub(
+    @Req() req: AuthedRequest,
+    @Param('id') id: string,
+    @Param('teamId') teamId: string,
+    @Body() dto: ValidateTournamentEaClubDto,
+  ) {
+    return this.tournaments.replaceTeamEaClub(id, teamId, dto.name, dto.platform ?? 'common-gen5', await this.me(req));
+  }
+
   @Delete(':id/teams/:teamId')
   async removeTeam(@Req() req: AuthedRequest, @Param('id') id: string, @Param('teamId') teamId: string) {
     return this.tournaments.removeTeam(id, teamId, await this.me(req));
@@ -294,6 +304,18 @@ export class TournamentController {
   ) {
     await this.access.requireModerate(id, await this.me(req));
     return this.results.discardInterruptedLabEaResult(id, matchId);
+  }
+
+  @Post(':id/matches/:matchId/cancel-walkover')
+  async cancelWalkover(
+    @Req() req: AuthedRequest,
+    @Param('id') id: string,
+    @Param('matchId') matchId: string,
+    @Body() dto: ClaimResultDto,
+  ) {
+    const actor = await this.me(req);
+    await this.access.requireModerate(id, actor);
+    return this.results.cancelWalkover(id, matchId, dto.homeScore, dto.awayScore, actor.discordId);
   }
 
   @Post(':id/matches/:matchId/grace')

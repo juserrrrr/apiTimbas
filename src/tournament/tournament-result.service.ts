@@ -236,6 +236,86 @@ export class TournamentResultService {
     }, { timeout: 30000, isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
   }
 
+  async cancelWalkover(
+    tournamentId: string,
+    matchId: string,
+    homeScore: number,
+    awayScore: number,
+    reportedByDiscordId: string,
+  ) {
+    const match = await this.prisma.tournamentMatch.findFirst({
+      where: { id: matchId, tournamentId },
+      include: { tournament: true },
+    });
+    if (!match) throw new NotFoundException('Partida não encontrada neste campeonato.');
+    if (match.status !== TournamentMatchStatus.WALKOVER) {
+      throw new BadRequestException('Esta partida não está marcada como W.O.');
+    }
+    if (match.phase !== TournamentPhase.GROUP && match.phase !== TournamentPhase.LEAGUE) {
+      throw new BadRequestException('Não dá para cancelar um W.O. depois que a partida já avançou uma chave eliminatória.');
+    }
+    if (!match.homeTeamId || !match.awayTeamId || match.homeScore === null || match.awayScore === null) {
+      throw new BadRequestException('O resultado anterior está incompleto.');
+    }
+    if (homeScore === awayScore && !match.tournament.allowDraws) {
+      throw new BadRequestException('Este campeonato não aceita empates.');
+    }
+    const publishedKnockout = await this.prisma.tournamentMatch.count({
+      where: {
+        tournamentId,
+        phase: { notIn: [TournamentPhase.GROUP, TournamentPhase.LEAGUE] },
+        OR: [{ homeTeamId: { not: null } }, { awayTeamId: { not: null } }],
+      },
+    });
+    if (publishedKnockout > 0) {
+      throw new BadRequestException('O mata-mata já foi publicado. Refaça a chave antes de cancelar este W.O.');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      await this.reverseTeamStats(tx, match.tournament, match.homeTeamId!, match.homeScore!, match.awayScore!);
+      await this.reverseTeamStats(tx, match.tournament, match.awayTeamId!, match.awayScore!, match.homeScore!);
+      await this.applyTeamStats(tx, match.tournament, match.phase, match.homeTeamId!, homeScore, awayScore);
+      await this.applyTeamStats(tx, match.tournament, match.phase, match.awayTeamId!, awayScore, homeScore);
+      await tx.tournamentEaPlayerStat.deleteMany({ where: { matchId } });
+      await tx.matchProof.deleteMany({ where: { matchId } });
+      const winnerTeamId = homeScore === awayScore ? null : homeScore > awayScore ? match.homeTeamId : match.awayTeamId;
+      const updated = await tx.tournamentMatch.update({
+        where: { id: matchId },
+        data: {
+          homeScore,
+          awayScore,
+          winnerTeamId,
+          status: TournamentMatchStatus.FINISHED,
+          label: match.label?.replace(/ \(W\.O\.(?::.*)?\)$/, '') ?? match.label,
+          reportedByDiscordId,
+          eaMatchId: null,
+          eaVerifiedAt: null,
+          eaRaw: Prisma.DbNull,
+          eaTags: [],
+          eaLastCheckedAt: null,
+          eaNextCheckAt: null,
+          eaCheckMessage: 'W.O. cancelado pela organização. Resultado administrativo registrado diretamente.',
+          claimedHomeScore: null,
+          claimedAwayScore: null,
+          claimedByTeamId: null,
+          claimedAt: null,
+          reviewRequestedAt: null,
+          reviewRequestedById: null,
+          reviewReason: null,
+        },
+      });
+      await tx.tournamentMatchMessage.create({
+        data: {
+          matchId,
+          teamId: null,
+          system: true,
+          body: `A organização cancelou o W.O. e registrou o resultado normal de ${homeScore} a ${awayScore}.`,
+        },
+      });
+      return updated;
+    }, { timeout: 30000, isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+  }
+
   async auditLabEaScores(tournamentId: string) {
     const tournament = await this.prisma.tournament.findUnique({ where: { id: tournamentId } });
     if (!tournament?.labMode) throw new BadRequestException('A auditoria de placares está disponível somente no Laboratório.');
