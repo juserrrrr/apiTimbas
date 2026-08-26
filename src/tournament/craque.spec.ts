@@ -10,6 +10,7 @@ const base: CraquePlayerStats = {
   mvps: 0,
   tacklesCompleted: 0,
   saves: 0,
+  shots: 0,
   passesCompleted: 0,
   passAccuracy: null,
 };
@@ -69,6 +70,25 @@ describe('craqueRanker', () => {
     const score = craqueRanker([certeiro, desperdicado], 7);
 
     expect(score(certeiro).passing).toBeGreaterThan(score(desperdicado).passing);
+  });
+
+  it('considera finalizações sem deixá-las valer mais que produção ofensiva', () => {
+    const ativo = player({ shots: 20, goals: 1, averageRating: 7.8 });
+    const passivo = player({ shots: 2, goals: 1, averageRating: 7.8 });
+    const decisivo = player({ shots: 8, goals: 4, averageRating: 7.8 });
+    const score = craqueRanker([ativo, passivo, decisivo], 7.5);
+
+    expect(score(ativo).shooting).toBeGreaterThan(score(passivo).shooting);
+    expect(score(decisivo).score).toBeGreaterThan(score(ativo).score);
+  });
+
+  it('dá relevância ao MVP dentro do conjunto sem ignorar a produção', () => {
+    const regular = player({ averageRating: 8.2, mvps: 2, goals: 1, assists: 1 });
+    const produtivo = player({ averageRating: 8.2, goals: 4, assists: 2 });
+    const score = craqueRanker([regular, produtivo], 7.5);
+
+    expect(score(regular).mvp).toBeGreaterThan(score(produtivo).mvp);
+    expect(score(produtivo).score).toBeGreaterThan(score(regular).score);
   });
 
   it('puxa para a média de quem jogou pouco', () => {

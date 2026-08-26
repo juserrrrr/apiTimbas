@@ -23,6 +23,7 @@ export interface CraquePlayerStats {
   mvps: number;
   tacklesCompleted: number;
   saves: number;
+  shots: number;
   passesCompleted: number;
   passAccuracy: number | null;
 }
@@ -31,6 +32,7 @@ export interface CraqueWeights {
   contributions: number;
   tackles: number;
   saves: number;
+  shooting: number;
   passing: number;
   mvp: number;
   presence: number;
@@ -44,11 +46,12 @@ export interface CraqueWeights {
  * lado.
  */
 export const DEFAULT_CRAQUE_WEIGHTS: CraqueWeights = {
-  contributions: 1.6,
-  tackles: 0.6,
-  saves: 0.6,
-  passing: 0.4,
-  mvp: 0.3,
+  contributions: 1.4,
+  tackles: 0.55,
+  saves: 0.55,
+  shooting: 0.35,
+  passing: 0.35,
+  mvp: 0.65,
   presence: 0.3,
 };
 
@@ -74,6 +77,7 @@ export interface CraqueBreakdown {
   contributions: number;
   tackles: number;
   saves: number;
+  shooting: number;
   passing: number;
   mvp: number;
   presence: number;
@@ -96,6 +100,7 @@ export function craqueRanker(
     ),
     tackles: Math.max(0, ...pool.map((player) => perGame(player.tacklesCompleted, player.appearances))),
     saves: Math.max(0, ...pool.map((player) => perGame(player.saves, player.appearances))),
+    shooting: Math.max(0, ...pool.map((player) => perGame(player.shots, player.appearances))),
     passing: Math.max(0, ...pool.map((player) => perGame(player.passesCompleted, player.appearances))),
     appearances: Math.max(0, ...pool.map((player) => player.appearances)),
   };
@@ -112,6 +117,10 @@ export function craqueRanker(
     const tackles =
       weights.tackles * share(perGame(player.tacklesCompleted, player.appearances), best.tackles);
     const saves = weights.saves * share(perGame(player.saves, player.appearances), best.saves);
+    // Finalizações medem presença ofensiva, mas recebem menos peso que gols e
+    // assistências para não premiar quem apenas chuta muito sem decidir.
+    const shooting =
+      weights.shooting * share(perGame(player.shots, player.appearances), best.shooting);
     // Passe certo só conta na proporção do acerto: quem tenta muito e erra
     // muito não deveria subir por volume.
     const passing =
@@ -122,11 +131,13 @@ export function craqueRanker(
     const presence = weights.presence * share(player.appearances, best.appearances);
 
     return {
-      score: adjustedRating + contributions + tackles + saves + passing + mvp + presence,
+      score:
+        adjustedRating + contributions + tackles + saves + shooting + passing + mvp + presence,
       adjustedRating,
       contributions,
       tackles,
       saves,
+      shooting,
       passing,
       mvp,
       presence,

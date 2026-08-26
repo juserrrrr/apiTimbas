@@ -749,7 +749,8 @@ export class TournamentService {
         craqueMinimumShare: 0.7,
         craquePriorGames: 2,
         craqueTournamentAverageRating: tournamentAverageRating,
-        craqueFormula: 'adjustedRating + participationRate*0.1 + mvpRate*0.2',
+        craqueFormula:
+          'nota ajustada + produção ofensiva*1.4 + MVP*0.65 + defesa*0.55 + finalizações*0.35 + passe*0.35 + presença*0.3',
         tieBreakers: ['appearances', 'mvps', 'goalContributions', 'playerName'],
       },
       awards:
