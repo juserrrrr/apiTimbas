@@ -1,5 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { AccessToken, RoomServiceClient } from 'livekit-server-sdk';
+import {
+  AccessToken,
+  ParticipantInfo_State,
+  RoomServiceClient,
+  TrackSource,
+  TrackType,
+} from 'livekit-server-sdk';
 import { FEATURE_LIVE_SFU } from '../feature-flags/feature-flags.constants';
 import { FeatureFlagsService } from '../feature-flags/feature-flags.service';
 import {
@@ -13,6 +19,30 @@ const SETTINGS_CACHE_MS = 15_000;
 const SETTING_URL = 'livekit.url';
 const SETTING_API_KEY = 'livekit.apiKey';
 const SETTING_API_SECRET = 'livekit.apiSecret';
+
+export interface RoomTrackSnapshot {
+  sid: string;
+  kind: string;
+  source: string;
+  muted: boolean;
+  width: number;
+  height: number;
+  mimeType: string;
+}
+
+export interface RoomParticipantSnapshot {
+  identity: string;
+  name: string;
+  state: string;
+  joinedAt: number;
+  canPublish: boolean;
+  tracks: RoomTrackSnapshot[];
+}
+
+export interface RoomSnapshot {
+  room: string;
+  participants: RoomParticipantSnapshot[];
+}
 
 export interface RtcGrant {
   role: 'host' | 'viewer';
@@ -257,6 +287,47 @@ export class LivekitService {
           error instanceof Error ? error.message : 'unknown error'
         }`,
       );
+    }
+  }
+
+  /**
+   * Retrato do que o servidor de mídia enxerga na sala: quem está conectado, o
+   * que cada um publica e em que tamanho. É o que separa "a live está ruim" de
+   * "a live nem chegou no servidor" na hora de depurar.
+   */
+  async roomSnapshot(roomSlug: string): Promise<RoomSnapshot | null> {
+    const service = await this.getRoomService();
+    if (!service) return null;
+
+    const name = this.roomName(roomSlug);
+    try {
+      const participants = await service.listParticipants(name);
+      return {
+        room: name,
+        participants: participants.map((participant) => ({
+          identity: participant.identity,
+          name: participant.name,
+          state: ParticipantInfo_State[participant.state] ?? String(participant.state),
+          joinedAt: Number(participant.joinedAt ?? 0) * 1000,
+          canPublish: participant.permission?.canPublish ?? false,
+          tracks: (participant.tracks ?? []).map((track) => ({
+            sid: track.sid,
+            kind: TrackType[track.type] ?? String(track.type),
+            source: TrackSource[track.source] ?? String(track.source),
+            muted: track.muted,
+            width: track.width,
+            height: track.height,
+            mimeType: track.mimeType,
+          })),
+        })),
+      };
+    } catch (error) {
+      this.logger.debug(
+        `Could not read LiveKit room ${name}: ${
+          error instanceof Error ? error.message : 'unknown error'
+        }`,
+      );
+      return null;
     }
   }
 

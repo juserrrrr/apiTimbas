@@ -198,6 +198,70 @@ export class StreamingService implements OnModuleInit {
     return this.viewerList(stream);
   }
 
+  /**
+   * Tudo que a organização precisa para depurar uma live sem entrar nela: quem
+   * transmite, há quanto tempo, quem está assistindo de verdade e se o canal de
+   * eventos de cada um está de pé.
+   */
+  adminOverview() {
+    const now = Date.now();
+    return [...this.streams.values()]
+      .sort((a, b) => b.startedAt - a.startedAt)
+      .map((stream) => ({
+        ...this.toSummary(stream),
+        hostUserId: stream.hostUserId,
+        hostPeerId: stream.hostPeerId,
+        hostConnected: Boolean(
+          stream.hostPeerId && stream.peers.get(stream.hostPeerId)?.attached,
+        ),
+        hostMissingForMs: stream.hostMissingSince
+          ? now - stream.hostMissingSince
+          : null,
+        announced: stream.announced,
+        guildId: stream.guildId,
+        uptimeMs: now - stream.startedAt,
+        peers: [...stream.peers.values()].map((peer) => ({
+          peerId: peer.id,
+          name: peer.name,
+          avatar: peer.avatar,
+          discordId: peer.discordId,
+          userId: peer.userId,
+          guest: peer.userId === null,
+          isHost: peer.id === stream.hostPeerId,
+          attached: peer.attached,
+          listening: peer.listening,
+          idleMs: now - peer.lastSeen,
+        })),
+      }));
+  }
+
+  /**
+   * Empurra um alvo de qualidade para o host. Quem está transmitindo aplica na
+   * hora, sem reiniciar a live: serve para tirar a prova quando a imagem cai de
+   * resolução e ninguém sabe se é máquina, rede ou codificador.
+   */
+  requestQuality(
+    id: string,
+    user: RequestUser,
+    quality: '720p' | '1080p' | 'source',
+    frameRate: 30 | 60,
+  ) {
+    const stream = this.getStream(id);
+    if (!stream.hostPeerId) {
+      throw new NotFoundException(
+        'Esta transmissão não tem host conectado agora.',
+      );
+    }
+    this.sendToHost(stream, {
+      type: 'quality_request',
+      payload: { quality, frameRate, by: user.name },
+    });
+    this.logger.log(
+      `Quality request stream=${stream.id} target=${quality}@${frameRate} by=${user.name}`,
+    );
+    return { sent: true, quality, frameRate };
+  }
+
   async end(id: string, user: RequestUser) {
     const stream = this.getStream(id);
     if (stream.hostUserId !== user.id && user.role !== Role.ADMIN) {

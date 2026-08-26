@@ -23,6 +23,7 @@ import { CreateStreamDto } from './dto/create-stream.dto';
 import { JoinStreamDto } from './dto/join-stream.dto';
 import { PeerDto } from './dto/peer.dto';
 import { SfuSettingsDto } from './dto/sfu-settings.dto';
+import { ForceQualityDto } from './dto/force-quality.dto';
 import { UpdateAnnouncementChannelDto } from './dto/update-announcement-channel.dto';
 import { UpdateStreamDto } from './dto/update-stream.dto';
 import {
@@ -90,6 +91,41 @@ export class StreamingController {
   @Post('admin/sfu/test')
   testSfu() {
     return this.livekit.test();
+  }
+
+  // ─── MONITOR ────────────────────────────────────────────────────────────
+
+  /// Painel de depuração: estado do SFU, lives no ar, quem assiste cada uma e o
+  /// que o servidor de mídia enxerga da sala.
+  @RequirePermissions(STREAM_MANAGE_PERMISSION)
+  @Get('admin/live')
+  async adminLive() {
+    const streams = this.streaming.adminOverview();
+    const rooms = await Promise.all(
+      streams.map((stream) => this.livekit.roomSnapshot(stream.slug)),
+    );
+    return {
+      sfu: await this.livekit.status(),
+      streams: streams.map((stream, index) => ({
+        ...stream,
+        room: rooms[index],
+      })),
+    };
+  }
+
+  @RequirePermissions(STREAM_MANAGE_PERMISSION)
+  @Post('admin/streams/:id/quality')
+  forceQuality(
+    @Param('id') id: string,
+    @Body() dto: ForceQualityDto,
+    @Req() req: any,
+  ) {
+    return this.streaming.requestQuality(
+      id,
+      toRequestUser(req),
+      dto.quality,
+      dto.frameRate,
+    );
   }
 
   // Credentials for the SFU. Returning `enabled: false` instead of an error
