@@ -1,4 +1,3 @@
-import { ForbiddenException } from '@nestjs/common';
 import { PermissionGuard } from './permission.guard';
 
 describe('PermissionGuard impersonation', () => {
@@ -22,8 +21,9 @@ describe('PermissionGuard impersonation', () => {
     expect(actor.require).toHaveBeenCalledWith('target');
   });
 
-  it('keeps mutations blocked while visualizing as another user', async () => {
-    const { guard, context } = build('POST');
-    await expect(guard.canActivate(context)).rejects.toBeInstanceOf(ForbiddenException);
+  it('allows mutations using the target user permissions', async () => {
+    const { guard, context, actor } = build('POST');
+    await expect(guard.canActivate(context)).resolves.toBe(true);
+    expect(actor.require).toHaveBeenCalledWith('target');
   });
 });

@@ -43,7 +43,7 @@ export class TournamentAccessService {
     const isOwner = staff?.role === CompetitionRole.OWNER;
     const isModerator = staff?.role === CompetitionRole.MODERATOR;
     const isInvited = Boolean(invite);
-    const canView = tournament.accessMode === 'PUBLIC' || isPlatformAdmin || Boolean(staff) || isInvited || memberships.length > 0 || ownedTeams.length > 0;
+    const canView = true;
 
     return {
       isPlatformAdmin,

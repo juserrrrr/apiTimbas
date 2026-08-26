@@ -138,16 +138,6 @@ export class TournamentService {
     const where: Prisma.TournamentWhereInput = {
       ...(query.status ? { status: query.status } : {}),
       ...(query.game ? { game: query.game } : {}),
-      ...(actor.role === 'ADMIN'
-        ? {}
-        : {
-            OR: [
-              { accessMode: 'PUBLIC' as const },
-              { staff: { some: { userId: actor.id } } },
-              { teams: { some: { members: { some: { userId: actor.id } } } } },
-              { invites: { some: { userId: actor.id } } },
-            ],
-          }),
     };
 
     const [items, total] = await Promise.all([
@@ -330,7 +320,11 @@ export class TournamentService {
   async addTeam(id: string, dto: AddTeamDto, actor: Actor) {
     const tournament = await this.access.requireExists(id);
     const access = await this.access.of(id, actor);
-    if (!access.canView)
+    if (
+      tournament.accessMode === TournamentAccessMode.INVITE_ONLY &&
+      !access.canModerate &&
+      !access.isInvited
+    )
       throw new ForbiddenException(
         'Este campeonato é fechado e exige convite.',
       );
