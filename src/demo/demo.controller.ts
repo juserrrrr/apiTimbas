@@ -8,6 +8,7 @@ import { EaFcClubsService } from '../ea-fc-clubs/ea-fc-clubs.service';
 import { TournamentMatchService } from '../tournament/tournament-match.service';
 import { AssignLiveEaGroupsDto, BuildDemoDraftDto, BuildDemoTournamentDto, BuildEaFourGroupsTournamentDto, BuildRealEaTournamentDto, CreateLiveEaTournamentDto, DemoEaClubDto, DemoEaHistoryDto, DemoEaMatchLookupDto, DemoEaSyncDto, PrepareDemoEaMatchDto } from './dto/demo.dto';
 import { AwardCardSettingsService } from '../settings/award-card-settings.service';
+import { AnnouncementService } from '../settings/announcement.service';
 
 type AuthedRequest = Request & { tokenPayload?: { discordId?: string } };
 
@@ -21,6 +22,7 @@ export class DemoController {
     private readonly eaClubs: EaFcClubsService,
     private readonly tournamentMatches: TournamentMatchService,
     private readonly awardCards: AwardCardSettingsService,
+    private readonly announcements: AnnouncementService,
   ) {}
 
   @Get()
@@ -46,6 +48,16 @@ export class DemoController {
   @Post('award-card-settings')
   saveAwardCardSettings(@Body() body: unknown) {
     return this.awardCards.save(body);
+  }
+
+  @Get('announcement')
+  announcement() {
+    return this.announcements.latest();
+  }
+
+  @Post('announcement')
+  publishAnnouncement(@Body() body: unknown) {
+    return this.announcements.publish(body);
   }
 
   @Post('ea/club')

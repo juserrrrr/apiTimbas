@@ -26,11 +26,36 @@ export interface AwardCardLayoutSetting {
 
 export type AwardCardLayoutSettings = Partial<Record<AwardCardCategory, AwardCardLayoutSetting>>;
 
+export interface ChampionCardLayoutSetting {
+  font: AwardCardFont;
+  teamX: number;
+  teamY: number;
+  teamSize: number;
+  teamWidth: number;
+  tournamentX: number;
+  tournamentY: number;
+  tournamentSize: number;
+  tournamentWidth: number;
+  rosterX: number;
+  rosterY: number;
+  rosterWidth: number;
+  rosterHeight: number;
+  rosterSize: number;
+  rosterColumns: number;
+  qrX: number;
+  qrY: number;
+  qrSize: number;
+}
+
+export type CompleteAwardCardLayoutSettings = AwardCardLayoutSettings & {
+  campeao?: ChampionCardLayoutSetting;
+};
+
 @Injectable()
 export class AwardCardSettingsService {
   constructor(private readonly settings: SettingsService) {}
 
-  async get(): Promise<AwardCardLayoutSettings> {
+  async get(): Promise<CompleteAwardCardLayoutSettings> {
     const raw = (await this.settings.getMany([KEY])).get(KEY);
     if (!raw) return {};
     try {
@@ -40,19 +65,20 @@ export class AwardCardSettingsService {
     }
   }
 
-  async save(input: unknown): Promise<AwardCardLayoutSettings> {
+  async save(input: unknown): Promise<CompleteAwardCardLayoutSettings> {
     const value = this.sanitize(input, true);
-    await this.settings.set(KEY, JSON.stringify(value));
-    return value;
+    const merged = { ...(await this.get()), ...value };
+    await this.settings.set(KEY, JSON.stringify(merged));
+    return merged;
   }
 
-  private sanitize(input: unknown, strict = false): AwardCardLayoutSettings {
+  private sanitize(input: unknown, strict = false): CompleteAwardCardLayoutSettings {
     if (!input || typeof input !== 'object' || Array.isArray(input)) {
       if (strict) throw new BadRequestException('Configuração dos cards inválida.');
       return {};
     }
     const source = input as Record<string, unknown>;
-    const result: AwardCardLayoutSettings = {};
+    const result: CompleteAwardCardLayoutSettings = {};
     for (const category of CATEGORIES) {
       const raw = source[category];
       if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue;
@@ -80,6 +106,37 @@ export class AwardCardSettingsService {
         statAutoFit: this.boolean(row.statAutoFit, true, strict),
       };
     }
+    const championRaw = source.campeao;
+    if (championRaw && typeof championRaw === 'object' && !Array.isArray(championRaw)) {
+      const row = championRaw as Record<string, unknown>;
+      const font = typeof row.font === 'string' && FONTS.includes(row.font as AwardCardFont)
+        ? row.font as AwardCardFont
+        : null;
+      if (!font) {
+        if (strict) throw new BadRequestException('Fonte inválida em campeão.');
+      } else {
+        result.campeao = {
+          font,
+          teamX: this.number(row.teamX, 0.15, 0.85, strict),
+          teamY: this.number(row.teamY, 0.55, 0.75, strict),
+          teamSize: this.number(row.teamSize, 0.025, 0.1, strict),
+          teamWidth: this.number(row.teamWidth, 0.3, 0.85, strict),
+          tournamentX: this.number(row.tournamentX, 0.15, 0.85, strict),
+          tournamentY: this.number(row.tournamentY, 0.58, 0.78, strict),
+          tournamentSize: this.number(row.tournamentSize, 0.012, 0.06, strict),
+          tournamentWidth: this.number(row.tournamentWidth, 0.3, 0.85, strict),
+          rosterX: this.number(row.rosterX, 0.1, 0.65, strict),
+          rosterY: this.number(row.rosterY, 0.7, 0.86, strict),
+          rosterWidth: this.number(row.rosterWidth, 0.2, 0.65, strict),
+          rosterHeight: this.number(row.rosterHeight, 0.04, 0.16, strict),
+          rosterSize: this.number(row.rosterSize, 0.007, 0.04, strict),
+          rosterColumns: this.integer(row.rosterColumns, 1, 3, strict),
+          qrX: this.number(row.qrX, 0.5, 0.86, strict),
+          qrY: this.number(row.qrY, 0.65, 0.86, strict),
+          qrSize: this.number(row.qrSize, 0.06, 0.2, strict),
+        };
+      }
+    }
     return result;
   }
 
@@ -97,5 +154,9 @@ export class AwardCardSettingsService {
     if (typeof value === 'boolean') return value;
     if (strict) throw new BadRequestException('Uma opção de ajuste do card é inválida.');
     return fallback;
+  }
+
+  private integer(value: unknown, minimum: number, maximum: number, strict: boolean) {
+    return Math.round(this.number(value, minimum, maximum, strict));
   }
 }

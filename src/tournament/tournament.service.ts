@@ -609,7 +609,14 @@ export class TournamentService {
     await this.access.requireView(id, actor);
     const tournament = await this.prisma.tournament.findUnique({
       where: { id },
-      select: { status: true },
+      select: {
+        name: true,
+        status: true,
+        championTeamId: true,
+        teams: {
+          select: { id: true, name: true, logoUrl: true },
+        },
+      },
     });
     if (!tournament) throw new NotFoundException('Campeonato não encontrado.');
 
@@ -708,11 +715,35 @@ export class TournamentService {
         value: (player: (typeof players)[number]) => `${player.saves} defesas`,
       },
     ];
+    const champion = tournament.championTeamId
+      ? tournament.teams.find((team) => team.id === tournament.championTeamId)
+      : null;
+    const championPlayers = champion
+      ? players
+          .filter((player) => player.team?.id === champion.id)
+          .sort(
+            (a, b) =>
+              b.appearances - a.appearances ||
+              a.playerName.localeCompare(b.playerName, 'pt-BR'),
+          )
+          .map((player) => ({
+            playerName: player.playerName,
+            appearances: player.appearances,
+          }))
+      : [];
 
     return {
       source: 'EA_API',
       finalized: tournament.status === TournamentStatus.FINISHED,
       players,
+      championCard:
+        tournament.status === TournamentStatus.FINISHED && champion
+          ? {
+              tournamentName: tournament.name,
+              team: champion,
+              players: championPlayers,
+            }
+          : null,
       criteria: {
         craqueMinimumAppearances: absoluteMinimum,
         craqueMinimumShare: 0.7,
