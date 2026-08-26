@@ -667,6 +667,21 @@ export class TournamentService {
     const scoreCraque = craqueRanker(eligibleCraques, tournamentAverageRating);
     const craqueScore = (player: (typeof players)[number]) => scoreCraque(player).score;
     const craque = rank(eligibleCraques, craqueScore);
+    const eligibleCraqueSet = new Set(eligibleCraques);
+    const rankedPlayers = players
+      .map((player) => ({
+        ...player,
+        craqueScore: eligibleCraqueSet.has(player) ? craqueScore(player) : null,
+      }))
+      .sort(
+        (a, b) =>
+          (b.craqueScore ?? Number.NEGATIVE_INFINITY) -
+            (a.craqueScore ?? Number.NEGATIVE_INFINITY) ||
+          b.appearances - a.appearances ||
+          b.mvps - a.mvps ||
+          b.goalContributions - a.goalContributions ||
+          a.playerName.localeCompare(b.playerName, 'pt-BR'),
+      );
     const definitions = [
       {
         key: 'ARTILHEIRO',
@@ -735,7 +750,7 @@ export class TournamentService {
     return {
       source: 'EA_API',
       finalized: tournament.status === TournamentStatus.FINISHED,
-      players,
+      players: rankedPlayers,
       championCard:
         tournament.status === TournamentStatus.FINISHED && champion
           ? {
