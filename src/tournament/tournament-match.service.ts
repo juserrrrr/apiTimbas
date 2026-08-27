@@ -1,6 +1,6 @@
 import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
-import { CompetitionGame, Prisma, TournamentMatch, TournamentMatchStatus } from '@prisma/client';
+import { CompetitionGame, Prisma, TournamentMatch, TournamentMatchStatus, TournamentPhase } from '@prisma/client';
 import { Actor } from '../common/actor.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { EaFcClubsService } from '../ea-fc-clubs/ea-fc-clubs.service';
@@ -63,6 +63,24 @@ export function eaSearchWindow(anchor: Date, lookbackMinutes: number, labMode: b
     earliest: anchor.getTime() - effectiveLookbackMinutes * 60_000,
     latest: anchor.getTime() + 4 * 60 * 60 * 1000,
   };
+}
+
+/// Piso da busca do jogo seguinte de uma série: o instante em que o jogo
+/// anterior ficou jogável. Os mesmos dois clubes se enfrentam em sequência e o
+/// amistoso do jogo seguinte costuma acontecer antes de a EA publicar o
+/// anterior, então ancorar só no check-in deste jogo deixaria esse amistoso
+/// invisível para sempre. Alargar não confunde um jogo com outro: o amistoso já
+/// consumido é descartado pelo id antes de virar candidato.
+export function seriesSearchFloor(previous: {
+  homeReadyAt: Date | null;
+  awayReadyAt: Date | null;
+  scheduledAt: Date | null;
+  readyAt: Date | null;
+}): number | null {
+  if (previous.homeReadyAt && previous.awayReadyAt) {
+    return Math.max(previous.homeReadyAt.getTime(), previous.awayReadyAt.getTime());
+  }
+  return previous.scheduledAt?.getTime() ?? previous.readyAt?.getTime() ?? null;
 }
 
 /// Tudo que os dois times resolvem entre si numa partida: conversar, combinar
@@ -311,7 +329,22 @@ export class TournamentMatchService {
     const pool = [...seen.values()];
     // A antecedência cobre amistosos iniciados antes do horário oficial ou antes
     // de o segundo time concluir o check-in. O Laboratório mantém quatro horas.
-    const { earliest, latest } = eaSearchWindow(searchAnchor, settings.lookbackMinutes, match.tournament.labMode);
+    const window = eaSearchWindow(searchAnchor, settings.lookbackMinutes, match.tournament.labMode);
+    const previousGame =
+      match.phase === TournamentPhase.SERIES && match.round > 1
+        ? await this.prisma.tournamentMatch.findFirst({
+            where: {
+              tournamentId,
+              phase: TournamentPhase.SERIES,
+              round: { lt: match.round },
+            },
+            orderBy: { round: 'desc' },
+            select: { homeReadyAt: true, awayReadyAt: true, scheduledAt: true, readyAt: true },
+          })
+        : null;
+    const floor = previousGame ? seriesSearchFloor(previousGame) : null;
+    const earliest = floor === null ? window.earliest : Math.min(window.earliest, floor);
+    const latest = window.latest;
     if (Date.now() < earliest) {
       throw new BadRequestException('A checagem na EA só fica disponível quando o confronto começar.');
     }

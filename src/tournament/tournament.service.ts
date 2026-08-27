@@ -8,6 +8,7 @@ import {
   CompetitionGame,
   CompetitionRole,
   Prisma,
+  Tournament,
   TournamentAccessMode,
   TournamentFormat,
   TournamentMatchStatus,
@@ -24,6 +25,7 @@ import {
   buildDoubleElimination,
   buildGroupStage,
   buildRoundRobin,
+  buildSeriesGame,
   buildSingleElimination,
   compareStandings,
   distributeIntoGroups,
@@ -57,7 +59,13 @@ const MANAGED_STATUSES: TournamentStatus[] = [
 
 // Espelham os defaults do schema, usados para validar o plano de grupos antes de
 // o registro existir.
-const DEFAULTS = { maxTeams: 8, groupCount: 2, advancePerGroup: 2, legs: 1 };
+const DEFAULTS = {
+  maxTeams: 8,
+  groupCount: 2,
+  advancePerGroup: 2,
+  legs: 1,
+  bestOf: 3,
+};
 
 @Injectable()
 export class TournamentService {
@@ -82,6 +90,7 @@ export class TournamentService {
       advancePerGroup: dto.advancePerGroup ?? DEFAULTS.advancePerGroup,
       legs: dto.legs ?? DEFAULTS.legs,
       thirdPlace: dto.thirdPlace ?? false,
+      bestOf: dto.bestOf ?? DEFAULTS.bestOf,
     });
     this.assertWindow(
       dto.registrationEndsAt,
@@ -266,6 +275,7 @@ export class TournamentService {
         'advancePerGroup',
         'legs',
         'thirdPlace',
+        'bestOf',
       ] as const) {
         delete settings[locked];
       }
@@ -280,6 +290,7 @@ export class TournamentService {
       'advancePerGroup',
       'legs',
       'thirdPlace',
+      'bestOf',
     ] as const;
     if (planKeys.some((key) => key in settings)) {
       this.assertPlan(
@@ -291,6 +302,7 @@ export class TournamentService {
             (settings.advancePerGroup as number) ?? tournament.advancePerGroup,
           legs: (settings.legs as number) ?? tournament.legs,
           thirdPlace: (settings.thirdPlace as boolean) ?? tournament.thirdPlace,
+          bestOf: (settings.bestOf as number) ?? tournament.bestOf,
         },
       );
     }
@@ -1238,14 +1250,7 @@ export class TournamentService {
       where: { tournamentId: id },
       orderBy: [{ seed: 'asc' }, { createdAt: 'asc' }],
     });
-    this.assertStartable(
-      tournament.format,
-      teams.length,
-      tournament.groupCount,
-      tournament.advancePerGroup,
-      tournament.legs,
-      tournament.thirdPlace,
-    );
+    this.assertStartable(tournament, teams.length);
 
     return this.prisma.$transaction(
       async (tx) => {
@@ -1287,6 +1292,7 @@ export class TournamentService {
                 teams.length,
                 tournament.legs,
                 tournament.thirdPlace,
+                tournament.bestOf,
               );
 
         const groups = await tx.tournamentGroup.findMany({
@@ -1420,11 +1426,13 @@ export class TournamentService {
     teamCount: number,
     legs: number,
     thirdPlace: boolean,
+    bestOf: number,
   ): MatchPlan[] {
     if (format === TournamentFormat.SINGLE_ELIMINATION)
       return buildSingleElimination(teamCount, thirdPlace);
     if (format === TournamentFormat.DOUBLE_ELIMINATION)
       return buildDoubleElimination(teamCount);
+    if (format === TournamentFormat.SERIES) return [buildSeriesGame(1, bestOf)];
     return buildRoundRobin(teamCount, legs, TournamentPhase.LEAGUE);
   }
 
@@ -1478,19 +1486,24 @@ export class TournamentService {
   }
 
   private assertStartable(
-    format: TournamentFormat,
+    tournament: Pick<
+      Tournament,
+      | 'format'
+      | 'groupCount'
+      | 'advancePerGroup'
+      | 'legs'
+      | 'thirdPlace'
+      | 'bestOf'
+    >,
     teamCount: number,
-    groupCount: number,
-    advancePerGroup: number,
-    legs: number,
-    thirdPlace: boolean,
   ) {
-    this.assertPlan(format, {
+    this.assertPlan(tournament.format, {
       teamCount,
-      groupCount,
-      advancePerGroup,
-      legs,
-      thirdPlace,
+      groupCount: tournament.groupCount,
+      advancePerGroup: tournament.advancePerGroup,
+      legs: tournament.legs,
+      thirdPlace: tournament.thirdPlace,
+      bestOf: tournament.bestOf,
     });
   }
 
@@ -1504,6 +1517,7 @@ export class TournamentService {
       advancePerGroup: number;
       legs: number;
       thirdPlace: boolean;
+      bestOf: number;
     },
   ) {
     const issue = tournamentPlanIssue(format, plan);

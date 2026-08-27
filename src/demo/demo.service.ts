@@ -770,12 +770,14 @@ export class DemoService {
   }
 
   private async buildTournamentInner(dto: BuildDemoTournamentDto, actor: Actor) {
-    const teamCount = dto.teamCount ?? 8;
+    const format = dto.format ?? TournamentFormat.SINGLE_ELIMINATION;
+    // Uma série é sempre um confronto de dois times, o total pedido não se aplica.
+    const teamCount =
+      format === TournamentFormat.SERIES ? 2 : (dto.teamCount ?? 8);
     if (teamCount > DEMO_TEAM_NAMES.length) {
       throw new BadRequestException(`Máximo de ${DEMO_TEAM_NAMES.length} times de demonstração.`);
     }
 
-    const format = dto.format ?? TournamentFormat.SINGLE_ELIMINATION;
     const tournament = await this.tournaments.create(
       {
         name: `${DEMO_PREFIX} ${labelFor(format)} ${teamCount}`,
@@ -785,7 +787,11 @@ export class DemoService {
         groupCount: dto.groupCount ?? 2,
         advancePerGroup: dto.advancePerGroup ?? 2,
         legs: dto.legs ?? 1,
-        thirdPlace: dto.thirdPlace ?? format === TournamentFormat.SINGLE_ELIMINATION,
+        bestOf: dto.bestOf ?? 3,
+        thirdPlace:
+          format === TournamentFormat.SERIES
+            ? false
+            : (dto.thirdPlace ?? format === TournamentFormat.SINGLE_ELIMINATION),
         requireProof: false,
       },
       actor,
@@ -1241,6 +1247,7 @@ function labelFor(format: TournamentFormat): string {
   if (format === TournamentFormat.SINGLE_ELIMINATION) return 'Elim. simples';
   if (format === TournamentFormat.DOUBLE_ELIMINATION) return 'Elim. dupla';
   if (format === TournamentFormat.ROUND_ROBIN) return 'Pontos corridos';
+  if (format === TournamentFormat.SERIES) return 'Série';
   return 'Grupos + mata-mata';
 }
 

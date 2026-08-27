@@ -532,6 +532,7 @@ enum TournamentFormat {
   DOUBLE_ELIMINATION
   ROUND_ROBIN
   GROUPS_KNOCKOUT
+  SERIES
 }
 
 enum TournamentStatus {
@@ -549,6 +550,7 @@ enum TournamentPhase {
   LOSERS
   GRAND_FINAL
   THIRD_PLACE
+  SERIES
 }
 
 enum TournamentMatchStatus {
@@ -598,6 +600,8 @@ model Tournament {
   groupCount               Int                            @default(2)
   advancePerGroup          Int                            @default(2)
   legs                     Int                            @default(1)
+  // Jogos de uma série entre dois times. Só o formato SERIES usa: 1, 3, 5 ou 7.
+  bestOf                   Int                            @default(3)
   thirdPlace               Boolean                        @default(false)
   allowDraws               Boolean                        @default(true)
   pointsWin                Int                            @default(3)

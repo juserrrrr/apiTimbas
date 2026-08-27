@@ -4,6 +4,7 @@ import {
   buildDoubleElimination,
   buildGroupStage,
   buildRoundRobin,
+  buildSeriesGame,
   buildSingleElimination,
   distributeIntoGroups,
   groupPlanIssue,
@@ -131,13 +132,14 @@ describe('buildRoundRobin', () => {
 });
 
 describe('tournamentPlanIssue', () => {
-  const plan = { teamCount: 8, groupCount: 2, advancePerGroup: 2, legs: 1, thirdPlace: false };
+  const plan = { teamCount: 8, groupCount: 2, advancePerGroup: 2, legs: 1, thirdPlace: false, bestOf: 3 };
 
   it('aceita o plano coerente de cada formato', () => {
     expect(tournamentPlanIssue(TournamentFormat.SINGLE_ELIMINATION, plan)).toBeNull();
     expect(tournamentPlanIssue(TournamentFormat.DOUBLE_ELIMINATION, plan)).toBeNull();
     expect(tournamentPlanIssue(TournamentFormat.ROUND_ROBIN, { ...plan, legs: 2 })).toBeNull();
     expect(tournamentPlanIssue(TournamentFormat.GROUPS_KNOCKOUT, { ...plan, legs: 2 })).toBeNull();
+    expect(tournamentPlanIssue(TournamentFormat.SERIES, { ...plan, teamCount: 2 })).toBeNull();
   });
 
   it('recusa campeonato sem gente', () => {
@@ -166,10 +168,34 @@ describe('tournamentPlanIssue', () => {
     ).toContain('ao menos 4 times');
   });
 
+  it('recusa série fora do confronto de dois times', () => {
+    expect(tournamentPlanIssue(TournamentFormat.SERIES, { ...plan, teamCount: 4 })).toContain(
+      'exatamente 2 times',
+    );
+    expect(
+      tournamentPlanIssue(TournamentFormat.SERIES, { ...plan, teamCount: 2, legs: 2 }),
+    ).toContain('ida e volta');
+    expect(
+      tournamentPlanIssue(TournamentFormat.SERIES, { ...plan, teamCount: 2, bestOf: 4 }),
+    ).toContain('disputada em');
+  });
+
   it('leva a regra de grupos para o formato de grupos', () => {
     expect(tournamentPlanIssue(TournamentFormat.GROUPS_KNOCKOUT, { ...plan, teamCount: 7 })).toContain(
       'grupos do mesmo tamanho',
     );
+  });
+});
+
+describe('buildSeriesGame', () => {
+  it('alterna o mando a cada jogo', () => {
+    expect(buildSeriesGame(1, 3)).toMatchObject({ round: 1, homeSeed: 1, awaySeed: 2, label: 'Jogo 1 de 3' });
+    expect(buildSeriesGame(2, 3)).toMatchObject({ round: 2, homeSeed: 2, awaySeed: 1, label: 'Jogo 2 de 3' });
+    expect(buildSeriesGame(3, 3)).toMatchObject({ round: 3, homeSeed: 1, awaySeed: 2 });
+  });
+
+  it('chama de jogo único a série de um jogo só', () => {
+    expect(buildSeriesGame(1, 1).label).toBe('Jogo único');
   });
 });
 

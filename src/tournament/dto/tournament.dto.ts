@@ -88,6 +88,13 @@ export class CreateTournamentDto {
   legs?: number;
 
   @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(7)
+  bestOf?: number;
+
+  @IsOptional()
   @IsBoolean()
   thirdPlace?: boolean;
 

@@ -1,4 +1,4 @@
-import { compareEaAutomaticQueue, eaSearchWindow, formatEaMatchDuration, matchCompletionReviewDeadline, selectEaAutomaticQueue } from './tournament-match.service';
+import { compareEaAutomaticQueue, eaSearchWindow, formatEaMatchDuration, matchCompletionReviewDeadline, selectEaAutomaticQueue, seriesSearchFloor } from './tournament-match.service';
 
 describe('compareEaAutomaticQueue', () => {
   it('checks every never-searched match before repeating an earlier round', () => {
@@ -92,5 +92,41 @@ describe('selectEaAutomaticQueue', () => {
     const due = Array.from({ length: 12 }, (_, index) => never(1, index));
 
     expect(selectEaAutomaticQueue(due, 1, 8)).toHaveLength(8);
+  });
+});
+
+describe('seriesSearchFloor', () => {
+  const base = { homeReadyAt: null, awayReadyAt: null, scheduledAt: null, readyAt: null };
+
+  it('usa o check-in completo do jogo anterior', () => {
+    const floor = seriesSearchFloor({
+      ...base,
+      homeReadyAt: new Date('2026-08-27T20:00:00.000Z'),
+      awayReadyAt: new Date('2026-08-27T20:03:00.000Z'),
+      readyAt: new Date('2026-08-27T19:00:00.000Z'),
+    });
+
+    expect(floor).toBe(new Date('2026-08-27T20:03:00.000Z').getTime());
+  });
+
+  it('cai para o horário combinado quando só um time marcou Pronto', () => {
+    const floor = seriesSearchFloor({
+      ...base,
+      homeReadyAt: new Date('2026-08-27T20:00:00.000Z'),
+      scheduledAt: new Date('2026-08-27T19:30:00.000Z'),
+      readyAt: new Date('2026-08-27T19:00:00.000Z'),
+    });
+
+    expect(floor).toBe(new Date('2026-08-27T19:30:00.000Z').getTime());
+  });
+
+  it('cai para o momento em que a partida ficou jogável quando não há mais nada', () => {
+    const floor = seriesSearchFloor({ ...base, readyAt: new Date('2026-08-27T19:00:00.000Z') });
+
+    expect(floor).toBe(new Date('2026-08-27T19:00:00.000Z').getTime());
+  });
+
+  it('não inventa piso quando o jogo anterior não tem marco nenhum', () => {
+    expect(seriesSearchFloor(base)).toBeNull();
   });
 });

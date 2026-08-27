@@ -1,4 +1,5 @@
 import { MatchSlot, TournamentFormat, TournamentPhase } from '@prisma/client';
+import { bestOfIssue, seriesGameLabel } from './series';
 
 export interface MatchRef {
   phase: TournamentPhase;
@@ -254,6 +255,22 @@ export function buildRoundRobin(
   return plans;
 }
 
+/// A série nasce só com o primeiro jogo. Os seguintes são criados um a um
+/// conforme a série pede, então um jogo que não precisou acontecer nunca existe.
+/// O mando alterna: quem foi mandante no jogo 1 é visitante no jogo 2.
+export function buildSeriesGame(game: number, bestOf: number): MatchPlan {
+  const homeFirst = game % 2 === 1;
+  return {
+    phase: TournamentPhase.SERIES,
+    round: game,
+    position: 0,
+    leg: 1,
+    label: seriesGameLabel(game, bestOf),
+    homeSeed: homeFirst ? 1 : 2,
+    awaySeed: homeFirst ? 2 : 1,
+  };
+}
+
 export function groupName(order: number): string {
   return `Grupo ${String.fromCharCode(65 + order)}`;
 }
@@ -271,9 +288,22 @@ export function compareStandings(a: StandingLike, b: StandingLike): number {
 /// tela mostra. A tela filtra as opções, mas quem chama a API direto não passa.
 export function tournamentPlanIssue(
   format: TournamentFormat,
-  plan: { teamCount: number; groupCount: number; advancePerGroup: number; legs: number; thirdPlace: boolean },
+  plan: {
+    teamCount: number;
+    groupCount: number;
+    advancePerGroup: number;
+    legs: number;
+    thirdPlace: boolean;
+    bestOf: number;
+  },
 ): string | null {
   if (plan.teamCount < 2) return 'Um campeonato precisa de ao menos 2 times.';
+  if (format === TournamentFormat.SERIES) {
+    if (plan.teamCount !== 2) return 'Uma série é disputada por exatamente 2 times.';
+    if (plan.legs > 1) return 'A série já define quantos jogos são disputados, não use ida e volta.';
+    if (plan.thirdPlace) return 'Uma série entre dois times não tem disputa de terceiro lugar.';
+    return bestOfIssue(plan.bestOf);
+  }
   if (format === TournamentFormat.DOUBLE_ELIMINATION && plan.teamCount < 4) {
     return 'Eliminação dupla precisa de ao menos 4 times.';
   }

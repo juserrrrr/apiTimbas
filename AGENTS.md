@@ -29,7 +29,7 @@ src/
 ├── common/                 # ActorService (discordId → User), global module
 ├── economy/                # Coin wallet: credit/debit/transfer, statement, ranking
 ├── score-reader/           # Pluggable scoreboard reading from photos (admin-configured)
-├── tournament/             # Brackets for any game (single/double elim, league, groups)
+├── tournament/             # Brackets for any game (single/double elim, league, groups, series)
 ├── draft/                  # Draft leagues: pool, live draft, fixtures, transfer market
 ├── football/               # Pure football math: attributes, match engine, development
 ├── feature-flags/          # DB-backed toggles + FeatureFlagGuard (@RequireFeature)
@@ -131,6 +131,35 @@ from the platform `Role`:
 - **OWNER**: edits rules, deletes, starts the bracket/draft, manages staff
 - **MODERATOR**: approves/rejects proofs, reports results, schedules, declares W.O.
 - A global `ADMIN` passes both checks.
+
+### Series
+`TournamentFormat.SERIES` is a head to head between exactly two teams, decided in
+`bestOf` games: 1, 3, 5 or 7. It is the only format where the number of teams is
+fixed by the format itself, so the plan check refuses anything but 2 teams, ida e
+volta and a third place match.
+
+The series is built one game at a time. `start` creates only game 1, and every
+settled result asks `seriesOutcome` whether the series is still open; if it is,
+the next game is created right there in the same transaction. A game that the
+series did not need to play never exists as a row, which is why the champion is
+decided the moment the clinching game is filed and not after a fixed number of
+matches. `series.ts` holds that decision as pure functions with a spec next to it.
+
+On EA FC the automatic search needs no special casing for the clubs playing each
+other repeatedly: `checkEaResult` already refuses any `eaMatchId` another match
+consumed, and it picks the oldest unused friendly first, so back to back games are
+claimed in the order they were played. The search window does need widening,
+though. The friendly for game N is often played before the EA publishes game N-1,
+and anchoring only on game N's check-in would hide it forever, so `seriesSearchFloor`
+reaches the lower bound back to when the previous game became playable. Widening is
+safe precisely because the used `eaMatchId` filter, not the clock, is what keeps one
+game from stealing another's result.
+
+Games live in `TournamentPhase.SERIES`, one per `round`, and the home side
+alternates: whoever hosts game 1 visits game 2. That phase is not a knockout
+phase, so losing a game eliminates nobody and the team row keeps the running
+tally, `wins` being the series score. A game cannot end level, same as a
+knockout: the score reported has to name a winner.
 
 ### Match room
 A tournament match is a room the two teams share: chat, schedule proposal, claimed

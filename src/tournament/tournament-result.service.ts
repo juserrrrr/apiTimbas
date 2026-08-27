@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import {
   Prisma,
   Tournament,
+  TournamentFormat,
   TournamentMatch,
   TournamentMatchStatus,
   TournamentPhase,
@@ -9,9 +10,10 @@ import {
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { analyzeEaMatchScore } from '../ea-fc-clubs/ea-score-analysis';
-import { bracketSizeFor, compareStandings, orderGroupQualifiers, seedSlots } from './bracket.builder';
+import { bracketSizeFor, buildSeriesGame, compareStandings, orderGroupQualifiers, seedSlots } from './bracket.builder';
 import { isKnockout, placeTeam, propagate, resolveWalkovers } from './bracket-advance';
 import { reversedStandingsDelta } from './team-replacement';
+import { seriesOutcome } from './series';
 
 const OPEN_STATUSES: TournamentMatchStatus[] = [
   TournamentMatchStatus.PENDING,
@@ -65,6 +67,8 @@ export class TournamentResultService {
         if (onSettled) await onSettled(tx, updated);
         await this.applyTeamStats(tx, match.tournament, match.phase, match.homeTeamId!, homeScore, awayScore);
         await this.applyTeamStats(tx, match.tournament, match.phase, match.awayTeamId!, awayScore, homeScore);
+
+        await this.advanceSeries(tx, match.tournament, updated);
 
         if (winnerTeamId && isKnockout(match.phase)) {
           await propagate(tx, updated, winnerTeamId, loserTeamId);
@@ -157,6 +161,7 @@ export class TournamentResultService {
         });
         await this.applyTeamStats(tx, match.tournament, match.phase, match.homeTeamId!, score.home, score.away);
         await this.applyTeamStats(tx, match.tournament, match.phase, match.awayTeamId!, score.away, score.home);
+        await this.advanceSeries(tx, match.tournament, updated);
         await propagate(tx, updated, winnerTeamId, loserTeamId);
         await this.qualifyFromGroups(tx, match.tournament);
         await this.maybeFinish(tx, match.tournament);
@@ -408,6 +413,9 @@ export class TournamentResultService {
     if (isKnockout(match.phase)) {
       throw new BadRequestException('Mata-mata não aceita empate. Informe o placar da decisão nos pênaltis.');
     }
+    if (match.phase === TournamentPhase.SERIES) {
+      throw new BadRequestException('Um jogo da série não aceita empate. Informe o placar da decisão nos pênaltis.');
+    }
     if (!tournament.allowDraws) {
       throw new BadRequestException('Este campeonato não aceita empates.');
     }
@@ -614,6 +622,61 @@ export class TournamentResultService {
     await resolveWalkovers(tx, tournament.id);
   }
 
+  /// A série nasce só com o primeiro jogo e ganha o próximo quando o resultado
+  /// não fechou a conta. Assim um jogo que a série não precisou disputar nunca
+  /// chega a existir, e o campeonato encerra no jogo que decidiu.
+  private async advanceSeries(
+    tx: Prisma.TransactionClient,
+    tournament: Tournament,
+    match: TournamentMatch,
+  ) {
+    if (tournament.format !== TournamentFormat.SERIES) return;
+    if (match.phase !== TournamentPhase.SERIES) return;
+
+    const teams = await tx.tournamentTeam.findMany({
+      where: { tournamentId: tournament.id },
+      orderBy: [{ seed: 'asc' }, { createdAt: 'asc' }],
+      select: { id: true },
+    });
+    if (teams.length !== 2) return;
+
+    const games = await tx.tournamentMatch.findMany({
+      where: { tournamentId: tournament.id, phase: TournamentPhase.SERIES },
+      orderBy: { round: 'asc' },
+      select: { status: true, winnerTeamId: true },
+    });
+    const decided = games.filter(
+      (game) =>
+        game.status === TournamentMatchStatus.FINISHED ||
+        game.status === TournamentMatchStatus.WALKOVER,
+    );
+    if (decided.length !== games.length) return;
+
+    const outcome = seriesOutcome(
+      tournament.bestOf,
+      [teams[0].id, teams[1].id],
+      decided.map((game) => game.winnerTeamId),
+    );
+    if (outcome.nextGame === null) return;
+
+    const plan = buildSeriesGame(outcome.nextGame, tournament.bestOf);
+    const firstIsHome = plan.homeSeed === 1;
+    await tx.tournamentMatch.create({
+      data: {
+        tournamentId: tournament.id,
+        phase: plan.phase,
+        round: plan.round,
+        position: plan.position,
+        leg: plan.leg,
+        label: plan.label,
+        homeTeamId: firstIsHome ? teams[0].id : teams[1].id,
+        awayTeamId: firstIsHome ? teams[1].id : teams[0].id,
+        status: TournamentMatchStatus.READY,
+        readyAt: new Date(),
+      },
+    });
+  }
+
   private async maybeFinish(tx: Prisma.TransactionClient, tournament: Tournament) {
     const open = await tx.tournamentMatch.count({
       where: { tournamentId: tournament.id, status: { in: OPEN_STATUSES } },
@@ -637,9 +700,13 @@ export class TournamentResultService {
       : null;
 
     if (!championTeamId) {
+      // Numa série o que vale é quem venceu mais jogos, não a soma de pontos.
       const table = await tx.tournamentTeam.findMany({
         where: { tournamentId: tournament.id },
-        orderBy: [{ points: 'desc' }, { scoreFor: 'desc' }, { scoreAgainst: 'asc' }],
+        orderBy:
+          tournament.format === TournamentFormat.SERIES
+            ? [{ wins: 'desc' }, { scoreFor: 'desc' }, { scoreAgainst: 'asc' }]
+            : [{ points: 'desc' }, { scoreFor: 'desc' }, { scoreAgainst: 'asc' }],
         take: 2,
         select: { id: true },
       });
