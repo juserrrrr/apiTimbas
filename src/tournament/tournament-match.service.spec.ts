@@ -1,4 +1,4 @@
-import { compareEaAutomaticQueue, formatEaMatchDuration, selectEaAutomaticQueue } from './tournament-match.service';
+import { compareEaAutomaticQueue, eaSearchWindow, formatEaMatchDuration, selectEaAutomaticQueue } from './tournament-match.service';
 
 describe('compareEaAutomaticQueue', () => {
   it('checks every never-searched match before repeating an earlier round', () => {
@@ -28,6 +28,22 @@ describe('compareEaAutomaticQueue', () => {
 describe('formatEaMatchDuration', () => {
   it('shows minutes, seconds and the raw duration', () => {
     expect(formatEaMatchDuration(2774)).toBe('46 min 14 s (2774 segundos)');
+  });
+});
+
+describe('eaSearchWindow', () => {
+  const anchor = new Date('2026-08-27T01:00:00.000Z');
+
+  it('não aceita partidas anteriores quando a antecedência é zero', () => {
+    expect(eaSearchWindow(anchor, 0, false).earliest).toBe(anchor.getTime());
+  });
+
+  it('aceita partidas iniciadas até a antecedência configurada', () => {
+    expect(eaSearchWindow(anchor, 60, false).earliest).toBe(anchor.getTime() - 60 * 60_000);
+  });
+
+  it('mantém quatro horas de antecedência no laboratório', () => {
+    expect(eaSearchWindow(anchor, 60, true).earliest).toBe(anchor.getTime() - 240 * 60_000);
   });
 });
 

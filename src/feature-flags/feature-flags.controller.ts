@@ -47,6 +47,7 @@ export class FeatureFlagsController {
     return this.featureFlags.updateTournamentEaAutomationSettings(
       dto.checkIntervalSeconds,
       dto.checksPerMinute,
+      dto.lookbackMinutes,
       actor.discordId,
     );
   }

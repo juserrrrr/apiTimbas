@@ -66,6 +66,7 @@ export class FeatureFlagsService {
       id: 1,
       checkIntervalSeconds: 30,
       checksPerMinute: 2,
+      lookbackMinutes: 0,
       updatedByDiscordId: null,
       updatedAt: null,
     };
@@ -74,12 +75,13 @@ export class FeatureFlagsService {
   updateTournamentEaAutomationSettings(
     checkIntervalSeconds: number,
     checksPerMinute: number,
+    lookbackMinutes: number,
     updatedByDiscordId: string,
   ) {
     return this.prisma.tournamentEaAutomationSettings.upsert({
       where: { id: 1 },
-      create: { id: 1, checkIntervalSeconds, checksPerMinute, updatedByDiscordId },
-      update: { checkIntervalSeconds, checksPerMinute, updatedByDiscordId },
+      create: { id: 1, checkIntervalSeconds, checksPerMinute, lookbackMinutes, updatedByDiscordId },
+      update: { checkIntervalSeconds, checksPerMinute, lookbackMinutes, updatedByDiscordId },
     });
   }
 }

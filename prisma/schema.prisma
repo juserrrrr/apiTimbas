@@ -574,6 +574,7 @@ model TournamentEaAutomationSettings {
   id                   Int      @id @default(1)
   checkIntervalSeconds Int      @default(30)
   checksPerMinute      Int      @default(2)
+  lookbackMinutes      Int      @default(0)
   updatedByDiscordId   String?
   updatedAt            DateTime @updatedAt
 }

@@ -13,4 +13,10 @@ export class UpdateTournamentEaAutomationDto {
   @Min(1)
   @Max(10)
   checksPerMinute: number;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(240)
+  lookbackMinutes: number;
 }

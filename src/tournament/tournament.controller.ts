@@ -379,6 +379,15 @@ export class TournamentController {
     return this.matches.setReady(id, matchId, dto.ready, await this.me(req));
   }
 
+  @Post(':id/matches/:matchId/forfeit')
+  async forfeitMatch(
+    @Req() req: AuthedRequest,
+    @Param('id') id: string,
+    @Param('matchId') matchId: string,
+  ) {
+    return this.matches.forfeit(id, matchId, await this.me(req));
+  }
+
   @Post(':id/matches/:matchId/check-ea')
   async checkEaResult(
     @Req() req: AuthedRequest,

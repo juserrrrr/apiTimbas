@@ -49,6 +49,14 @@ export function formatEaMatchDuration(seconds: number) {
   return `${Math.floor(seconds / 60)} min ${seconds % 60} s (${seconds} segundos)`;
 }
 
+export function eaSearchWindow(anchor: Date, lookbackMinutes: number, labMode: boolean) {
+  const effectiveLookbackMinutes = Math.max(lookbackMinutes, labMode ? 240 : 0);
+  return {
+    earliest: anchor.getTime() - effectiveLookbackMinutes * 60_000,
+    latest: anchor.getTime() + 4 * 60 * 60 * 1000,
+  };
+}
+
 /// Tudo que os dois times resolvem entre si numa partida: conversar, combinar
 /// horário, informar placar e confirmar o do outro. A organização entra só quando
 /// eles não se entendem, ou quando o prazo estoura e sai W.O.
@@ -244,8 +252,8 @@ export class TournamentMatchService {
     if (!match) throw new NotFoundException('Partida não encontrada neste campeonato.');
     const automatic = actor.discordId === 'auditoria-ea';
     const autoEnabled = automatic || await this.featureFlags.isEnabled(FEATURE_TOURNAMENT_EA_AUTO_SYNC);
-    if (autoEnabled && !automatic) {
-      const settings = await this.featureFlags.getTournamentEaAutomationSettings();
+    const settings = await this.featureFlags.getTournamentEaAutomationSettings();
+    if (!automatic) {
       this.eaAutoCheckIntervalMs = settings.checkIntervalSeconds * 1000;
       this.eaAutoChecksPerMinute = settings.checksPerMinute;
     }
@@ -293,12 +301,9 @@ export class TournamentMatchService {
       if (!seen.has(item.externalMatchId)) seen.set(item.externalMatchId, item);
     }
     const pool = [...seen.values()];
-    // Em operações do Laboratório aceitamos até quatro horas antes do horário
-    // marcado. Isso permite validar rapidamente um evento reconstruído depois
-    // que os amistosos reais já aconteceram. Campeonatos normais continuam sem
-    // tolerância para trás, evitando reaproveitar resultados antigos.
-    const earliest = searchAnchor.getTime() - (match.tournament.labMode ? 4 * 60 * 60 * 1000 : 0);
-    const latest = searchAnchor.getTime() + 4 * 60 * 60 * 1000;
+    // A antecedência cobre amistosos iniciados antes do horário oficial ou antes
+    // de o segundo time concluir o check-in. O Laboratório mantém quatro horas.
+    const { earliest, latest } = eaSearchWindow(searchAnchor, settings.lookbackMinutes, match.tournament.labMode);
     if (Date.now() < earliest) {
       throw new BadRequestException('A checagem na EA só fica disponível quando o confronto começar.');
     }
@@ -543,6 +548,29 @@ export class TournamentMatchService {
     if (updated.homeReadyAt && updated.awayReadyAt) {
       await this.systemMessage(matchId, null, 'Os dois times estão prontos. Partida liberada para jogar e sincronizar na EA.');
     }
+    return updated;
+  }
+
+  async forfeit(tournamentId: string, matchId: string, actor: Actor) {
+    const match = await this.requireMatch(tournamentId, matchId);
+    const { side } = await this.requireParticipant(tournamentId, match, actor);
+    if (!side) throw new ForbiddenException('Só quem joga a partida pode desistir.');
+    this.assertOpen(match);
+
+    const forfeitingTeamId = side === 'HOME' ? match.homeTeamId : match.awayTeamId;
+    const winnerTeamId = side === 'HOME' ? match.awayTeamId : match.homeTeamId;
+    if (!forfeitingTeamId || !winnerTeamId) {
+      throw new BadRequestException('A partida precisa ter os dois times definidos.');
+    }
+
+    const updated = await this.results.walkover(
+      tournamentId,
+      matchId,
+      winnerTeamId,
+      'desistência do adversário',
+      actor.discordId,
+    );
+    await this.systemMessage(matchId, forfeitingTeamId, 'Desistiu da partida. O adversário venceu por W.O.');
     return updated;
   }
 
@@ -821,7 +849,7 @@ export class TournamentMatchService {
             : null
           : match.scheduledAt?.getTime() ?? null;
         if (anchor === null) return false;
-        const earliest = anchor - (match.tournament.labMode ? 4 * 60 * 60 * 1000 : 0);
+        const earliest = eaSearchWindow(new Date(anchor), settings.lookbackMinutes, match.tournament.labMode).earliest;
         return now.getTime() >= earliest && now.getTime() <= anchor + 4 * 60 * 60 * 1000;
       });
       const firstHalfOfMinute = now.getSeconds() < 30;
