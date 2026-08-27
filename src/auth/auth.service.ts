@@ -10,18 +10,48 @@ import * as bcrypt from 'bcrypt';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
 import { PrismaService } from '../prisma/prisma.service';
+import { CacheBusService } from '../common/cache-bus.service';
+import { TtlCache } from '../common/ttl-cache';
 import { CreateBotDto } from './dto/create-bot.dto';
 import { Role } from '../enums/role.enum';
-import { UserStatus } from '@prisma/client';
+import { User, UserStatus } from '@prisma/client';
+
+/// O token é validado em toda requisição, e sem cache isso era uma consulta ao
+/// banco por request só para redescobrir o mesmo usuário.
+const SESSION_USER_CACHE_MS = 15_000;
 
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
+  private readonly sessionUsers = new TtlCache<string, User | null>(
+    SESSION_USER_CACHE_MS,
+  );
+
   constructor(
     private readonly jwtService: JwtService,
     private readonly prisma: PrismaService,
     private readonly httpService: HttpService,
-  ) {}
+    private readonly cacheBus: CacheBusService,
+  ) {
+    this.cacheBus.register(
+      (identity) => {
+        if (identity.id !== undefined)
+          this.sessionUsers.delete(`id:${identity.id}`);
+        if (identity.discordId)
+          this.sessionUsers.delete(`bot:${identity.discordId}`);
+      },
+      () => this.sessionUsers.clear(),
+    );
+  }
+
+  /// Usuário da sessão, guardado por poucos segundos. Quem muda cargo, status
+  /// ou grupo avisa o CacheBusService e a entrada some na hora.
+  private sessionUser(
+    key: string,
+    load: () => Promise<User | null>,
+  ): Promise<User | null> {
+    return this.sessionUsers.wrap(key, load);
+  }
 
   createToken(
     id: string,
@@ -171,12 +201,16 @@ export class AuthService {
       return decoded;
 
     const user = decoded.botId
-      ? await this.prisma.user.findUnique({
-          where: { discordId: decoded.botId },
-        })
-      : await this.prisma.user.findUnique({
-          where: { id: Number(decoded.sub) },
-        });
+      ? await this.sessionUser(`bot:${decoded.botId}`, () =>
+          this.prisma.user.findUnique({
+            where: { discordId: decoded.botId },
+          }),
+        )
+      : await this.sessionUser(`id:${Number(decoded.sub)}`, () =>
+          this.prisma.user.findUnique({
+            where: { id: Number(decoded.sub) },
+          }),
+        );
     if (!user) throw new UnauthorizedException('User not found');
     this.assertCanEnter(user.status, user.statusNote);
     if (
@@ -186,9 +220,13 @@ export class AuthService {
       throw new UnauthorizedException('Bot session is no longer valid');
     }
     if (decoded.impersonatedBy) {
-      const impersonator = await this.prisma.user.findUnique({
-        where: { id: Number(decoded.impersonatedBy) },
-      });
+      const impersonator = await this.sessionUser(
+        `id:${Number(decoded.impersonatedBy)}`,
+        () =>
+          this.prisma.user.findUnique({
+            where: { id: Number(decoded.impersonatedBy) },
+          }),
+      );
       if (!impersonator || impersonator.role !== Role.ADMIN) {
         throw new UnauthorizedException(
           'Impersonation session is no longer valid',
@@ -231,6 +269,7 @@ export class AuthService {
         ...(lastLoginIp && { lastLoginIp }),
       },
     });
+    this.cacheBus.forget({ id: user.id, discordId: user.discordId });
 
     const { id, name, email, role } = user;
     return this.createToken(id.toString(), name, email, role);
@@ -353,6 +392,7 @@ export class AuthService {
           where: { id: user.id },
           data: updateData,
         });
+        this.cacheBus.forget({ id: user.id, discordId: user.discordId });
       }
     }
 

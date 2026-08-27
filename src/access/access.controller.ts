@@ -1,6 +1,8 @@
 import {
   Body,
   Controller,
+  Inject,
+  forwardRef,
   Delete,
   Get,
   Param,
@@ -16,6 +18,7 @@ import { AuthGuard } from '../auth/guards/auth.guard';
 import { ActorService } from '../common/actor.service';
 import { AccessService } from './access.service';
 import { AuthService } from '../auth/auth.service';
+import { FeatureFlagsService } from '../feature-flags/feature-flags.service';
 import { PermissionGuard, RequirePermissions } from './permission.guard';
 import {
   GroupDto,
@@ -35,10 +38,28 @@ export class AccessController {
     private readonly access: AccessService,
     private readonly actor: ActorService,
     private readonly auth: AuthService,
+    @Inject(forwardRef(() => FeatureFlagsService))
+    private readonly featureFlags: FeatureFlagsService,
   ) {}
 
   /// Quem está logado descobre aqui o que pode fazer, e a tela monta o menu com
   /// isso em vez de adivinhar pelo cargo.
+  /// Permissões e flags numa chamada só. O dashboard trava a tela até ter as
+  /// duas respostas, e em requests separados isso era um round trip a mais em
+  /// cada carga.
+  @Get('bootstrap')
+  async bootstrap(@Req() req: AuthedRequest) {
+    const actor = await this.actor.require(req.tokenPayload?.discordId);
+    const [access, flags] = await Promise.all([
+      this.access.permissionsOf(actor.id),
+      this.featureFlags.findAll(),
+    ]);
+    return {
+      ...access,
+      features: flags.filter((flag) => flag.enabled).map((flag) => flag.key),
+    };
+  }
+
   @Get('me')
   async me(@Req() req: AuthedRequest) {
     const actor = await this.actor.require(req.tokenPayload?.discordId);

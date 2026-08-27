@@ -82,11 +82,23 @@ async function bootstrap() {
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     credentials: true,
     allowedHeaders: ['Content-Type', 'Authorization'],
+    // Sem isso o Chrome guarda o preflight por 5 segundos, então cada chamada
+    // com Authorization pagava um OPTIONS antes do request de verdade: duas
+    // idas e voltas em vez de uma. 24h é o teto que o Chrome aceita.
+    maxAge: 86_400,
   });
 
   await seedAdmin(app.get(PrismaService));
 
   const port = process.env.PORT || 3000;
-  await app.listen(port);
+  const server = await app.listen(port);
+
+  // O padrão do Node é fechar a conexão ociosa em 5s. O proxy na frente segura
+  // a dele por mais tempo, então de vez em quando ele reaproveitava uma conexão
+  // que o Node já estava fechando: request perdido, reconexão, latência. Manter
+  // o servidor mais paciente que o proxy resolve, e headersTimeout precisa
+  // ficar acima do keepAlive.
+  server.keepAliveTimeout = 65_000;
+  server.headersTimeout = 70_000;
 }
 bootstrap();

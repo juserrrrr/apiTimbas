@@ -3,8 +3,10 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Role, UserStatus } from '@prisma/client';
+import { PlatformSettings, Role, UserStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { CacheBusService } from '../common/cache-bus.service';
+import { TtlCache } from '../common/ttl-cache';
 import {
   ALL_PERMISSIONS,
   PERMISSION_CATEGORIES,
@@ -18,13 +20,42 @@ import {
   SetUserGroupsDto,
 } from './dto/access.dto';
 
+/// Curto de propósito: quem mexe no acesso já avisa o CacheBusService, então
+/// esse prazo só cobre mudanças feitas fora da API, direto no banco.
+const PERMISSIONS_CACHE_MS = 15_000;
+
 @Injectable()
 export class AccessService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly permissionsCache = new TtlCache<
+    number,
+    { role: Role; permissions: string[] }
+  >(PERMISSIONS_CACHE_MS);
+  private settingsCache: { value: Promise<PlatformSettings>; expiresAt: number } | null = null;
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly cacheBus: CacheBusService,
+  ) {
+    this.cacheBus.register(
+      (identity) => {
+        if (identity.id !== undefined) this.permissionsCache.delete(identity.id);
+      },
+      () => {
+        this.permissionsCache.clear();
+        this.settingsCache = null;
+      },
+    );
+  }
 
   /// ADMIN é super admin fixo: tem tudo sem depender de grupo. Todo o resto vem
   /// da base inicial da plataforma somada aos grupos da pessoa.
   async permissionsOf(
+    userId: number,
+  ): Promise<{ role: Role; permissions: string[] }> {
+    return this.permissionsCache.wrap(userId, () => this.loadPermissions(userId));
+  }
+
+  private async loadPermissions(
     userId: number,
   ): Promise<{ role: Role; permissions: string[] }> {
     const user = await this.prisma.user.findUnique({
@@ -58,7 +89,19 @@ export class AccessService {
     return PERMISSION_CATEGORIES;
   }
 
-  async settings() {
+  async settings(): Promise<PlatformSettings> {
+    if (this.settingsCache && this.settingsCache.expiresAt > Date.now())
+      return this.settingsCache.value;
+
+    const value = this.loadSettings();
+    value.catch(() => {
+      this.settingsCache = null;
+    });
+    this.settingsCache = { value, expiresAt: Date.now() + PERMISSIONS_CACHE_MS };
+    return value;
+  }
+
+  private async loadSettings(): Promise<PlatformSettings> {
     const existing = await this.prisma.platformSettings.findUnique({
       where: { id: 1 },
     });
@@ -72,6 +115,8 @@ export class AccessService {
 
   async updateSettings(dto: PlatformSettingsDto, updatedByDiscordId: string) {
     await this.settings();
+    // A base de permissões vale para todo mundo, então nenhum cache sobrevive.
+    this.cacheBus.forgetAll();
     return this.prisma.platformSettings.update({
       where: { id: 1 },
       data: {
@@ -111,6 +156,7 @@ export class AccessService {
 
   async updateGroup(id: string, dto: GroupDto) {
     await this.requireGroup(id);
+    this.cacheBus.forgetAll();
     return this.prisma.permissionGroup.update({
       where: { id },
       data: {
@@ -128,6 +174,7 @@ export class AccessService {
   async removeGroup(id: string) {
     await this.requireGroup(id);
     await this.prisma.permissionGroup.delete({ where: { id } });
+    this.cacheBus.forgetAll();
     return { deleted: true };
   }
 
@@ -166,7 +213,7 @@ export class AccessService {
       );
     }
 
-    return this.prisma.user.update({
+    const reviewed = await this.prisma.user.update({
       where: { id: userId },
       data: {
         status: dto.status,
@@ -176,6 +223,9 @@ export class AccessService {
       },
       select: { id: true, name: true, status: true, statusNote: true },
     });
+    // Um bloqueio precisa valer na requisição seguinte, não no fim do TTL.
+    this.cacheBus.forget({ id: userId, discordId: user.discordId });
+    return reviewed;
   }
 
   async setUserGroups(userId: number, dto: SetUserGroupsDto) {
@@ -202,6 +252,7 @@ export class AccessService {
       ),
     ]);
 
+    this.cacheBus.forget({ id: userId, discordId: user.discordId });
     return this.permissionsOf(userId);
   }
 
