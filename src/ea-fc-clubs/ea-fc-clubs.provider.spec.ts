@@ -74,9 +74,35 @@ describe('EaFcClubsProvider', () => {
 
     expect(clubs).toHaveLength(2);
     expect(get).toHaveBeenCalledWith(
-      'allTimeLeaderboard/search',
+      'currentSeasonLeaderboard/search',
       expect.objectContaining({
         params: { platform: 'common-gen5', clubName: 'Timbas' },
+      }),
+    );
+  });
+
+  it('falls back to the all-time leaderboard when the current season has no result', async () => {
+    const get = jest
+      .fn()
+      .mockReturnValueOnce(of({ data: [] }))
+      .mockReturnValueOnce(
+        of({ data: [{ clubInfo: { clubId: 3, name: 'Legacy FC' } }] }),
+      );
+    const provider = new EaFcClubsProvider(
+      { get } as unknown as HttpService,
+      config,
+    );
+
+    const clubs = await provider.searchClubs('Legacy FC', 'common-gen5');
+
+    expect(clubs).toEqual([
+      { externalId: '3', name: 'Legacy FC', platform: 'common-gen5' },
+    ]);
+    expect(get).toHaveBeenNthCalledWith(
+      2,
+      'allTimeLeaderboard/search',
+      expect.objectContaining({
+        params: { platform: 'common-gen5', clubName: 'Legacy FC' },
       }),
     );
   });

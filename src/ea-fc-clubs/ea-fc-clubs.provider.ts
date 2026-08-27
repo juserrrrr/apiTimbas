@@ -100,11 +100,19 @@ export class EaFcClubsProvider {
   }
 
   async searchClubs(name: string, platform: EaFcPlatform): Promise<EaClub[]> {
-    const payload = await this.request('allTimeLeaderboard/search', {
+    const params = {
       platform,
       clubName: name,
-    });
-    return parseClubSearchPayload(payload).map((club) =>
+    };
+    const currentSeason = parseClubSearchPayload(
+      await this.request('currentSeasonLeaderboard/search', params),
+    );
+    const payload = currentSeason.length
+      ? currentSeason
+      : parseClubSearchPayload(
+          await this.request('allTimeLeaderboard/search', params),
+        );
+    return payload.map((club) =>
       mapEaClubSearchResult(club, platform),
     );
   }
