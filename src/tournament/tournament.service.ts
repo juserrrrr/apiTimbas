@@ -294,11 +294,16 @@ export class TournamentService {
         },
       );
     }
-    this.assertWindow(
-      dto.registrationEndsAt ?? tournament.registrationEndsAt ?? undefined,
-      dto.autoStartOnClose ?? tournament.autoStartOnClose,
-      dto.startsAt ?? tournament.startsAt ?? undefined,
-    );
+    if (
+      tournament.status !== TournamentStatus.RUNNING &&
+      tournament.status !== TournamentStatus.FINISHED
+    ) {
+      this.assertWindow(
+        dto.registrationEndsAt ?? tournament.registrationEndsAt ?? undefined,
+        dto.autoStartOnClose ?? tournament.autoStartOnClose,
+        dto.startsAt ?? tournament.startsAt ?? undefined,
+      );
+    }
 
     return this.prisma.tournament.update({
       where: { id },
@@ -1375,6 +1380,7 @@ export class TournamentService {
           data: {
             status: TournamentStatus.RUNNING,
             startsAt: tournament.startsAt ?? new Date(),
+            registrationEndsAt: null,
           },
         });
       },
