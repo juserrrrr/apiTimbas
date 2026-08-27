@@ -789,7 +789,7 @@ export class TournamentService {
       tournament.accessMode !== TournamentAccessMode.INVITE_ONLY ||
       tournament.status !== TournamentStatus.REGISTRATION
     ) {
-      throw new NotFoundException('Convite inv\u00e1lido ou j\u00e1 utilizado.');
+      throw new NotFoundException('Convite inválido ou já utilizado.');
     }
 
     return this.prisma.$transaction(async (tx) => {
@@ -797,7 +797,7 @@ export class TournamentService {
         where: { id: registrationInvite.id, usedAt: null },
         data: { usedAt: new Date(), claimedById: actor.id },
       });
-      if (claimed.count === 0) throw new BadRequestException('Este convite j\u00e1 foi utilizado.');
+      if (claimed.count === 0) throw new BadRequestException('Este convite já foi utilizado.');
       await tx.tournamentInvite.upsert({
         where: { tournamentId_userId: { tournamentId: tournament.id, userId: actor.id } },
         update: { acceptedAt: new Date() },
@@ -816,10 +816,10 @@ export class TournamentService {
     await this.access.requireManage(id, actor);
     const tournament = await this.access.requireExists(id);
     if (tournament.accessMode !== TournamentAccessMode.INVITE_ONLY) {
-      throw new BadRequestException('Convites individuais s\u00f3 s\u00e3o necess\u00e1rios em campeonatos fechados.');
+      throw new BadRequestException('Convites individuais só são necessários em campeonatos fechados.');
     }
     if (tournament.status !== TournamentStatus.REGISTRATION) {
-      throw new BadRequestException('As inscri\u00e7\u00f5es deste campeonato est\u00e3o fechadas.');
+      throw new BadRequestException('As inscrições deste campeonato estão fechadas.');
     }
     const invite = await this.prisma.tournamentRegistrationInvite.create({
       data: {
@@ -857,7 +857,7 @@ export class TournamentService {
       data: { revokedAt: new Date() },
     });
     if (revoked.count === 0) {
-      throw new BadRequestException('O convite n\u00e3o existe, j\u00e1 foi usado ou foi cancelado.');
+      throw new BadRequestException('O convite não existe, já foi usado ou foi cancelado.');
     }
     return { revoked: true };
   }
