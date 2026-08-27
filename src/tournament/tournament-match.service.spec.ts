@@ -1,4 +1,4 @@
-import { compareEaAutomaticQueue, eaSearchWindow, formatEaMatchDuration, selectEaAutomaticQueue } from './tournament-match.service';
+import { compareEaAutomaticQueue, eaSearchWindow, formatEaMatchDuration, matchCompletionReviewDeadline, selectEaAutomaticQueue } from './tournament-match.service';
 
 describe('compareEaAutomaticQueue', () => {
   it('checks every never-searched match before repeating an earlier round', () => {
@@ -44,6 +44,19 @@ describe('eaSearchWindow', () => {
 
   it('mantém quatro horas de antecedência no laboratório', () => {
     expect(eaSearchWindow(anchor, 60, true).earliest).toBe(anchor.getTime() - 240 * 60_000);
+  });
+});
+
+describe('matchCompletionReviewDeadline', () => {
+  it('abre revisão quatro horas após o segundo time confirmar presença', () => {
+    const home = new Date('2026-08-27T01:00:00.000Z');
+    const away = new Date('2026-08-27T01:05:00.000Z');
+
+    expect(matchCompletionReviewDeadline(home, away)?.toISOString()).toBe('2026-08-27T05:05:00.000Z');
+  });
+
+  it('não cria prazo de resultado antes dos dois times confirmarem', () => {
+    expect(matchCompletionReviewDeadline(new Date(), null)).toBeNull();
   });
 });
 

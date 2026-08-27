@@ -29,6 +29,14 @@ export function compareEaAutomaticQueue(left: EaAutomaticQueueItem, right: EaAut
 /// Teto de primeiras consultas numa mesma passada. Segura a mão quando uma fase
 /// de grupos inteira abre de uma vez, sem deixar um mata-mata pequeno esperando.
 export const EA_FIRST_PASS_LIMIT = 8;
+export const MATCH_COMPLETION_REVIEW_MINUTES = 240;
+
+export function matchCompletionReviewDeadline(homeReadyAt: Date | null, awayReadyAt: Date | null) {
+  if (!homeReadyAt || !awayReadyAt) return null;
+  return new Date(
+    Math.max(homeReadyAt.getTime(), awayReadyAt.getTime()) + MATCH_COMPLETION_REVIEW_MINUTES * 60_000,
+  );
+}
 
 /// Quem nunca foi consultado entra todo mundo nesta rodada, fora do limite por
 /// minuto: com 2 consultas por minuto, o último jogo de um mata-mata de quatro
@@ -948,7 +956,21 @@ export class TournamentMatchService {
     if (tournament.matchWindowMinutes > 0) {
       const homeReady = match.homeReadyAt !== null;
       const awayReady = match.awayReadyAt !== null;
-      if (homeReady && awayReady) return;
+      if (homeReady && awayReady) {
+        const movedToReview = await this.prisma.tournamentMatch.updateMany({
+          where: { id: match.id, status: TournamentMatchStatus.READY, eaMatchId: null, claimedHomeScore: null },
+          data: {
+            status: TournamentMatchStatus.DISPUTED,
+            reviewRequestedAt: new Date(),
+            reviewReason: 'Os dois times confirmaram presença, mas nenhum resultado foi registrado no prazo.',
+            eaNextCheckAt: null,
+          },
+        });
+        if (movedToReview.count > 0) {
+          await this.systemMessage(match.id, null, 'O prazo para encontrar o resultado terminou. A organização vai revisar a partida.');
+        }
+        return;
+      }
       if (!homeReady && !awayReady) {
         await this.systemMessage(match.id, null, 'Prazo de check-in encerrado sem nenhum time pronto. A organização vai decidir.');
         await this.prisma.tournamentMatch.update({
@@ -1024,7 +1046,9 @@ export class TournamentMatchService {
   ): Date | null {
     if (!match.readyAt) return null;
     if (!OPEN_STATUSES.includes(match.status)) return null;
-    if (tournament.matchWindowMinutes > 0 && match.homeReadyAt && match.awayReadyAt) return null;
+    if (tournament.matchWindowMinutes > 0 && match.homeReadyAt && match.awayReadyAt) {
+      return matchCompletionReviewDeadline(match.homeReadyAt, match.awayReadyAt);
+    }
     const base = Math.max(match.readyAt.getTime(), tournament.startsAt?.getTime() ?? 0);
     const regularMinutes = tournament.matchWindowMinutes > 0
       ? tournament.matchWindowMinutes
