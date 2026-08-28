@@ -320,6 +320,38 @@ export class StreamingService implements OnModuleInit {
     return { ended: true };
   }
 
+  /**
+   * Ajustes do host na própria live. O nome pode mudar até depois de no ar: a
+   * lista e o card do Discord passam a mostrar o novo na leitura seguinte.
+   */
+  async updateStream(
+    id: string,
+    user: RequestUser,
+    patch: { title?: string; visibility?: 'MEMBERS' | 'PUBLIC' },
+  ) {
+    const stream = this.getStream(id);
+    if (stream.hostUserId !== user.id && user.role !== Role.ADMIN) {
+      throw new ForbiddenException(
+        'Only the stream owner can change it.',
+      );
+    }
+
+    const title = patch.title?.trim();
+    if (title && title !== stream.title) {
+      stream.title = title;
+      await this.prisma.activeStream.update({
+        where: { id: stream.id },
+        data: { title },
+      });
+    }
+
+    if (patch.visibility) {
+      return this.updateVisibility(id, user, patch.visibility);
+    }
+
+    return this.toSummary(stream);
+  }
+
   async updateVisibility(
     id: string,
     user: RequestUser,

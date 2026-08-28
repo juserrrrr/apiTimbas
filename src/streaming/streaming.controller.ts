@@ -174,11 +174,7 @@ export class StreamingController {
     @Body() dto: UpdateStreamDto,
     @Req() req: any,
   ) {
-    return this.streaming.updateVisibility(
-      id,
-      toRequestUser(req),
-      dto.visibility,
-    );
+    return this.streaming.updateStream(id, toRequestUser(req), dto);
   }
 
   @RequirePermissions(STREAM_MANAGE_PERMISSION)
