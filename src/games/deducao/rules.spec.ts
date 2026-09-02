@@ -1,6 +1,7 @@
 import {
   DEFAULT_CONFIG,
   assignRoles,
+  canStartMatch,
   maxKillersFor,
   sanitizeConfig,
   tallyVotes,
@@ -20,6 +21,17 @@ function seeded(seed: number) {
 
 const crew = (id: string, alive = true): PlayerSnapshot => ({ id, role: 'funcionario', alive });
 const killer = (id: string, alive = true): PlayerSnapshot => ({ id, role: 'assassino', alive });
+
+describe('canStartMatch', () => {
+  it('permite que admin inicie sozinho para testar', () => {
+    expect(canStartMatch(1, true)).toBe(true);
+  });
+
+  it('mantém o mínimo normal para os outros jogadores', () => {
+    expect(canStartMatch(1, false)).toBe(false);
+    expect(canStartMatch(4, false)).toBe(true);
+  });
+});
 
 describe('maxKillersFor', () => {
   it('abre mais assassinos conforme a sala enche', () => {

@@ -45,6 +45,10 @@ export const DEFAULT_CONFIG: MatchConfig = {
 export const MIN_PLAYERS = 4;
 export const MAX_PLAYERS = 12;
 
+export function canStartMatch(playerCount: number, isAdmin: boolean): boolean {
+  return isAdmin || playerCount >= MIN_PLAYERS;
+}
+
 /// Quantos assassinos cabem numa sala desse tamanho. Passar disso deixa a
 /// partida sem graça: o escritório perde antes de alguém desconfiar de alguma
 /// coisa.

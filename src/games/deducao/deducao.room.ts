@@ -4,6 +4,7 @@ import {
   FEATURE_DASHBOARD_GAMES,
   FEATURE_GAME_DEDUCAO,
 } from '../../feature-flags/feature-flags.constants';
+import { Role as UserRole } from '../../enums/role.enum';
 import { gameDeps } from '../game-deps';
 import { ChatMessage, CorpseState, DeducaoState, PlayerState } from './deducao.state';
 import { OFFICE_MAP, taskSpotById, ventById } from './map';
@@ -15,6 +16,7 @@ import {
   MatchConfig,
   Role,
   assignRoles,
+  canStartMatch,
   detectiveReading,
   maxKillersFor,
   sanitizeConfig,
@@ -51,6 +53,7 @@ interface Seat {
   vote: string | null;
   /// Leitura que o detetive pediu na reunião passada e recebe nesta.
   pendingReading: { targetId: string; targetName: string } | null;
+  isAdmin: boolean;
 }
 
 export class DeducaoRoom extends Room<{ state: DeducaoState }> {
@@ -110,7 +113,11 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
     void this.publishMetadata();
   }
 
-  async onJoin(client: Client, _options: unknown, person: { id: number; discordId: string; name: string; avatar: string | null }) {
+  async onJoin(
+    client: Client,
+    _options: unknown,
+    person: { id: number; discordId: string; name: string; avatar: string | null; role: string },
+  ) {
     const player = new PlayerState();
     player.id = client.sessionId;
     player.name = person.name;
@@ -133,6 +140,7 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
       activeTask: null,
       vote: null,
       pendingReading: null,
+      isAdmin: person.role === UserRole.ADMIN,
     });
 
     if (!this.state.hostId) this.state.hostId = client.sessionId;
@@ -185,7 +193,8 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
   private onStart(client: Client) {
     if (this.state.phase !== 'lobby' || client.sessionId !== this.state.hostId) return;
     const ids = [...this.state.players.keys()];
-    if (ids.length < MIN_PLAYERS) {
+    const isAdmin = this.seats.get(client.sessionId)?.isAdmin ?? false;
+    if (!canStartMatch(ids.length, isAdmin)) {
       client.send('erro', `A partida precisa de pelo menos ${MIN_PLAYERS} jogadores.`);
       return;
     }
