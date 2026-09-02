@@ -26,6 +26,7 @@ import { DemoModule } from './demo/demo.module';
 import { PlayerCatalogModule } from './player-catalog/player-catalog.module';
 import { FeatureFlagsModule } from './feature-flags/feature-flags.module';
 import { StreamingModule } from './streaming/streaming.module';
+import { GamesModule } from './games/games.module';
 
 @Module({
   imports: [
@@ -72,6 +73,7 @@ import { StreamingModule } from './streaming/streaming.module';
     PlayerCatalogModule,
     FeatureFlagsModule,
     StreamingModule,
+    GamesModule,
   ],
   controllers: [],
   providers: [{ provide: APP_GUARD, useClass: AppThrottlerGuard }],

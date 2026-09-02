@@ -18,6 +18,8 @@ export const FEATURE_DASHBOARD_CLASH = 'dashboard_clash';
 export const FEATURE_DASHBOARD_LOL_VERIFY = 'dashboard_lol_verify';
 export const FEATURE_DASHBOARD_LOL_PROFILE = 'dashboard_lol_profile';
 export const FEATURE_DASHBOARD_SETTINGS = 'dashboard_settings';
+export const FEATURE_DASHBOARD_GAMES = 'dashboard_games';
+export const FEATURE_GAME_DEDUCAO = 'game_deducao';
 
 // Flags known by the app. Rows missing in the database are treated as disabled.
 export const KNOWN_FEATURE_FLAGS: { key: string; description: string }[] = [
@@ -35,6 +37,8 @@ export const KNOWN_FEATURE_FLAGS: { key: string; description: string }[] = [
   { key: FEATURE_DASHBOARD_LOL_VERIFY, description: 'Dashboard · Verificar LoL' },
   { key: FEATURE_DASHBOARD_LOL_PROFILE, description: 'Dashboard · Perfil LoL' },
   { key: FEATURE_DASHBOARD_SETTINGS, description: 'Dashboard · Configurações' },
+  { key: FEATURE_DASHBOARD_GAMES, description: 'Dashboard · Jogos' },
+  { key: FEATURE_GAME_DEDUCAO, description: 'Jogos · Timbas Detetive' },
   {
     key: FEATURE_SCREEN_SHARE,
     description: 'Transmissão de tela ao vivo no dashboard',

@@ -6,6 +6,7 @@ import { Role } from './enums/role.enum';
 import * as bcrypt from 'bcrypt';
 import * as cookieParser from 'cookie-parser';
 import { json, urlencoded } from 'express';
+import { GameServerService } from './games/game-server.service';
 
 async function seedAdmin(prisma: PrismaService) {
   const { ADMIN_DISCORD_ID, ADMIN_NAME, ADMIN_EMAIL, ADMIN_PASSWORD } =
@@ -91,7 +92,15 @@ async function bootstrap() {
   await seedAdmin(app.get(PrismaService));
 
   const port = process.env.PORT || 3000;
-  const server = await app.listen(port);
+
+  // Quem abre a porta aqui é o servidor de jogos, não o Nest. Ele sobe o mesmo
+  // http.Server que o Nest já criou em volta do Express, fica com as rotas de
+  // matchmaking e o upgrade de WebSocket, e devolve todo o resto para o
+  // Express. Por isso o init vem separado do listen: uma porta só para a API e
+  // para o jogo.
+  await app.init();
+  const server = app.getHttpServer();
+  await app.get(GameServerService).listen(server, port, allowedOrigins);
 
   // O padrão do Node é fechar a conexão ociosa em 5s. O proxy na frente segura
   // a dele por mais tempo, então de vez em quando ele reaproveitava uma conexão

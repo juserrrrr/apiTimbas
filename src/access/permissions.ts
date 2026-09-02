@@ -19,6 +19,7 @@ export const PERMISSION_CATEGORIES = [
       { key: 'dashboard.clash', label: 'Clash Scout', hint: 'Analisa adversários do League of Legends' },
       { key: 'dashboard.lol.verify', label: 'Verificar LoL', hint: 'Vincula uma conta da Riot' },
       { key: 'dashboard.lol.profile', label: 'Perfil LoL', hint: 'Consulta a análise de estilo de jogo' },
+      { key: 'dashboard.games', label: 'Jogos', hint: 'Entra nas salas dos jogos do Timbas' },
       { key: 'dashboard.settings', label: 'Configurações', hint: 'Acessa as preferências da própria conta' },
     ],
   },

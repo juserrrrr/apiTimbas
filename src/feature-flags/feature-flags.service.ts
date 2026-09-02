@@ -1,5 +1,6 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { Role } from '../enums/role.enum';
 import { FEATURE_TOURNAMENT_EA_AUTO_SYNC, KNOWN_FEATURE_FLAGS } from './feature-flags.constants';
 
 const CACHE_TTL_MS = 15_000;
@@ -59,6 +60,14 @@ export class FeatureFlagsService {
     if (!(await this.isEnabled(key))) {
       throw new ForbiddenException('Recurso desativado pelo administrador.');
     }
+  }
+
+  /// O admin entra no recurso desligado para conferir antes de liberar para
+  /// todo mundo. É o único cargo que passa: grupo com permissão continua preso
+  /// à flag, senão ligar e desligar deixaria de significar alguma coisa.
+  async ensureEnabledOrAdmin(key: string, role: string) {
+    if (role === Role.ADMIN) return;
+    await this.ensureEnabled(key);
   }
 
   async getTournamentEaAutomationSettings() {
