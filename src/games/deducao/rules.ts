@@ -20,6 +20,7 @@ export interface MatchConfig {
   tasksPerPlayer: number;
   killCooldownMs: number;
   killRange: number;
+  visionRange: number;
   meetingSeconds: number;
   voteSeconds: number;
   revealRoleOnEject: boolean;
@@ -34,6 +35,7 @@ export const DEFAULT_CONFIG: MatchConfig = {
   tasksPerPlayer: 4,
   killCooldownMs: 25_000,
   killRange: 2.2,
+  visionRange: 11,
   meetingSeconds: 45,
   voteSeconds: 30,
   revealRoleOnEject: true,
@@ -65,6 +67,7 @@ export function sanitizeConfig(config: MatchConfig, playerCount: number): MatchC
     tasksPerPlayer: Math.min(Math.max(2, Math.round(config.tasksPerPlayer)), 8),
     killCooldownMs: Math.min(Math.max(10_000, Math.round(config.killCooldownMs)), 60_000),
     killRange: Math.min(Math.max(1.4, config.killRange), 4),
+    visionRange: Math.min(Math.max(7, config.visionRange), 15),
     meetingSeconds: Math.min(Math.max(15, Math.round(config.meetingSeconds)), 120),
     voteSeconds: Math.min(Math.max(15, Math.round(config.voteSeconds)), 120),
     emergencyPerPlayer: Math.min(Math.max(0, Math.round(config.emergencyPerPlayer)), 3),

@@ -49,12 +49,13 @@ describe('sanitizeConfig', () => {
 
   it('segura os tempos dentro do que é jogável', () => {
     const config = sanitizeConfig(
-      { ...DEFAULT_CONFIG, meetingSeconds: 1, voteSeconds: 999, killCooldownMs: 1 },
+      { ...DEFAULT_CONFIG, meetingSeconds: 1, voteSeconds: 999, killCooldownMs: 1, visionRange: 99 },
       6,
     );
     expect(config.meetingSeconds).toBe(15);
     expect(config.voteSeconds).toBe(120);
     expect(config.killCooldownMs).toBe(10_000);
+    expect(config.visionRange).toBe(15);
   });
 });
 

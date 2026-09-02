@@ -143,7 +143,10 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
       isAdmin: person.role === UserRole.ADMIN,
     });
 
-    if (!this.state.hostId) this.state.hostId = client.sessionId;
+    if (!this.state.hostId) {
+      this.state.hostId = client.sessionId;
+      this.state.hostCanStartSolo = person.role === UserRole.ADMIN;
+    }
     this.system(`${person.name} entrou na sala.`);
     await this.publishMetadata();
   }
@@ -172,6 +175,7 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
 
     if (this.state.hostId === client.sessionId) {
       this.state.hostId = [...this.state.players.keys()][0] ?? '';
+      this.state.hostCanStartSolo = this.seats.get(this.state.hostId)?.isAdmin ?? false;
     }
     if (this.state.phase !== 'lobby' && this.state.phase !== 'fim') this.checkEnd();
     await this.publishMetadata();
@@ -709,6 +713,7 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
       tasksPerPlayer: config.tasksPerPlayer,
       killCooldownMs: config.killCooldownMs,
       killRange: config.killRange,
+      visionRange: config.visionRange,
       meetingSeconds: config.meetingSeconds,
       voteSeconds: config.voteSeconds,
       revealRoleOnEject: config.revealRoleOnEject,
