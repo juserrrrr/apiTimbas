@@ -69,7 +69,26 @@ export class GamesController {
   async rooms(@Req() req: AuthedRequest) {
     await this.requireDeducaoAccess(req);
     const rooms = await matchMaker.query({ name: DEDUCAO_ROOM });
-    return rooms.map((room) => {
+    const availableRooms = (
+      await Promise.all(
+        rooms.map(async (room) => {
+          try {
+            // A listagem compartilhada pode sobreviver ao processo que mantinha
+            // a sala. Uma leitura curta evita entregar esses registros órfãos ao
+            // navegador e depois deixá-lo preso no timeout do matchmaking.
+            await matchMaker.remoteRoomCall(room.roomId, 'roomId', undefined, 1_000);
+            return room;
+          } catch {
+            if (room.processId) {
+              void matchMaker.healthCheckProcessId(room.processId).catch(() => undefined);
+            }
+            return null;
+          }
+        }),
+      )
+    ).filter((room) => room !== null);
+
+    return availableRooms.map((room) => {
       const meta = (room.metadata ?? {}) as Record<string, unknown>;
       return {
         roomId: room.roomId,
