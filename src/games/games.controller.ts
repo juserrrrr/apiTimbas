@@ -1,4 +1,4 @@
-import { Controller, Get, Req, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Req, UseGuards } from '@nestjs/common';
 import { matchMaker } from 'colyseus';
 import { Request } from 'express';
 import { AuthGuard } from '../auth/guards/auth.guard';
@@ -13,6 +13,7 @@ import { Role } from '../enums/role.enum';
 import { OFFICE_MAP } from './deducao/map';
 import { DEFAULT_CONFIG, MAX_PLAYERS, MIN_PLAYERS } from './deducao/rules';
 import { DEDUCAO_ROOM } from './game-server.service';
+import { GameTicketsService } from './game-tickets.service';
 
 type AuthedRequest = Request & { tokenPayload?: { discordId?: string } };
 
@@ -23,10 +24,15 @@ export class GamesController {
   constructor(
     private readonly featureFlags: FeatureFlagsService,
     private readonly actor: ActorService,
+    private readonly tickets: GameTicketsService,
   ) {}
 
-  /// O catálogo do hub. Cada jogo diz se está no ar e, quando não está, se a
-  /// pessoa está vendo só porque é admin.
+  @Post('deducao/ticket')
+  async ticket(@Req() req: AuthedRequest) {
+    const person = await this.requireDeducaoAccess(req);
+    return { ticket: this.tickets.issue(person.discordId) };
+  }
+
   @Get()
   async catalog(@Req() req: AuthedRequest) {
     const person = await this.actor.require(req.tokenPayload?.discordId);
@@ -36,24 +42,22 @@ export class GamesController {
       this.featureFlags.isEnabled(FEATURE_GAME_DEDUCAO),
     ]);
 
-    return {
-      hubEnabled: hub,
-      adminPreview: isAdmin && !hub,
-      games: [
-        {
-          id: DEDUCAO_ROOM,
-          name: 'Timbas Detetive',
-          tagline: 'Dedução no escritório',
-          description:
-            'Todo mundo tem tarefas, alguém tem faca. Termine o expediente ou descubra quem está matando a equipe antes que sobrem só vocês dois.',
-          players: `${MIN_PLAYERS} a ${MAX_PLAYERS} jogadores`,
-          minutes: '10 a 20 min',
-          enabled: deducao,
-          adminPreview: isAdmin && !deducao,
-          href: '/games/deducao',
-        },
-      ],
-    };
+    const games = isAdmin || (hub && deducao)
+      ? [
+          {
+            id: DEDUCAO_ROOM,
+            name: 'Timbas Detetive',
+            tagline: 'Jogo de dedução',
+            description:
+              'Descubra os assassinos antes que eles eliminem o grupo, ou conclua todas as tarefas para vencer.',
+            players: `${MIN_PLAYERS} a ${MAX_PLAYERS} jogadores`,
+            minutes: '10 a 20 min',
+            href: '/games/deducao',
+          },
+        ]
+      : [];
+
+    return { games };
   }
 
   /// As salas abertas. A listagem sai por aqui, e não pelo matchmaking do
@@ -62,7 +66,8 @@ export class GamesController {
   /// aqui: toda sala aberta por `create` nasce marcada assim, e o que decide se
   /// ela tem senha é a nossa própria metadata.
   @Get('deducao/rooms')
-  async rooms() {
+  async rooms(@Req() req: AuthedRequest) {
+    await this.requireDeducaoAccess(req);
     const rooms = await matchMaker.query({ name: DEDUCAO_ROOM });
     return rooms.map((room) => {
       const meta = (room.metadata ?? {}) as Record<string, unknown>;
@@ -83,7 +88,15 @@ export class GamesController {
   /// O mapa vem daqui em vez de estar copiado no front: as paredes que o
   /// servidor usa para colisão têm que ser exatamente as que a tela desenha.
   @Get('deducao/map')
-  async map() {
+  async map(@Req() req: AuthedRequest) {
+    await this.requireDeducaoAccess(req);
     return { map: OFFICE_MAP, config: DEFAULT_CONFIG, minPlayers: MIN_PLAYERS, maxPlayers: MAX_PLAYERS };
+  }
+
+  private async requireDeducaoAccess(req: AuthedRequest) {
+    const person = await this.actor.require(req.tokenPayload?.discordId);
+    await this.featureFlags.ensureEnabledOrAdmin(FEATURE_DASHBOARD_GAMES, person.role);
+    await this.featureFlags.ensureEnabledOrAdmin(FEATURE_GAME_DEDUCAO, person.role);
+    return person;
   }
 }

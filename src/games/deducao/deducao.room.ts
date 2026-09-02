@@ -1,6 +1,9 @@
 import { Client, CloseCode, Room } from 'colyseus';
 import { randomUUID } from 'crypto';
-import { FEATURE_GAME_DEDUCAO } from '../../feature-flags/feature-flags.constants';
+import {
+  FEATURE_DASHBOARD_GAMES,
+  FEATURE_GAME_DEDUCAO,
+} from '../../feature-flags/feature-flags.constants';
 import { gameDeps } from '../game-deps';
 import { ChatMessage, CorpseState, DeducaoState, PlayerState } from './deducao.state';
 import { OFFICE_MAP, taskSpotById, ventById } from './map';
@@ -58,15 +61,16 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
   private nextBlackoutAt = 0;
   private meetingDeadline = 0;
 
-  async onAuth(client: Client, options: { token?: string; password?: string }) {
-    const { auth, actor, access, featureFlags } = gameDeps();
-    if (!options?.token) throw new Error('Sessão não encontrada.');
+  async onAuth(client: Client, options: { ticket?: string; password?: string }) {
+    const { tickets, actor, access, featureFlags } = gameDeps();
 
-    const payload = await auth.validateSessionToken(options.token);
-    const person = await actor.require(payload?.discordId);
+    const discordId = tickets.consume(options?.ticket);
+    if (!discordId) throw new Error('Sua entrada expirou. Volte para a lista de jogos e entre de novo.');
+    const person = await actor.require(discordId);
 
     if (!(await access.has(person.id, ['dashboard.games'])))
       throw new Error('Seu acesso não inclui a área de jogos.');
+    await featureFlags.ensureEnabledOrAdmin(FEATURE_DASHBOARD_GAMES, person.role);
     await featureFlags.ensureEnabledOrAdmin(FEATURE_GAME_DEDUCAO, person.role);
 
     if (this.password && options.password !== this.password)
@@ -648,9 +652,9 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
     this.state.endReason =
       winner === 'escritorio'
         ? this.state.tasksDone >= this.state.tasksTotal
-          ? 'O escritório terminou todas as tarefas.'
-          : 'O escritório encontrou todos os assassinos.'
-        : 'Os assassinos tomaram o escritório.';
+          ? 'Todas as tarefas foram concluídas.'
+          : 'Todos os assassinos foram expulsos.'
+        : 'Os assassinos ficaram em maioria.';
     this.state.blackout = false;
     this.closeMeeting();
 

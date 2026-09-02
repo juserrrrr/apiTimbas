@@ -1,7 +1,7 @@
 import type { AccessService } from '../access/access.service';
 import type { ActorService } from '../common/actor.service';
-import type { AuthService } from '../auth/auth.service';
 import type { FeatureFlagsService } from '../feature-flags/feature-flags.service';
+import type { GameTicketsService } from './game-tickets.service';
 import type { PrismaService } from '../prisma/prisma.service';
 
 /// As salas do Colyseus são criadas pelo próprio framework, não pelo container
@@ -10,7 +10,7 @@ import type { PrismaService } from '../prisma/prisma.service';
 /// Um lugar só, para ninguém sair puxando serviço do Nest de dentro do jogo.
 
 export interface GameDeps {
-  auth: AuthService;
+  tickets: GameTicketsService;
   actor: ActorService;
   access: AccessService;
   featureFlags: FeatureFlagsService;

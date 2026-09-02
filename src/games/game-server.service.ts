@@ -2,11 +2,11 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Server as HttpServer } from 'http';
 import { Server, WebSocketTransport, matchMaker } from 'colyseus';
 import { AccessService } from '../access/access.service';
-import { AuthService } from '../auth/auth.service';
 import { ActorService } from '../common/actor.service';
 import { FeatureFlagsService } from '../feature-flags/feature-flags.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { DeducaoRoom } from './deducao/deducao.room';
+import { GameTicketsService } from './game-tickets.service';
 import { setGameDeps } from './game-deps';
 
 export const DEDUCAO_ROOM = 'deducao';
@@ -23,7 +23,7 @@ export class GameServerService {
   private gameServer: Server | null = null;
 
   constructor(
-    private readonly auth: AuthService,
+    private readonly tickets: GameTicketsService,
     private readonly actor: ActorService,
     private readonly access: AccessService,
     private readonly featureFlags: FeatureFlagsService,
@@ -32,7 +32,7 @@ export class GameServerService {
 
   async listen(httpServer: HttpServer, port: number | string, allowedOrigins: string[]) {
     setGameDeps({
-      auth: this.auth,
+      tickets: this.tickets,
       actor: this.actor,
       access: this.access,
       featureFlags: this.featureFlags,
