@@ -148,10 +148,13 @@ export function craqueRanker(
       ((player.passAccuracy ?? 0) / 100);
     const mvp = weights.mvp * (player.appearances > 0 ? player.mvps / player.appearances : 0);
     const presence = weights.presence * share(player.appearances, best.appearances);
+    const rawScore =
+      adjustedRating + contributions + tackles + saves + shooting + passing + mvp + presence;
+    // Acima de 9 o índice se aproxima de 10 sem criar empates artificiais no teto.
+    const score = rawScore <= 9 ? rawScore : 9 + (rawScore - 9) / (1 + rawScore - 9);
 
     return {
-      score:
-        adjustedRating + contributions + tackles + saves + shooting + passing + mvp + presence,
+      score,
       adjustedRating,
       contributions,
       tackles,

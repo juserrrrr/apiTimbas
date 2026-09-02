@@ -522,6 +522,7 @@ export class TournamentService {
         assists: number;
         ratingTotal: number;
         ratedGames: number;
+        positions: Map<string, number>;
         mvps: number;
         tags: Set<string>;
         passesAttempted: number;
@@ -548,6 +549,7 @@ export class TournamentService {
         assists: 0,
         ratingTotal: 0,
         ratedGames: 0,
+        positions: new Map<string, number>(),
         mvps: 0,
         tags: new Set<string>(),
         passesAttempted: 0,
@@ -564,6 +566,10 @@ export class TournamentService {
       row.assists += stat.assists;
       row.ratingTotal += stat.rating ?? 0;
       row.ratedGames += stat.rating === null ? 0 : 1;
+      if (stat.position?.trim()) {
+        const position = stat.position.trim().toUpperCase();
+        row.positions.set(position, (row.positions.get(position) ?? 0) + 1);
+      }
       row.mvps += stat.manOfTheMatch ? 1 : 0;
       row.passesAttempted += stat.passesAttempted ?? 0;
       row.passesCompleted += stat.passesCompleted ?? 0;
@@ -589,8 +595,13 @@ export class TournamentService {
         assists: player.assists,
         goalContributions: player.goals + player.assists,
         averageRating: player.ratedGames
-          ? player.ratingTotal / player.ratedGames
+          ? Math.min(10, player.ratingTotal / player.ratedGames)
           : null,
+        primaryPosition:
+          [...player.positions.entries()].sort(
+            ([positionA, appearancesA], [positionB, appearancesB]) =>
+              appearancesB - appearancesA || positionA.localeCompare(positionB),
+          )[0]?.[0] ?? null,
         mvps: player.mvps,
         passesAttempted: player.passesAttempted,
         passesCompleted: player.passesCompleted,

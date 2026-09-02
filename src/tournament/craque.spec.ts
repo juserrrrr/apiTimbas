@@ -147,4 +147,23 @@ describe('craqueRanker', () => {
 
     expect(Number.isFinite(score(vazio).score)).toBe(true);
   });
+
+  it('limita o índice final a 10', () => {
+    const completo = player({
+      averageRating: 10,
+      goals: 12,
+      assists: 8,
+      mvps: 5,
+      tacklesCompleted: 30,
+      tackleSuccess: 100,
+      saves: 20,
+      shots: 30,
+      passesCompleted: 300,
+      passAccuracy: 100,
+    });
+    const score = craqueRanker([completo], 10);
+
+    expect(score(completo).score).toBeLessThanOrEqual(10);
+    expect(score(completo).score).toBeGreaterThan(9);
+  });
 });
