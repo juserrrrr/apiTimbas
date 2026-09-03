@@ -18,6 +18,8 @@ export class PlayerState extends Schema {
   @type('number') level = 0;
   @type('number') dir = 0;
   @type('boolean') moving = false;
+  @type('boolean') crouching = false;
+  @type('boolean') airborne = false;
   @type('boolean') alive = true;
   @type('boolean') connected = true;
   @type('boolean') ready = false;

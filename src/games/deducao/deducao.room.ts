@@ -312,6 +312,8 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
       player.alive = true;
       player.ready = false;
       player.inVent = false;
+      player.crouching = false;
+      player.airborne = false;
       player.tasksDone = 0;
       player.tasksTotal = seat.tasks.length;
       player.emergenciesLeft = config.emergencyPerPlayer;
@@ -360,6 +362,8 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
       player.alive = true;
       player.ready = false;
       player.inVent = false;
+      player.crouching = false;
+      player.airborne = false;
       player.tasksDone = 0;
       player.tasksTotal = 0;
     }
@@ -377,6 +381,8 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
       dir: number;
       moving: boolean;
       sprint?: boolean;
+      crouching?: boolean;
+      airborne?: boolean;
     },
   ) {
     const player = this.state.players.get(client.sessionId);
@@ -410,6 +416,8 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
     player.z = next.z;
     player.dir = Number.isFinite(payload.dir) ? payload.dir : player.dir;
     player.moving = Boolean(payload.moving);
+    player.crouching = Boolean(payload.crouching);
+    player.airborne = Boolean(payload.airborne);
 
     if (player.alive && !player.inVent) {
       const crossing = stairProgressAt(player.x, player.z, this.officeMap);
@@ -525,6 +533,8 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
     victim.alive = false;
     victim.moving = false;
     victim.inVent = false;
+    victim.crouching = false;
+    victim.airborne = false;
     victimSeat.activeTask = null;
 
     const corpse = new CorpseState();
@@ -734,6 +744,8 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
     for (const player of this.state.players.values()) {
       player.inVent = false;
       player.moving = false;
+      player.crouching = false;
+      player.airborne = false;
     }
     this.teleportToMeetingSeats();
     this.deliverReadings();
@@ -797,6 +809,8 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
         ejected.alive = false;
         ejected.moving = false;
         ejected.inVent = false;
+        ejected.crouching = false;
+        ejected.airborne = false;
         meeting.ejectedId = ejected.id;
         meeting.ejectedName = ejected.name;
         meeting.ejectedRole = this.state.config.revealRoleOnEject
@@ -944,6 +958,8 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
       player.z = spawn.z;
       player.level = spawn.level ?? 0;
       player.moving = false;
+      player.crouching = false;
+      player.airborne = false;
       index += 1;
     }
   }
@@ -961,6 +977,8 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
       player.level = seat.level;
       player.dir = seat.dir;
       player.moving = false;
+      player.crouching = false;
+      player.airborne = false;
       index += 1;
     }
   }
