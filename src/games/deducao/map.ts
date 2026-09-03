@@ -5,11 +5,9 @@
 ///
 /// Eixos: x cresce para leste, z cresce para o sul. Uma unidade é um metro.
 ///
-/// O escritório não é um bloco maciço. As salas são ilhas soltas no vazio,
-/// ligadas por um corredor largo que atravessa o mapa inteiro e por passagens
-/// curtas que cruzam o vão até cada porta. O espaço vazio entre uma sala e
-/// outra é tão parte do desenho quanto as paredes: é ele que separa os cômodos
-/// na leitura de cima e dá fôlego para a câmera.
+/// O escritório é um prédio contínuo de dois pavimentos. Salas fechadas se
+/// ligam por portas e corredores laterais; as duas escadas ocupam o mesmo volume
+/// nos dois andares e têm guarda-corpo onde a laje é recortada.
 
 export interface Rect {
   x: number;
@@ -47,6 +45,13 @@ export interface Door {
 }
 
 export type RoomKind = 'sala' | 'corredor' | 'terraco';
+export type FloorFinish =
+  | 'carpet'
+  | 'wood'
+  | 'server'
+  | 'terrazzo'
+  | 'pantry'
+  | 'concrete';
 
 export interface RoomDef {
   id: string;
@@ -59,6 +64,9 @@ export interface RoomDef {
   level?: number;
   /// Cor do piso, no formato que o Three entende direto.
   floor: string;
+  /// Material visual usado pelo navegador. A cor acima continua sendo o tom de
+  /// segurança caso a textura ainda não tenha carregado.
+  finish: FloorFinish;
   /// Cor de destaque da sala. É ela que acende no friso das paredes e diz de
   /// longe em que cômodo o jogador está. O apagão apaga todas.
   light: string;
@@ -171,24 +179,79 @@ function segmentsFor(room: RoomDef, side: Side): WallBox[] {
   if (cursor < length) spans.push([cursor, length]);
 
   return spans.map(([from, to]) => {
-    if (side === 'north') return { minX: x + from, minZ: z - HALF, maxX: x + to, maxZ: z + HALF };
-    if (side === 'south') return { minX: x + from, minZ: z + d - HALF, maxX: x + to, maxZ: z + d + HALF };
-    if (side === 'west') return { minX: x - HALF, minZ: z + from, maxX: x + HALF, maxZ: z + to };
-    return { minX: x + w - HALF, minZ: z + from, maxX: x + w + HALF, maxZ: z + to };
+    if (side === 'north')
+      return { minX: x + from, minZ: z - HALF, maxX: x + to, maxZ: z + HALF };
+    if (side === 'south')
+      return {
+        minX: x + from,
+        minZ: z + d - HALF,
+        maxX: x + to,
+        maxZ: z + d + HALF,
+      };
+    if (side === 'west')
+      return { minX: x - HALF, minZ: z + from, maxX: x + HALF, maxZ: z + to };
+    return {
+      minX: x + w - HALF,
+      minZ: z + from,
+      maxX: x + w + HALF,
+      maxZ: z + to,
+    };
   });
 }
 
 function buildWalls(rooms: RoomDef[]): WallBox[] {
-  return rooms.flatMap((room) =>
+  const raw = rooms.flatMap((room) =>
     (['north', 'south', 'east', 'west'] as Side[]).flatMap((side) =>
       segmentsFor(room, side).map((box) => ({
         ...box,
         accent: room.light,
         level: room.level ?? 0,
-        style: room.kind === 'terraco' ? ('guarda-corpo' as const) : ('parede' as const),
+        style:
+          room.kind === 'terraco'
+            ? ('guarda-corpo' as const)
+            : ('parede' as const),
       })),
     ),
   );
+
+  // Salas vizinhas descrevem a mesma divisória pelos dois lados. Unir os
+  // trechos coplanares impede duas malhas de brigarem pelo mesmo pixel.
+  const groups = new Map<string, WallBox[]>();
+  for (const box of raw) {
+    const horizontal = box.maxX - box.minX >= box.maxZ - box.minZ;
+    const axis = horizontal
+      ? (box.minZ + box.maxZ) / 2
+      : (box.minX + box.maxX) / 2;
+    const key = `${box.level ?? 0}:${box.style ?? 'parede'}:${horizontal ? 'h' : 'v'}:${axis.toFixed(3)}`;
+    const group = groups.get(key) ?? [];
+    group.push(box);
+    groups.set(key, group);
+  }
+
+  const merged: WallBox[] = [];
+  for (const group of groups.values()) {
+    const horizontal =
+      group[0].maxX - group[0].minX >= group[0].maxZ - group[0].minZ;
+    const sorted = [...group].sort((a, b) =>
+      horizontal ? a.minX - b.minX : a.minZ - b.minZ,
+    );
+    let current = { ...sorted[0] };
+    for (const next of sorted.slice(1)) {
+      const touching = horizontal
+        ? next.minX <= current.maxX + 0.001
+        : next.minZ <= current.maxZ + 0.001;
+      if (touching) {
+        if (horizontal) current.maxX = Math.max(current.maxX, next.maxX);
+        else current.maxZ = Math.max(current.maxZ, next.maxZ);
+      } else {
+        merged.push(current);
+        current = { ...next };
+      }
+    }
+    merged.push(current);
+  }
+
+  return merged;
 }
 
 interface Link {
@@ -196,19 +259,16 @@ interface Link {
   b: string;
 }
 
-/// Duas salas encostadas se abrem uma para a outra na largura inteira do
-/// encosto. Escrever a porta à mão dos dois lados era o que mais dava errado no
-/// mapa antigo: bastava errar meio metro para a porta de um lado bater na
-/// parede do outro, ou para as duas paredes ficarem no mesmo plano brigando por
-/// pixel. Aqui o encosto é medido e vira o vão inteiro, então nenhum dos dois
-/// tem como acontecer, e de quebra a passagem fica larga.
+/// Duas salas encostadas ganham uma porta central de verdade. Abrir a parede na
+/// largura inteira fazia todos os cômodos parecerem baias sem divisória.
 function openLinks(rooms: RoomDef[], links: Link[]) {
   const byId = new Map(rooms.map((room) => [room.id, room]));
 
   for (const link of links) {
     const a = byId.get(link.a);
     const b = byId.get(link.b);
-    if (!a || !b) throw new Error(`Ligação com sala inexistente: ${link.a} + ${link.b}`);
+    if (!a || !b)
+      throw new Error(`Ligação com sala inexistente: ${link.a} + ${link.b}`);
 
     const aSouth = a.rect.z + a.rect.d === b.rect.z;
     const aNorth = b.rect.z + b.rect.d === a.rect.z;
@@ -218,18 +278,40 @@ function openLinks(rooms: RoomDef[], links: Link[]) {
     if (aSouth || aNorth) {
       const from = Math.max(a.rect.x, b.rect.x);
       const to = Math.min(a.rect.x + a.rect.w, b.rect.x + b.rect.w);
-      if (to <= from) throw new Error(`Salas ${a.id} e ${b.id} se tocam sem sobrepor`);
-      a.doors.push({ side: aSouth ? 'south' : 'north', at: from - a.rect.x, width: to - from });
-      b.doors.push({ side: aSouth ? 'north' : 'south', at: from - b.rect.x, width: to - from });
+      if (to <= from)
+        throw new Error(`Salas ${a.id} e ${b.id} se tocam sem sobrepor`);
+      const width = Math.min(3.2, to - from);
+      const opening = from + (to - from - width) / 2;
+      a.doors.push({
+        side: aSouth ? 'south' : 'north',
+        at: opening - a.rect.x,
+        width,
+      });
+      b.doors.push({
+        side: aSouth ? 'north' : 'south',
+        at: opening - b.rect.x,
+        width,
+      });
       continue;
     }
 
     if (aEast || aWest) {
       const from = Math.max(a.rect.z, b.rect.z);
       const to = Math.min(a.rect.z + a.rect.d, b.rect.z + b.rect.d);
-      if (to <= from) throw new Error(`Salas ${a.id} e ${b.id} se tocam sem sobrepor`);
-      a.doors.push({ side: aEast ? 'east' : 'west', at: from - a.rect.z, width: to - from });
-      b.doors.push({ side: aEast ? 'west' : 'east', at: from - b.rect.z, width: to - from });
+      if (to <= from)
+        throw new Error(`Salas ${a.id} e ${b.id} se tocam sem sobrepor`);
+      const width = Math.min(3.2, to - from);
+      const opening = from + (to - from - width) / 2;
+      a.doors.push({
+        side: aEast ? 'east' : 'west',
+        at: opening - a.rect.z,
+        width,
+      });
+      b.doors.push({
+        side: aEast ? 'west' : 'east',
+        at: opening - b.rect.z,
+        width,
+      });
       continue;
     }
 
@@ -237,30 +319,16 @@ function openLinks(rooms: RoomDef[], links: Link[]) {
   }
 }
 
-const CIRCULACAO = '#d6dce7';
-
-function passagem(id: string, x: number, z: number, accent: string): RoomDef {
-  return {
-    id,
-    name: 'Passagem',
-    rect: { x, z, w: 5, d: 5 },
-    kind: 'corredor',
-    floor: CIRCULACAO,
-    light: accent,
-    doors: [],
-  };
-}
-
-/// Dois pavimentos em volta de um salão central. Não existe mais um corredor
-/// reto atravessando o mapa inteiro: toda ala tem pelo menos duas rotas e as
-/// duas escadas ficam em lados opostos do átrio.
+/// Dois pavimentos dentro do mesmo volume. Corredores laterais separam as salas
+/// do átrio, dão quinas para perseguição e evitam o aspecto de tabuleiro aberto.
 const ROOMS: RoomDef[] = [
   {
     id: 'servidores',
     name: 'Sala dos servidores',
     rect: { x: 3, z: 3, w: 20, d: 14 },
     kind: 'sala',
-    floor: '#cbdbe8',
+    floor: '#24384a',
+    finish: 'server',
     light: '#38bdf8',
     doors: [],
   },
@@ -269,7 +337,8 @@ const ROOMS: RoomDef[] = [
     name: 'Open space',
     rect: { x: 23, z: 3, w: 28, d: 14 },
     kind: 'sala',
-    floor: '#e4e9f1',
+    floor: '#334155',
+    finish: 'carpet',
     light: '#38bdf8',
     doors: [],
   },
@@ -278,7 +347,8 @@ const ROOMS: RoomDef[] = [
     name: 'Sala de reunião',
     rect: { x: 51, z: 3, w: 20, d: 14 },
     kind: 'sala',
-    floor: '#eee2cf',
+    floor: '#70513a',
+    finish: 'wood',
     light: '#f6a35c',
     doors: [],
   },
@@ -287,17 +357,39 @@ const ROOMS: RoomDef[] = [
     name: 'Recepção',
     rect: { x: 3, z: 17, w: 16, d: 18 },
     kind: 'sala',
-    floor: '#dfe5ef',
+    floor: '#59616b',
+    finish: 'terrazzo',
     light: '#7aa2f7',
+    doors: [],
+  },
+  {
+    id: 'corredor-oeste',
+    name: 'Corredor oeste',
+    rect: { x: 19, z: 17, w: 8, d: 24 },
+    kind: 'corredor',
+    floor: '#4b5563',
+    finish: 'terrazzo',
+    light: '#60a5fa',
     doors: [],
   },
   {
     id: 'hall-central',
     name: 'Átrio central',
-    rect: { x: 19, z: 17, w: 36, d: 24 },
+    rect: { x: 27, z: 17, w: 20, d: 24 },
     kind: 'sala',
-    floor: '#e6e9ee',
+    floor: '#2f3b4d',
+    finish: 'carpet',
     light: '#93c5fd',
+    doors: [],
+  },
+  {
+    id: 'corredor-leste',
+    name: 'Corredor leste',
+    rect: { x: 47, z: 17, w: 8, d: 24 },
+    kind: 'corredor',
+    floor: '#4b5563',
+    finish: 'terrazzo',
+    light: '#60a5fa',
     doors: [],
   },
   {
@@ -305,7 +397,8 @@ const ROOMS: RoomDef[] = [
     name: 'Copa',
     rect: { x: 55, z: 17, w: 16, d: 18 },
     kind: 'sala',
-    floor: '#dcecdf',
+    floor: '#40594b',
+    finish: 'pantry',
     light: '#4ade80',
     doors: [],
   },
@@ -314,17 +407,29 @@ const ROOMS: RoomDef[] = [
     name: 'Garagem',
     rect: { x: 3, z: 35, w: 16, d: 20 },
     kind: 'sala',
-    floor: '#d4d7de',
+    floor: '#4b4f56',
+    finish: 'concrete',
     light: '#fb923c',
+    doors: [],
+  },
+  {
+    id: 'dispensa',
+    name: 'Dispensa',
+    rect: { x: 55, z: 35, w: 16, d: 10 },
+    kind: 'sala',
+    floor: '#46594d',
+    finish: 'pantry',
+    light: '#facc15',
     doors: [],
   },
   {
     id: 'deposito',
     name: 'Depósito',
-    rect: { x: 55, z: 35, w: 16, d: 20 },
+    rect: { x: 55, z: 45, w: 16, d: 10 },
     kind: 'sala',
-    floor: '#ebe4d0',
-    light: '#facc15',
+    floor: '#504b43',
+    finish: 'concrete',
+    light: '#f59e0b',
     doors: [],
   },
 
@@ -335,7 +440,8 @@ const ROOMS: RoomDef[] = [
     rect: { x: 3, z: 3, w: 20, d: 14 },
     kind: 'sala',
     level: 1,
-    floor: '#e6e0f0',
+    floor: '#443c55',
+    finish: 'carpet',
     light: '#c084fc',
     doors: [],
   },
@@ -345,7 +451,8 @@ const ROOMS: RoomDef[] = [
     rect: { x: 23, z: 3, w: 28, d: 14 },
     kind: 'sala',
     level: 1,
-    floor: '#d9e7f2',
+    floor: '#263a4a',
+    finish: 'server',
     light: '#22d3ee',
     doors: [],
   },
@@ -355,7 +462,8 @@ const ROOMS: RoomDef[] = [
     rect: { x: 51, z: 3, w: 20, d: 14 },
     kind: 'sala',
     level: 1,
-    floor: '#eadfce',
+    floor: '#684a35',
+    finish: 'wood',
     light: '#f59e0b',
     doors: [],
   },
@@ -365,17 +473,41 @@ const ROOMS: RoomDef[] = [
     rect: { x: 3, z: 17, w: 16, d: 18 },
     kind: 'sala',
     level: 1,
-    floor: '#dce8e4',
+    floor: '#354b45',
+    finish: 'carpet',
     light: '#34d399',
+    doors: [],
+  },
+  {
+    id: 'corredor-superior-oeste',
+    name: 'Corredor superior oeste',
+    rect: { x: 19, z: 17, w: 8, d: 24 },
+    kind: 'corredor',
+    level: 1,
+    floor: '#485366',
+    finish: 'terrazzo',
+    light: '#818cf8',
     doors: [],
   },
   {
     id: 'hall-superior',
     name: 'Mezanino',
-    rect: { x: 19, z: 17, w: 36, d: 24 },
+    rect: { x: 27, z: 17, w: 20, d: 24 },
     kind: 'sala',
     level: 1,
-    floor: '#dfe5ef',
+    floor: '#30394b',
+    finish: 'carpet',
+    light: '#818cf8',
+    doors: [],
+  },
+  {
+    id: 'corredor-superior-leste',
+    name: 'Corredor superior leste',
+    rect: { x: 47, z: 17, w: 8, d: 24 },
+    kind: 'corredor',
+    level: 1,
+    floor: '#485366',
+    finish: 'terrazzo',
     light: '#818cf8',
     doors: [],
   },
@@ -385,7 +517,8 @@ const ROOMS: RoomDef[] = [
     rect: { x: 55, z: 17, w: 16, d: 38 },
     kind: 'terraco',
     level: 1,
-    floor: '#b8c4bf',
+    floor: '#565b5d',
+    finish: 'concrete',
     light: '#86efac',
     doors: [],
   },
@@ -395,26 +528,32 @@ const ROOMS: RoomDef[] = [
     rect: { x: 3, z: 35, w: 16, d: 20 },
     kind: 'sala',
     level: 1,
-    floor: '#e6dfd4',
+    floor: '#594737',
+    finish: 'wood',
     light: '#f0abfc',
     doors: [],
   },
 ];
 
 const LINKS: Link[] = [
-  { a: 'servidores', b: 'hall-central' },
+  { a: 'servidores', b: 'corredor-oeste' },
   { a: 'openspace', b: 'hall-central' },
-  { a: 'reuniao', b: 'hall-central' },
-  { a: 'recepcao', b: 'hall-central' },
-  { a: 'copa', b: 'hall-central' },
-  { a: 'garagem', b: 'hall-central' },
-  { a: 'deposito', b: 'hall-central' },
-  { a: 'arquivo', b: 'hall-superior' },
+  { a: 'reuniao', b: 'corredor-leste' },
+  { a: 'recepcao', b: 'corredor-oeste' },
+  { a: 'corredor-oeste', b: 'hall-central' },
+  { a: 'hall-central', b: 'corredor-leste' },
+  { a: 'copa', b: 'corredor-leste' },
+  { a: 'garagem', b: 'corredor-oeste' },
+  { a: 'dispensa', b: 'corredor-leste' },
+  { a: 'dispensa', b: 'deposito' },
+  { a: 'arquivo', b: 'corredor-superior-oeste' },
   { a: 'operacoes', b: 'hall-superior' },
-  { a: 'chefe', b: 'hall-superior' },
-  { a: 'lounge', b: 'hall-superior' },
-  { a: 'terraco', b: 'hall-superior' },
-  { a: 'conselho', b: 'hall-superior' },
+  { a: 'chefe', b: 'corredor-superior-leste' },
+  { a: 'lounge', b: 'corredor-superior-oeste' },
+  { a: 'corredor-superior-oeste', b: 'hall-superior' },
+  { a: 'hall-superior', b: 'corredor-superior-leste' },
+  { a: 'terraco', b: 'corredor-superior-leste' },
+  { a: 'conselho', b: 'corredor-superior-oeste' },
 ];
 
 openLinks(ROOMS, LINKS);
@@ -521,7 +660,8 @@ function buildProps(): PropDef[] {
       for (let column = 0; column < 4; column += 1) {
         const x = 27 + column * 6.2;
         const z = 6 + row * 6;
-        for (const item of deskCluster(x, z, row ? Math.PI : 0)) props.push({ ...item, level });
+        for (const item of deskCluster(x, z, row ? Math.PI : 0))
+          props.push({ ...item, level });
       }
     }
   }
@@ -529,28 +669,148 @@ function buildProps(): PropDef[] {
 }
 
 const TASK_SPOTS: TaskSpot[] = [
-  { id: 'rack-a', kind: 'rack', room: 'servidores', label: 'Religar o rack principal', x: 8, z: 8 },
-  { id: 'rack-b', kind: 'rack', room: 'servidores', label: 'Trocar o disco do backup', x: 17, z: 12 },
-  { id: 'cabos-a', kind: 'cabos', room: 'servidores', label: 'Refazer o cabeamento', x: 12, z: 14.5 },
-  { id: 'senha-a', kind: 'senha', room: 'openspace', label: 'Destravar a estação 3', x: 33.2, z: 4.5 },
-  { id: 'senha-b', kind: 'senha', room: 'openspace', label: 'Reiniciar a estação 7', x: 47.2, z: 12.8 },
-  { id: 'cafe-a', kind: 'cafe', room: 'copa', label: 'Calibrar a cafeteira', x: 67, z: 20 },
-  { id: 'estoque-a', kind: 'estoque', room: 'copa', label: 'Repor a máquina de venda', x: 67, z: 24 },
-  { id: 'senha-c', kind: 'senha', room: 'recepcao', label: 'Fechar o caixa da recepção', x: 10.5, z: 22.2 },
-  { id: 'estoque-b', kind: 'estoque', room: 'deposito', label: 'Conferir o inventário', x: 63, z: 48 },
-  { id: 'cabos-c', kind: 'cabos', room: 'garagem', label: 'Recarregar o carro da empresa', x: 8, z: 42.5 },
-  { id: 'arquivo-a', kind: 'arquivo', room: 'arquivo', label: 'Arquivar os contratos', x: 7, z: 8, level: 1 },
-  { id: 'arquivo-b', kind: 'arquivo', room: 'arquivo', label: 'Separar os documentos sigilosos', x: 16, z: 14, level: 1 },
-  { id: 'senha-d', kind: 'senha', room: 'operacoes', label: 'Autorizar o painel de operações', x: 41, z: 12.8, level: 1 },
-  { id: 'senha-chefe', kind: 'senha', room: 'chefe', label: 'Liberar o terminal do chefe', x: 63, z: 8, level: 1 },
-  { id: 'cabos-conselho', kind: 'cabos', room: 'conselho', label: 'Ligar a tela do conselho', x: 11, z: 52.5, level: 1 },
+  {
+    id: 'rack-a',
+    kind: 'rack',
+    room: 'servidores',
+    label: 'Religar o rack principal',
+    x: 8,
+    z: 8,
+  },
+  {
+    id: 'rack-b',
+    kind: 'rack',
+    room: 'servidores',
+    label: 'Trocar o disco do backup',
+    x: 17,
+    z: 12,
+  },
+  {
+    id: 'cabos-a',
+    kind: 'cabos',
+    room: 'servidores',
+    label: 'Refazer o cabeamento',
+    x: 12,
+    z: 14.5,
+  },
+  {
+    id: 'senha-a',
+    kind: 'senha',
+    room: 'openspace',
+    label: 'Destravar a estação 3',
+    x: 33.2,
+    z: 4.5,
+  },
+  {
+    id: 'senha-b',
+    kind: 'senha',
+    room: 'openspace',
+    label: 'Reiniciar a estação 7',
+    x: 47.2,
+    z: 12.8,
+  },
+  {
+    id: 'cafe-a',
+    kind: 'cafe',
+    room: 'copa',
+    label: 'Calibrar a cafeteira',
+    x: 67,
+    z: 20,
+  },
+  {
+    id: 'estoque-a',
+    kind: 'estoque',
+    room: 'copa',
+    label: 'Repor a máquina de venda',
+    x: 67,
+    z: 24,
+  },
+  {
+    id: 'estoque-dispensa',
+    kind: 'estoque',
+    room: 'dispensa',
+    label: 'Conferir os mantimentos',
+    x: 63,
+    z: 42.5,
+  },
+  {
+    id: 'senha-c',
+    kind: 'senha',
+    room: 'recepcao',
+    label: 'Fechar o caixa da recepção',
+    x: 10.5,
+    z: 22.2,
+  },
+  {
+    id: 'estoque-b',
+    kind: 'estoque',
+    room: 'deposito',
+    label: 'Conferir o inventário',
+    x: 63,
+    z: 48,
+  },
+  {
+    id: 'cabos-c',
+    kind: 'cabos',
+    room: 'garagem',
+    label: 'Recarregar o carro da empresa',
+    x: 8,
+    z: 42.5,
+  },
+  {
+    id: 'arquivo-a',
+    kind: 'arquivo',
+    room: 'arquivo',
+    label: 'Arquivar os contratos',
+    x: 7,
+    z: 8,
+    level: 1,
+  },
+  {
+    id: 'arquivo-b',
+    kind: 'arquivo',
+    room: 'arquivo',
+    label: 'Separar os documentos sigilosos',
+    x: 16,
+    z: 14,
+    level: 1,
+  },
+  {
+    id: 'senha-d',
+    kind: 'senha',
+    room: 'operacoes',
+    label: 'Autorizar o painel de operações',
+    x: 41,
+    z: 12.8,
+    level: 1,
+  },
+  {
+    id: 'senha-chefe',
+    kind: 'senha',
+    room: 'chefe',
+    label: 'Liberar o terminal do chefe',
+    x: 63,
+    z: 8,
+    level: 1,
+  },
+  {
+    id: 'cabos-conselho',
+    kind: 'cabos',
+    room: 'conselho',
+    label: 'Ligar a tela do conselho',
+    x: 11,
+    z: 52.5,
+    level: 1,
+  },
 ];
 
 /// Quanto cada móvel ocupa do chão, e se ele chega alto o bastante para
 /// esconder alguém atrás. Este tamanho é a lei: o servidor barra o passo por
 /// ele e o navegador desenha a peça em cima dele. Móvel que não aparece aqui é
 /// atravessável de propósito (o monitor fica em cima da mesa, o cone se chuta).
-const FOOTPRINTS: Partial<Record<PropKind, { w: number; d: number; tall?: boolean }>> = {
+const FOOTPRINTS: Partial<
+  Record<PropKind, { w: number; d: number; tall?: boolean }>
+> = {
   desk: { w: 1.7, d: 0.85 },
   chair: { w: 0.55, d: 0.55 },
   plant: { w: 0.52, d: 0.52 },
@@ -594,23 +854,187 @@ function buildObstacles(props: PropDef[]): WallBox[] {
 }
 
 const VENTS: VentDef[] = [
-  { id: 'vent-servidores', room: 'servidores', x: 21, z: 15, links: ['vent-garagem', 'vent-operacoes'] },
-  { id: 'vent-garagem', room: 'garagem', x: 17, z: 53, links: ['vent-servidores', 'vent-terraco'] },
-  { id: 'vent-operacoes', room: 'operacoes', x: 49, z: 15, level: 1, links: ['vent-servidores', 'vent-chefe'] },
-  { id: 'vent-chefe', room: 'chefe', x: 69, z: 15, level: 1, links: ['vent-operacoes', 'vent-terraco'] },
-  { id: 'vent-terraco', room: 'terraco', x: 69, z: 53, level: 1, links: ['vent-chefe', 'vent-garagem'] },
+  {
+    id: 'vent-servidores',
+    room: 'servidores',
+    x: 21,
+    z: 15,
+    links: ['vent-garagem', 'vent-operacoes'],
+  },
+  {
+    id: 'vent-garagem',
+    room: 'garagem',
+    x: 17,
+    z: 53,
+    links: ['vent-servidores', 'vent-terraco'],
+  },
+  {
+    id: 'vent-operacoes',
+    room: 'operacoes',
+    x: 49,
+    z: 15,
+    level: 1,
+    links: ['vent-servidores', 'vent-chefe'],
+  },
+  {
+    id: 'vent-chefe',
+    room: 'chefe',
+    x: 69,
+    z: 15,
+    level: 1,
+    links: ['vent-operacoes', 'vent-terraco'],
+  },
+  {
+    id: 'vent-terraco',
+    room: 'terraco',
+    x: 69,
+    z: 53,
+    level: 1,
+    links: ['vent-chefe', 'vent-garagem'],
+  },
 ];
 
 const STAIRS: StairDef[] = [
-  { id: 'escada-oeste-terreo', level: 0, x: 24, z: 22, rot: 0, targetLevel: 1, targetX: 24, targetZ: 27 },
-  { id: 'escada-oeste-superior', level: 1, x: 24, z: 22, rot: 0, targetLevel: 0, targetX: 24, targetZ: 27 },
-  { id: 'escada-leste-terreo', level: 0, x: 50, z: 36, rot: Math.PI, targetLevel: 1, targetX: 50, targetZ: 31 },
-  { id: 'escada-leste-superior', level: 1, x: 50, z: 36, rot: Math.PI, targetLevel: 0, targetX: 50, targetZ: 31 },
+  {
+    id: 'escada-oeste-terreo',
+    level: 0,
+    x: 23,
+    z: 28,
+    rot: 0,
+    targetLevel: 1,
+    targetX: 23,
+    targetZ: 22,
+  },
+  {
+    id: 'escada-oeste-superior',
+    level: 1,
+    x: 23,
+    z: 22,
+    rot: Math.PI,
+    targetLevel: 0,
+    targetX: 23,
+    targetZ: 28,
+  },
+  {
+    id: 'escada-leste-terreo',
+    level: 0,
+    x: 51,
+    z: 30,
+    rot: Math.PI,
+    targetLevel: 1,
+    targetX: 51,
+    targetZ: 36,
+  },
+  {
+    id: 'escada-leste-superior',
+    level: 1,
+    x: 51,
+    z: 36,
+    rot: 0,
+    targetLevel: 0,
+    targetX: 51,
+    targetZ: 30,
+  },
 ];
+
+function buildStairBarriers(stairs: StairDef[]): WallBox[] {
+  const barriers: WallBox[] = [];
+  for (const stair of stairs.filter((item) => item.targetLevel > item.level)) {
+    const vertical =
+      Math.abs(stair.targetZ - stair.z) >= Math.abs(stair.targetX - stair.x);
+    const minX = Math.min(stair.x, stair.targetX);
+    const maxX = Math.max(stair.x, stair.targetX);
+    const minZ = Math.min(stair.z, stair.targetZ);
+    const maxZ = Math.max(stair.z, stair.targetZ);
+    const side = 1.48;
+    const rail = 0.12;
+    const end = 0.14;
+
+    for (const level of [stair.level, stair.targetLevel]) {
+      if (vertical) {
+        barriers.push(
+          {
+            minX: stair.x - side - rail,
+            maxX: stair.x - side + rail,
+            minZ: minZ - 0.2,
+            maxZ: maxZ + 0.2,
+            level,
+          },
+          {
+            minX: stair.x + side - rail,
+            maxX: stair.x + side + rail,
+            minZ: minZ - 0.2,
+            maxZ: maxZ + 0.2,
+            level,
+          },
+        );
+      } else {
+        barriers.push(
+          {
+            minX: minX - 0.2,
+            maxX: maxX + 0.2,
+            minZ: stair.z - side - rail,
+            maxZ: stair.z - side + rail,
+            level,
+          },
+          {
+            minX: minX - 0.2,
+            maxX: maxX + 0.2,
+            minZ: stair.z + side - rail,
+            maxZ: stair.z + side + rail,
+            level,
+          },
+        );
+      }
+    }
+
+    // Embaixo fecha o espaço sob o último degrau; em cima, a borda oposta ao
+    // desembarque recebe guarda-corpo. As duas entradas continuam livres.
+    if (vertical) {
+      barriers.push(
+        {
+          minX: stair.x - side,
+          maxX: stair.x + side,
+          minZ: stair.targetZ - end,
+          maxZ: stair.targetZ + end,
+          level: stair.level,
+        },
+        {
+          minX: stair.x - side,
+          maxX: stair.x + side,
+          minZ: stair.z - end,
+          maxZ: stair.z + end,
+          level: stair.targetLevel,
+        },
+      );
+    } else {
+      barriers.push(
+        {
+          minX: stair.targetX - end,
+          maxX: stair.targetX + end,
+          minZ: stair.z - side,
+          maxZ: stair.z + side,
+          level: stair.level,
+        },
+        {
+          minX: stair.x - end,
+          maxX: stair.x + end,
+          minZ: stair.z - side,
+          maxZ: stair.z + side,
+          level: stair.targetLevel,
+        },
+      );
+    }
+  }
+  return barriers;
+}
 
 const PROPS_BUILT = buildProps();
 const WALLS_BUILT = buildWalls(ROOMS);
-const OBSTACLES_BUILT = buildObstacles(PROPS_BUILT);
+const OBSTACLES_BUILT = [
+  ...buildObstacles(PROPS_BUILT),
+  ...buildStairBarriers(STAIRS),
+];
 
 export const OFFICE_MAP: GameMap = {
   name: 'Escritório Timbas',
@@ -645,7 +1069,10 @@ export const COLLIDERS: WallBox[] = [...WALLS_BUILT, ...OBSTACLES_BUILT];
 
 /// O que tapa a vista: parede e móvel alto. A mesa fica de fora porque quem
 /// está atrás dela continua à vista.
-export const SIGHT_BLOCKERS: WallBox[] = [...WALLS_BUILT, ...OBSTACLES_BUILT.filter((box) => box.tall)];
+export const SIGHT_BLOCKERS: WallBox[] = [
+  ...WALLS_BUILT,
+  ...OBSTACLES_BUILT.filter((box) => box.tall),
+];
 
 export function collidersFor(level: number): WallBox[] {
   return COLLIDERS.filter((box) => (box.level ?? 0) === level);
