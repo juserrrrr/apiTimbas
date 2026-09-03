@@ -47,9 +47,12 @@ export interface Door {
 export type RoomKind = 'sala' | 'corredor' | 'terraco';
 export type FloorFinish =
   | 'carpet'
+  | 'patternedCarpet'
   | 'wood'
+  | 'parquet'
   | 'server'
   | 'terrazzo'
+  | 'vinyl'
   | 'pantry'
   | 'concrete';
 
@@ -376,7 +379,7 @@ const ROOMS: RoomDef[] = [
     rect: { x: 19, z: 17, w: 8, d: 24 },
     kind: 'corredor',
     floor: '#8794a5',
-    finish: 'terrazzo',
+    finish: 'vinyl',
     light: '#60a5fa',
     doors: [],
   },
@@ -386,7 +389,7 @@ const ROOMS: RoomDef[] = [
     rect: { x: 27, z: 17, w: 20, d: 24 },
     kind: 'sala',
     floor: '#677b95',
-    finish: 'carpet',
+    finish: 'patternedCarpet',
     light: '#93c5fd',
     doors: [],
   },
@@ -396,7 +399,7 @@ const ROOMS: RoomDef[] = [
     rect: { x: 47, z: 17, w: 8, d: 24 },
     kind: 'corredor',
     floor: '#8794a5',
-    finish: 'terrazzo',
+    finish: 'vinyl',
     light: '#60a5fa',
     doors: [],
   },
@@ -471,7 +474,7 @@ const ROOMS: RoomDef[] = [
     kind: 'sala',
     level: 1,
     floor: '#9a704e',
-    finish: 'wood',
+    finish: 'parquet',
     light: '#f59e0b',
     doors: [],
   },
@@ -482,7 +485,7 @@ const ROOMS: RoomDef[] = [
     kind: 'sala',
     level: 1,
     floor: '#5e8378',
-    finish: 'carpet',
+    finish: 'patternedCarpet',
     light: '#34d399',
     doors: [],
   },
@@ -493,7 +496,7 @@ const ROOMS: RoomDef[] = [
     kind: 'corredor',
     level: 1,
     floor: '#75849a',
-    finish: 'terrazzo',
+    finish: 'vinyl',
     light: '#818cf8',
     doors: [],
   },
@@ -504,7 +507,7 @@ const ROOMS: RoomDef[] = [
     kind: 'sala',
     level: 1,
     floor: '#687996',
-    finish: 'carpet',
+    finish: 'patternedCarpet',
     light: '#818cf8',
     doors: [],
   },
@@ -515,7 +518,7 @@ const ROOMS: RoomDef[] = [
     kind: 'corredor',
     level: 1,
     floor: '#75849a',
-    finish: 'terrazzo',
+    finish: 'vinyl',
     light: '#818cf8',
     doors: [],
   },
@@ -537,7 +540,7 @@ const ROOMS: RoomDef[] = [
     kind: 'sala',
     level: 1,
     floor: '#8e7058',
-    finish: 'wood',
+    finish: 'parquet',
     light: '#f0abfc',
     doors: [],
   },
