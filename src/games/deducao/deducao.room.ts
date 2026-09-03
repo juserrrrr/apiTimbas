@@ -7,7 +7,7 @@ import {
 import { Role as UserRole } from '../../enums/role.enum';
 import { gameDeps } from '../game-deps';
 import { ChatMessage, CorpseState, DeducaoState, PlayerState } from './deducao.state';
-import { OFFICE_MAP, collidersFor, sightBlockersFor, taskSpotById, ventById } from './map';
+import { MEETING_SEATS, OFFICE_MAP, collidersFor, sightBlockersFor, taskSpotById, ventById } from './map';
 import { distance, isWithin, moveTowards, PLAYER_RADIUS } from './movement';
 import {
   DEFAULT_CONFIG,
@@ -314,7 +314,7 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
 
     if (player.alive && !player.inVent && now >= seat.stairReadyAt) {
       const stair = OFFICE_MAP.stairs.find(
-        (candidate) => candidate.level === player.level && distance(player, candidate) <= 0.95,
+        (candidate) => candidate.level === player.level && distance(player, candidate) <= 1.15,
       );
       if (stair) {
         player.level = stair.targetLevel;
@@ -322,7 +322,7 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
         player.z = stair.targetZ;
         player.moving = false;
         seat.activeTask = null;
-        seat.stairReadyAt = now + 900;
+        seat.stairReadyAt = now + 1_450;
         client.send('andar', { level: player.level });
       }
     }
@@ -555,7 +555,7 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
       player.inVent = false;
       player.moving = false;
     }
-    this.teleportToSpawns();
+    this.teleportToMeetingSeats();
     this.deliverReadings();
 
     this.system(
@@ -649,6 +649,7 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
       else if (!this.state.meeting.voting && now >= this.meetingDeadline) {
         this.closeMeeting();
         if (!this.checkEnd()) {
+          this.teleportToSpawns();
           this.state.phase = 'jogando';
           this.nextBlackoutAt = now + this.state.config.blackoutEverySeconds * 1000;
         }
@@ -725,6 +726,19 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
       player.x = spawn.x;
       player.z = spawn.z;
       player.level = spawn.level ?? 0;
+      player.moving = false;
+      index += 1;
+    }
+  }
+
+  private teleportToMeetingSeats() {
+    let index = 0;
+    for (const player of this.state.players.values()) {
+      const seat = MEETING_SEATS[index % MEETING_SEATS.length];
+      player.x = seat.x;
+      player.z = seat.z;
+      player.level = seat.level;
+      player.dir = seat.dir;
       player.moving = false;
       index += 1;
     }

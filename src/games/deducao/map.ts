@@ -81,6 +81,7 @@ export type PropKind =
   | 'sofa'
   | 'counter'
   | 'meetingTable'
+  | 'cafeTable'
   | 'rack'
   | 'locker'
   | 'shelf'
@@ -91,7 +92,8 @@ export type PropKind =
   | 'car'
   | 'cone'
   | 'sink'
-  | 'vending';
+  | 'vending'
+  | 'kitchen';
 
 export interface PropDef {
   kind: PropKind;
@@ -559,10 +561,14 @@ const LINKS: Link[] = [
 openLinks(ROOMS, LINKS);
 
 function deskCluster(x: number, z: number, rot: number): PropDef[] {
+  const reversed = Math.abs(Math.cos(rot) + 1) < 0.01;
+  const screenZ = z + (reversed ? 0.34 : -0.34);
+  const chairZ = z + (reversed ? -1.28 : 1.28);
   return [
     { kind: 'desk', x, z, rot },
-    { kind: 'monitor', x, z: z - 0.35, rot },
-    { kind: 'chair', x, z: z + 1.3, rot },
+    { kind: 'monitor', x: x - 0.34, z: screenZ, rot },
+    { kind: 'monitor', x: x + 0.34, z: screenZ, rot },
+    { kind: 'chair', x, z: chairZ, rot },
   ];
 }
 
@@ -578,8 +584,7 @@ function buildProps(): PropDef[] {
     { kind: 'sofa', x: 45, z: 29, rot: -Math.PI / 2 },
     { kind: 'plant', x: 21, z: 19, rot: 0 },
     { kind: 'plant', x: 53, z: 39, rot: 0 },
-    { kind: 'coffee', x: 37, z: 20, rot: 0 },
-    { kind: 'printer', x: 37, z: 38, rot: Math.PI },
+    { kind: 'printer', x: 49, z: 15, rot: Math.PI },
 
     // Térreo: sala dos servidores
     { kind: 'rack', x: 6, z: 6, rot: 0 },
@@ -592,18 +597,23 @@ function buildProps(): PropDef[] {
     { kind: 'rack', x: 16, z: 13, rot: Math.PI },
 
     // Térreo: reunião e copa
-    { kind: 'meetingTable', x: 61, z: 9, rot: 0 },
-    { kind: 'chair', x: 59.4, z: 7.6, rot: 0 },
-    { kind: 'chair', x: 61, z: 7.6, rot: 0 },
-    { kind: 'chair', x: 62.6, z: 7.6, rot: 0 },
-    { kind: 'chair', x: 59.4, z: 10.4, rot: Math.PI },
-    { kind: 'chair', x: 61, z: 10.4, rot: Math.PI },
-    { kind: 'chair', x: 62.6, z: 10.4, rot: Math.PI },
+    { kind: 'meetingTable', x: 61, z: 9.5, rot: 0 },
+    ...[58, 59.5, 61, 62.5, 64].flatMap((x) => [
+      { kind: 'chair' as const, x, z: 7.15, rot: 0 },
+      { kind: 'chair' as const, x, z: 11.85, rot: Math.PI },
+    ]),
+    { kind: 'chair', x: 56.3, z: 9.5, rot: Math.PI / 2 },
+    { kind: 'chair', x: 65.7, z: 9.5, rot: -Math.PI / 2 },
     { kind: 'whiteboard', x: 61, z: 4.1, rot: 0 },
-    { kind: 'coffee', x: 68.5, z: 20, rot: -Math.PI / 2 },
-    { kind: 'vending', x: 68.5, z: 24, rot: -Math.PI / 2 },
-    { kind: 'sink', x: 57, z: 20, rot: Math.PI / 2 },
-    { kind: 'meetingTable', x: 63, z: 30, rot: 0 },
+    { kind: 'kitchen', x: 70.1, z: 21, rot: -Math.PI / 2 },
+    { kind: 'coffee', x: 68.6, z: 19.2, rot: -Math.PI / 2 },
+    { kind: 'vending', x: 69.7, z: 25.1, rot: -Math.PI / 2 },
+    { kind: 'cafeTable', x: 59.5, z: 21, rot: 0 },
+    { kind: 'chair', x: 57.9, z: 21, rot: Math.PI / 2 },
+    { kind: 'chair', x: 61.1, z: 21, rot: -Math.PI / 2 },
+    { kind: 'cafeTable', x: 63.5, z: 31, rot: 0 },
+    { kind: 'chair', x: 61.9, z: 31, rot: Math.PI / 2 },
+    { kind: 'chair', x: 65.1, z: 31, rot: -Math.PI / 2 },
     { kind: 'plant', x: 69, z: 33, rot: 0 },
 
     // Térreo: garagem e depósito
@@ -637,13 +647,13 @@ function buildProps(): PropDef[] {
     { kind: 'monitor', x: 61, z: 7.65, rot: 0, level: 1 },
     { kind: 'chair', x: 61, z: 9.3, rot: 0, level: 1 },
     { kind: 'sofa', x: 55, z: 13.5, rot: Math.PI / 2, level: 1 },
-    { kind: 'meetingTable', x: 67, z: 12.5, rot: Math.PI / 2, level: 1 },
+    { kind: 'cafeTable', x: 67, z: 12.5, rot: Math.PI / 2, level: 1 },
     { kind: 'plant', x: 69, z: 5, rot: 0, level: 1 },
     { kind: 'whiteboard', x: 61, z: 4.1, rot: 0, level: 1 },
 
     // Segundo andar: terraço e conselho
-    { kind: 'meetingTable', x: 63, z: 24, rot: Math.PI / 2, level: 1 },
-    { kind: 'meetingTable', x: 63, z: 36, rot: Math.PI / 2, level: 1 },
+    { kind: 'cafeTable', x: 63, z: 24, rot: Math.PI / 2, level: 1 },
+    { kind: 'cafeTable', x: 63, z: 36, rot: Math.PI / 2, level: 1 },
     { kind: 'sofa', x: 66, z: 48, rot: Math.PI, level: 1 },
     { kind: 'plant', x: 57, z: 20, rot: 0, level: 1 },
     { kind: 'plant', x: 69, z: 31, rot: 0, level: 1 },
@@ -714,8 +724,8 @@ const TASK_SPOTS: TaskSpot[] = [
     kind: 'cafe',
     room: 'copa',
     label: 'Calibrar a cafeteira',
-    x: 67,
-    z: 20,
+    x: 67.5,
+    z: 19.2,
   },
   {
     id: 'estoque-a',
@@ -816,7 +826,8 @@ const FOOTPRINTS: Partial<
   plant: { w: 0.52, d: 0.52 },
   sofa: { w: 2.0, d: 0.9 },
   counter: { w: 4.5, d: 1.1 },
-  meetingTable: { w: 3.8, d: 1.7 },
+  meetingTable: { w: 6.6, d: 2.45 },
+  cafeTable: { w: 1.35, d: 1.35 },
   rack: { w: 0.8, d: 1.0, tall: true },
   locker: { w: 1.1, d: 0.55, tall: true },
   shelf: { w: 2.6, d: 0.6, tall: true },
@@ -827,6 +838,7 @@ const FOOTPRINTS: Partial<
   car: { w: 2.0, d: 4.3, tall: true },
   sink: { w: 1.7, d: 0.6 },
   vending: { w: 1.1, d: 0.75, tall: true },
+  kitchen: { w: 4.2, d: 0.72, tall: true },
 };
 
 /// O móvel girado continua sendo barrado por uma caixa alinhada aos eixos: é a
@@ -935,6 +947,17 @@ const STAIRS: StairDef[] = [
     targetX: 51,
     targetZ: 30,
   },
+];
+
+/// Cadeiras da sala de reunião. A direção já aponta para o centro da mesa,
+/// então a câmera e o corpo chegam olhando para a discussão.
+export const MEETING_SEATS = [
+  ...[58, 59.5, 61, 62.5, 64].flatMap((x) => [
+    { x, z: 7.15, dir: 0, level: 0 },
+    { x, z: 11.85, dir: Math.PI, level: 0 },
+  ]),
+  { x: 56.3, z: 9.5, dir: Math.PI / 2, level: 0 },
+  { x: 65.7, z: 9.5, dir: -Math.PI / 2, level: 0 },
 ];
 
 function buildStairBarriers(stairs: StairDef[]): WallBox[] {
