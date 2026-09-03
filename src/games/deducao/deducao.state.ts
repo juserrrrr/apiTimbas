@@ -72,7 +72,7 @@ export class ConfigState extends Schema {
   @type('number') tasksPerPlayer = 4;
   @type('number') killCooldownMs = 25_000;
   @type('number') killRange = 2.2;
-  @type('number') visionRange = 11;
+  @type('number') visionRange = 13;
   @type('number') meetingSeconds = 45;
   @type('number') voteSeconds = 30;
   @type('boolean') revealRoleOnEject = true;

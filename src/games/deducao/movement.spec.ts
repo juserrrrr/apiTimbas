@@ -62,6 +62,74 @@ describe('o escritório', () => {
     }
   });
 
+  it('deixa toda sala alcançável a pé desde o nascimento', () => {
+    // As salas viraram ilhas separadas por vazio, então uma passagem fora do
+    // lugar não deixa mais um buraco visível: deixa um cômodo mudo, que só
+    // aparece quando alguém recebe tarefa lá e não consegue chegar. Este
+    // caminhamento anda de meio em meio metro pelo mapa e cobra que todas as
+    // salas apareçam a partir do ponto onde os jogadores nascem.
+    const STEP = 0.5;
+    const { x: originX, z: originZ, w, d } = OFFICE_MAP.bounds;
+    const columns = Math.round(w / STEP);
+    const rows = Math.round(d / STEP);
+    const key = (column: number, row: number) => row * columns + column;
+
+    const walkable = (column: number, row: number) => {
+      const point = { x: originX + column * STEP, z: originZ + row * STEP };
+      const resolved = resolveCollisions(point, OFFICE_MAP.walls);
+      return Math.abs(resolved.x - point.x) < 1e-9 && Math.abs(resolved.z - point.z) < 1e-9;
+    };
+
+    const seen = new Set<number>();
+    const queue: [number, number][] = [];
+    for (const spawn of OFFICE_MAP.spawns) {
+      const column = Math.round((spawn.x - originX) / STEP);
+      const row = Math.round((spawn.z - originZ) / STEP);
+      if (seen.has(key(column, row))) continue;
+      seen.add(key(column, row));
+      queue.push([column, row]);
+    }
+
+    while (queue.length > 0) {
+      const [column, row] = queue.pop()!;
+      for (const [dx, dz] of [
+        [1, 0],
+        [-1, 0],
+        [0, 1],
+        [0, -1],
+      ]) {
+        const nextColumn = column + dx;
+        const nextRow = row + dz;
+        if (nextColumn < 0 || nextRow < 0 || nextColumn > columns || nextRow > rows) continue;
+        if (seen.has(key(nextColumn, nextRow))) continue;
+        if (!walkable(nextColumn, nextRow)) continue;
+        seen.add(key(nextColumn, nextRow));
+        queue.push([nextColumn, nextRow]);
+      }
+    }
+
+    const reached = new Set<string>();
+    for (const cell of seen) {
+      const column = cell % columns;
+      const row = (cell - column) / columns;
+      const x = originX + column * STEP;
+      const z = originZ + row * STEP;
+      for (const room of OFFICE_MAP.rooms) {
+        if (
+          x >= room.rect.x &&
+          x <= room.rect.x + room.rect.w &&
+          z >= room.rect.z &&
+          z <= room.rect.z + room.rect.d
+        ) {
+          reached.add(room.id);
+        }
+      }
+    }
+
+    const ilhadas = OFFICE_MAP.rooms.filter((room) => !reached.has(room.id)).map((room) => room.id);
+    expect(ilhadas).toEqual([]);
+  });
+
   it('liga os dutos nos dois sentidos', () => {
     for (const vent of OFFICE_MAP.vents) {
       for (const link of vent.links) {

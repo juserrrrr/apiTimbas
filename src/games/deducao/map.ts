@@ -4,6 +4,12 @@
 /// JSON para desenhar a cena. Duas cópias do mapa viravam duas verdades.
 ///
 /// Eixos: x cresce para leste, z cresce para o sul. Uma unidade é um metro.
+///
+/// O escritório não é um bloco maciço. As salas são ilhas soltas no vazio,
+/// ligadas por um corredor largo que atravessa o mapa inteiro e por passagens
+/// curtas que cruzam o vão até cada porta. O espaço vazio entre uma sala e
+/// outra é tão parte do desenho quanto as paredes: é ele que separa os cômodos
+/// na leitura de cima e dá fôlego para a câmera.
 
 export interface Rect {
   x: number;
@@ -17,6 +23,10 @@ export interface WallBox {
   minZ: number;
   maxX: number;
   maxZ: number;
+  /// Cor de destaque do cômodo dono desta parede. A colisão ignora, mas o
+  /// navegador pinta o friso do alto com ela, e é isso que faz cada sala ter
+  /// cara própria de longe. Opcional porque parede de teste não tem dono.
+  accent?: string;
 }
 
 export type Side = 'north' | 'south' | 'east' | 'west';
@@ -28,13 +38,20 @@ export interface Door {
   width: number;
 }
 
+export type RoomKind = 'sala' | 'corredor';
+
 export interface RoomDef {
   id: string;
   name: string;
   rect: Rect;
+  /// Cômodo de verdade ou pedaço de circulação. O navegador desenha o piso da
+  /// circulação mais baixo e sem tapete, para o corredor não competir com as
+  /// salas na leitura de cima.
+  kind: RoomKind;
   /// Cor do piso, no formato que o Three entende direto.
   floor: string;
-  /// Tom da luz de teto da sala. O apagão desliga todas.
+  /// Cor de destaque da sala. É ela que acende no friso das paredes e diz de
+  /// longe em que cômodo o jogador está. O apagão apaga todas.
   light: string;
   doors: Door[];
 }
@@ -109,13 +126,6 @@ export interface GameMap {
 const WALL = 0.4;
 const HALF = WALL / 2;
 
-/// As salas são retângulos encostados uns nos outros, então a parede entre duas
-/// delas é gerada duas vezes. Sem a chave, o navegador desenharia dois planos no
-/// mesmo lugar e eles brigariam por pixel.
-function wallKey(box: WallBox): string {
-  return [box.minX, box.minZ, box.maxX, box.maxZ].map((n) => n.toFixed(2)).join(':');
-}
-
 function segmentsFor(room: RoomDef, side: Side): WallBox[] {
   const { x, z, w, d } = room.rect;
   const horizontal = side === 'north' || side === 'south';
@@ -141,120 +151,208 @@ function segmentsFor(room: RoomDef, side: Side): WallBox[] {
 }
 
 function buildWalls(rooms: RoomDef[]): WallBox[] {
-  const seen = new Map<string, WallBox>();
-  for (const room of rooms) {
-    for (const side of ['north', 'south', 'east', 'west'] as Side[]) {
-      for (const box of segmentsFor(room, side)) {
-        const key = wallKey(box);
-        if (!seen.has(key)) seen.set(key, box);
-      }
-    }
-  }
-  return [...seen.values()];
+  return rooms.flatMap((room) =>
+    (['north', 'south', 'east', 'west'] as Side[]).flatMap((side) =>
+      segmentsFor(room, side).map((box) => ({ ...box, accent: room.light })),
+    ),
+  );
 }
 
-/// Um vão aberto por uma sala tem que existir na vizinha também, senão a porta
-/// de um lado bate na parede do outro. Por isso cada porta aparece nas duas.
+interface Link {
+  a: string;
+  b: string;
+}
+
+/// Duas salas encostadas se abrem uma para a outra na largura inteira do
+/// encosto. Escrever a porta à mão dos dois lados era o que mais dava errado no
+/// mapa antigo: bastava errar meio metro para a porta de um lado bater na
+/// parede do outro, ou para as duas paredes ficarem no mesmo plano brigando por
+/// pixel. Aqui o encosto é medido e vira o vão inteiro, então nenhum dos dois
+/// tem como acontecer, e de quebra a passagem fica larga.
+function openLinks(rooms: RoomDef[], links: Link[]) {
+  const byId = new Map(rooms.map((room) => [room.id, room]));
+
+  for (const link of links) {
+    const a = byId.get(link.a);
+    const b = byId.get(link.b);
+    if (!a || !b) throw new Error(`Ligação com sala inexistente: ${link.a} + ${link.b}`);
+
+    const aSouth = a.rect.z + a.rect.d === b.rect.z;
+    const aNorth = b.rect.z + b.rect.d === a.rect.z;
+    const aEast = a.rect.x + a.rect.w === b.rect.x;
+    const aWest = b.rect.x + b.rect.w === a.rect.x;
+
+    if (aSouth || aNorth) {
+      const from = Math.max(a.rect.x, b.rect.x);
+      const to = Math.min(a.rect.x + a.rect.w, b.rect.x + b.rect.w);
+      if (to <= from) throw new Error(`Salas ${a.id} e ${b.id} se tocam sem sobrepor`);
+      a.doors.push({ side: aSouth ? 'south' : 'north', at: from - a.rect.x, width: to - from });
+      b.doors.push({ side: aSouth ? 'north' : 'south', at: from - b.rect.x, width: to - from });
+      continue;
+    }
+
+    if (aEast || aWest) {
+      const from = Math.max(a.rect.z, b.rect.z);
+      const to = Math.min(a.rect.z + a.rect.d, b.rect.z + b.rect.d);
+      if (to <= from) throw new Error(`Salas ${a.id} e ${b.id} se tocam sem sobrepor`);
+      a.doors.push({ side: aEast ? 'east' : 'west', at: from - a.rect.z, width: to - from });
+      b.doors.push({ side: aEast ? 'west' : 'east', at: from - b.rect.z, width: to - from });
+      continue;
+    }
+
+    throw new Error(`Salas ${a.id} e ${b.id} não se encostam`);
+  }
+}
+
+const CIRCULACAO = '#d6dce7';
+
+function passagem(id: string, x: number, z: number, accent: string): RoomDef {
+  return {
+    id,
+    name: 'Passagem',
+    rect: { x, z, w: 5, d: 5 },
+    kind: 'corredor',
+    floor: CIRCULACAO,
+    light: accent,
+    doors: [],
+  };
+}
+
+/// A planta em três faixas: as salas do norte entre z 4 e 24, o corredor entre
+/// z 29 e 36, e as salas do sul entre z 41 e 61. Os cinco metros de vão entre
+/// uma faixa e a outra são vazio de verdade, atravessado só pelas passagens.
 const ROOMS: RoomDef[] = [
+  // ── Faixa norte ──
   {
     id: 'recepcao',
     name: 'Recepção',
-    rect: { x: 0, z: 0, w: 16, d: 20 },
-    floor: '#65728c',
-    light: '#ffe6c4',
-    doors: [
-      { side: 'south', at: 5, width: 3.6 },
-      { side: 'east', at: 12, width: 4 },
-    ],
+    rect: { x: 3, z: 4, w: 18, d: 20 },
+    kind: 'sala',
+    floor: '#dfe5ef',
+    light: '#7aa2f7',
+    doors: [],
   },
   {
     id: 'openspace',
     name: 'Open space',
-    rect: { x: 16, z: 0, w: 24, d: 20 },
-    floor: '#596981',
-    light: '#dbe8ff',
-    doors: [
-      { side: 'west', at: 12, width: 4 },
-      { side: 'south', at: 6, width: 3.6 },
-      { side: 'south', at: 16, width: 3.6 },
-    ],
+    rect: { x: 26, z: 4, w: 26, d: 20 },
+    kind: 'sala',
+    floor: '#e4e9f1',
+    light: '#38bdf8',
+    doors: [],
   },
   {
     id: 'reuniao',
     name: 'Sala de reunião',
-    rect: { x: 40, z: 0, w: 12, d: 20 },
-    floor: '#765f54',
-    light: '#ffdca8',
-    doors: [{ side: 'south', at: 4.2, width: 3.6 }],
+    rect: { x: 57, z: 4, w: 14, d: 20 },
+    kind: 'sala',
+    floor: '#eee2cf',
+    light: '#f6a35c',
+    doors: [],
   },
   {
     id: 'copa',
     name: 'Copa',
-    rect: { x: 52, z: 0, w: 12, d: 20 },
-    floor: '#5d786c',
-    light: '#d8ffe8',
-    doors: [{ side: 'south', at: 4.2, width: 3.6 }],
+    rect: { x: 76, z: 4, w: 16, d: 20 },
+    kind: 'sala',
+    floor: '#dcecdf',
+    light: '#4ade80',
+    doors: [],
   },
+
+  // ── Circulação ──
   {
     id: 'corredor',
     name: 'Corredor',
-    rect: { x: 0, z: 20, w: 64, d: 6 },
-    floor: '#58657d',
-    light: '#cfd8ff',
-    doors: [
-      { side: 'north', at: 5, width: 3.6 },
-      { side: 'north', at: 22, width: 3.6 },
-      { side: 'north', at: 32, width: 3.6 },
-      { side: 'north', at: 44.2, width: 3.6 },
-      { side: 'north', at: 56.2, width: 3.6 },
-      { side: 'south', at: 5, width: 3.6 },
-      { side: 'south', at: 19, width: 3.6 },
-      { side: 'south', at: 31.5, width: 3.6 },
-      { side: 'south', at: 43, width: 3.6 },
-      { side: 'south', at: 56, width: 3.6 },
-    ],
+    rect: { x: 3, z: 29, w: 89, d: 7 },
+    kind: 'corredor',
+    floor: CIRCULACAO,
+    light: '#a5b4fc',
+    doors: [],
   },
+  passagem('pass-recepcao', 9, 24, '#7aa2f7'),
+  passagem('pass-openspace-oeste', 31, 24, '#38bdf8'),
+  passagem('pass-openspace-leste', 44, 24, '#38bdf8'),
+  passagem('pass-reuniao', 61, 24, '#f6a35c'),
+  passagem('pass-copa', 81, 24, '#4ade80'),
+  passagem('pass-arquivo', 8, 36, '#c084fc'),
+  passagem('pass-servidores', 29, 36, '#38bdf8'),
+  passagem('pass-banheiros', 48, 36, '#67e8f9'),
+  passagem('pass-garagem', 66, 36, '#fb923c'),
+  passagem('pass-deposito', 83, 36, '#facc15'),
+
+  // ── Faixa sul ──
   {
     id: 'arquivo',
     name: 'Arquivo',
-    rect: { x: 0, z: 26, w: 14, d: 18 },
-    floor: '#675a73',
-    light: '#e6d4ff',
-    doors: [{ side: 'north', at: 5, width: 3.6 }],
+    rect: { x: 3, z: 41, w: 16, d: 20 },
+    kind: 'sala',
+    floor: '#e6e0f0',
+    light: '#c084fc',
+    doors: [],
   },
   {
     id: 'servidores',
     name: 'Sala dos servidores',
-    rect: { x: 14, z: 26, w: 14, d: 18 },
-    floor: '#40576d',
-    light: '#bfe4ff',
-    doors: [{ side: 'north', at: 5, width: 3.6 }],
+    rect: { x: 23, z: 41, w: 18, d: 20 },
+    kind: 'sala',
+    floor: '#d9e7f2',
+    light: '#38bdf8',
+    doors: [],
   },
   {
     id: 'banheiros',
     name: 'Banheiros',
-    rect: { x: 28, z: 26, w: 10, d: 18 },
-    floor: '#667989',
-    light: '#e2f2ff',
-    doors: [{ side: 'north', at: 3.5, width: 3.6 }],
+    rect: { x: 45, z: 41, w: 12, d: 20 },
+    kind: 'sala',
+    floor: '#dfeaf0',
+    light: '#67e8f9',
+    doors: [],
   },
   {
     id: 'garagem',
     name: 'Garagem',
-    rect: { x: 38, z: 26, w: 14, d: 18 },
-    floor: '#505862',
-    light: '#ffd9c2',
-    doors: [{ side: 'north', at: 5, width: 3.6 }],
+    rect: { x: 61, z: 41, w: 15, d: 20 },
+    kind: 'sala',
+    floor: '#dadde3',
+    light: '#fb923c',
+    doors: [],
   },
   {
     id: 'deposito',
     name: 'Depósito',
-    rect: { x: 52, z: 26, w: 12, d: 18 },
-    floor: '#716752',
-    light: '#ffe9bd',
-    doors: [{ side: 'north', at: 4, width: 3.6 }],
+    rect: { x: 80, z: 41, w: 12, d: 20 },
+    kind: 'sala',
+    floor: '#ebe4d0',
+    light: '#facc15',
+    doors: [],
   },
 ];
+
+const LINKS: Link[] = [
+  { a: 'recepcao', b: 'pass-recepcao' },
+  { a: 'pass-recepcao', b: 'corredor' },
+  { a: 'openspace', b: 'pass-openspace-oeste' },
+  { a: 'pass-openspace-oeste', b: 'corredor' },
+  { a: 'openspace', b: 'pass-openspace-leste' },
+  { a: 'pass-openspace-leste', b: 'corredor' },
+  { a: 'reuniao', b: 'pass-reuniao' },
+  { a: 'pass-reuniao', b: 'corredor' },
+  { a: 'copa', b: 'pass-copa' },
+  { a: 'pass-copa', b: 'corredor' },
+  { a: 'corredor', b: 'pass-arquivo' },
+  { a: 'pass-arquivo', b: 'arquivo' },
+  { a: 'corredor', b: 'pass-servidores' },
+  { a: 'pass-servidores', b: 'servidores' },
+  { a: 'corredor', b: 'pass-banheiros' },
+  { a: 'pass-banheiros', b: 'banheiros' },
+  { a: 'corredor', b: 'pass-garagem' },
+  { a: 'pass-garagem', b: 'garagem' },
+  { a: 'corredor', b: 'pass-deposito' },
+  { a: 'pass-deposito', b: 'deposito' },
+];
+
+openLinks(ROOMS, LINKS);
 
 function deskCluster(x: number, z: number, rot: number): PropDef[] {
   return [
@@ -267,73 +365,86 @@ function deskCluster(x: number, z: number, rot: number): PropDef[] {
 function buildProps(): PropDef[] {
   const props: PropDef[] = [
     // Recepção
-    { kind: 'counter', x: 8, z: 4.5, rot: 0 },
-    { kind: 'sofa', x: 3.5, z: 13, rot: 0 },
-    { kind: 'sofa', x: 12.5, z: 13, rot: Math.PI },
-    { kind: 'plant', x: 1.6, z: 1.8, rot: 0 },
-    { kind: 'plant', x: 14.4, z: 1.8, rot: 0 },
-    { kind: 'plant', x: 1.6, z: 17.5, rot: 0 },
+    { kind: 'counter', x: 12, z: 8, rot: 0 },
+    { kind: 'sofa', x: 7, z: 17, rot: 0 },
+    { kind: 'sofa', x: 17, z: 17, rot: Math.PI },
+    { kind: 'plant', x: 4.6, z: 5.6, rot: 0 },
+    { kind: 'plant', x: 19.4, z: 5.6, rot: 0 },
+    { kind: 'plant', x: 4.6, z: 22.4, rot: 0 },
     // Sala de reunião
-    { kind: 'meetingTable', x: 46, z: 8, rot: 0 },
-    { kind: 'chair', x: 44.5, z: 6.6, rot: 0 },
-    { kind: 'chair', x: 46, z: 6.6, rot: 0 },
-    { kind: 'chair', x: 47.5, z: 6.6, rot: 0 },
-    { kind: 'chair', x: 44.5, z: 9.4, rot: Math.PI },
-    { kind: 'chair', x: 46, z: 9.4, rot: Math.PI },
-    { kind: 'chair', x: 47.5, z: 9.4, rot: Math.PI },
-    { kind: 'chair', x: 43.5, z: 8, rot: -Math.PI / 2 },
-    { kind: 'chair', x: 48.5, z: 8, rot: Math.PI / 2 },
-    { kind: 'whiteboard', x: 46, z: 0.9, rot: 0 },
-    { kind: 'plant', x: 50.4, z: 17.6, rot: 0 },
+    { kind: 'meetingTable', x: 64, z: 12, rot: 0 },
+    { kind: 'chair', x: 62.5, z: 10.6, rot: 0 },
+    { kind: 'chair', x: 64, z: 10.6, rot: 0 },
+    { kind: 'chair', x: 65.5, z: 10.6, rot: 0 },
+    { kind: 'chair', x: 62.5, z: 13.4, rot: Math.PI },
+    { kind: 'chair', x: 64, z: 13.4, rot: Math.PI },
+    { kind: 'chair', x: 65.5, z: 13.4, rot: Math.PI },
+    { kind: 'chair', x: 61.5, z: 12, rot: -Math.PI / 2 },
+    { kind: 'chair', x: 66.5, z: 12, rot: Math.PI / 2 },
+    { kind: 'whiteboard', x: 64, z: 5, rot: 0 },
+    { kind: 'plant', x: 58.6, z: 22.4, rot: 0 },
+    { kind: 'plant', x: 69.4, z: 22.4, rot: 0 },
     // Copa
-    { kind: 'coffee', x: 62.2, z: 3.4, rot: -Math.PI / 2 },
-    { kind: 'vending', x: 62.2, z: 7.4, rot: -Math.PI / 2 },
-    { kind: 'sink', x: 53.6, z: 3.4, rot: Math.PI / 2 },
-    { kind: 'meetingTable', x: 58, z: 13, rot: 0 },
-    { kind: 'plant', x: 53.4, z: 17.6, rot: 0 },
-    // Corredor
-    { kind: 'plant', x: 20.5, z: 24.2, rot: 0 },
-    { kind: 'plant', x: 41.5, z: 21.6, rot: 0 },
-    { kind: 'printer', x: 12, z: 21.4, rot: 0 },
+    { kind: 'coffee', x: 90.2, z: 7.4, rot: -Math.PI / 2 },
+    { kind: 'vending', x: 90.2, z: 11.4, rot: -Math.PI / 2 },
+    { kind: 'sink', x: 77.8, z: 7.4, rot: Math.PI / 2 },
+    { kind: 'meetingTable', x: 84, z: 17, rot: 0 },
+    { kind: 'plant', x: 77.6, z: 22.4, rot: 0 },
+    // Corredor. Noventa metros de reta viram esteira rolante se estiverem
+    // vazios: cada peça aqui é um ponto de referência para quem descreve na
+    // reunião onde estava e por onde o outro passou.
+    { kind: 'plant', x: 4.6, z: 30.4, rot: 0 },
+    { kind: 'printer', x: 14, z: 30.6, rot: 0 },
+    { kind: 'crate', x: 21, z: 34.4, rot: 0.3 },
+    { kind: 'plant', x: 25, z: 34.6, rot: 0 },
+    { kind: 'coffee', x: 40, z: 30.3, rot: 0 },
+    { kind: 'plant', x: 58, z: 30.4, rot: 0 },
+    { kind: 'sofa', x: 57, z: 34.2, rot: Math.PI },
+    { kind: 'vending', x: 71, z: 30.3, rot: 0 },
+    { kind: 'plant', x: 78, z: 34.6, rot: 0 },
+    { kind: 'crate', x: 90.5, z: 34.3, rot: -0.2 },
     // Arquivo
-    { kind: 'locker', x: 2, z: 30, rot: Math.PI / 2 },
-    { kind: 'locker', x: 2, z: 34, rot: Math.PI / 2 },
-    { kind: 'locker', x: 2, z: 38, rot: Math.PI / 2 },
-    { kind: 'locker', x: 12, z: 30, rot: -Math.PI / 2 },
-    { kind: 'locker', x: 12, z: 34, rot: -Math.PI / 2 },
-    { kind: 'shelf', x: 7, z: 41.5, rot: 0 },
+    { kind: 'locker', x: 4.5, z: 44, rot: Math.PI / 2 },
+    { kind: 'locker', x: 4.5, z: 48, rot: Math.PI / 2 },
+    { kind: 'locker', x: 4.5, z: 52, rot: Math.PI / 2 },
+    { kind: 'locker', x: 17.5, z: 44, rot: -Math.PI / 2 },
+    { kind: 'locker', x: 17.5, z: 48, rot: -Math.PI / 2 },
+    { kind: 'shelf', x: 11, z: 58.5, rot: 0 },
     // Servidores
-    { kind: 'rack', x: 17, z: 30, rot: 0 },
-    { kind: 'rack', x: 20, z: 30, rot: 0 },
-    { kind: 'rack', x: 23, z: 30, rot: 0 },
-    { kind: 'rack', x: 26, z: 30, rot: 0 },
-    { kind: 'rack', x: 17, z: 38, rot: Math.PI },
-    { kind: 'rack', x: 20, z: 38, rot: Math.PI },
-    { kind: 'rack', x: 23, z: 38, rot: Math.PI },
+    { kind: 'rack', x: 26, z: 45, rot: 0 },
+    { kind: 'rack', x: 29, z: 45, rot: 0 },
+    { kind: 'rack', x: 32, z: 45, rot: 0 },
+    { kind: 'rack', x: 35, z: 45, rot: 0 },
+    { kind: 'rack', x: 38, z: 45, rot: 0 },
+    { kind: 'rack', x: 26, z: 55, rot: Math.PI },
+    { kind: 'rack', x: 29, z: 55, rot: Math.PI },
+    { kind: 'rack', x: 32, z: 55, rot: Math.PI },
+    { kind: 'rack', x: 35, z: 55, rot: Math.PI },
     // Banheiros
-    { kind: 'sink', x: 29.6, z: 29, rot: Math.PI / 2 },
-    { kind: 'sink', x: 29.6, z: 32, rot: Math.PI / 2 },
-    { kind: 'sink', x: 29.6, z: 35, rot: Math.PI / 2 },
+    { kind: 'sink', x: 46.6, z: 45, rot: Math.PI / 2 },
+    { kind: 'sink', x: 46.6, z: 48, rot: Math.PI / 2 },
+    { kind: 'sink', x: 46.6, z: 51, rot: Math.PI / 2 },
+    { kind: 'plant', x: 55.4, z: 59.4, rot: 0 },
     // Garagem
-    { kind: 'car', x: 42.5, z: 34, rot: 0 },
-    { kind: 'car', x: 48, z: 34, rot: 0 },
-    { kind: 'cone', x: 45.2, z: 28.6, rot: 0 },
-    { kind: 'cone', x: 46.4, z: 29.4, rot: 0 },
-    { kind: 'crate', x: 40.5, z: 42, rot: 0 },
+    { kind: 'car', x: 65, z: 52, rot: 0 },
+    { kind: 'car', x: 71, z: 52, rot: 0 },
+    { kind: 'cone', x: 68, z: 45, rot: 0 },
+    { kind: 'cone', x: 69.2, z: 46, rot: 0 },
+    { kind: 'crate', x: 63, z: 58.5, rot: 0 },
     // Depósito
-    { kind: 'shelf', x: 54.5, z: 30, rot: 0 },
-    { kind: 'shelf', x: 54.5, z: 36, rot: 0 },
-    { kind: 'shelf', x: 61.5, z: 30, rot: Math.PI },
-    { kind: 'crate', x: 58, z: 41, rot: 0.4 },
-    { kind: 'crate', x: 59.4, z: 40.2, rot: -0.2 },
-    { kind: 'crate', x: 57.2, z: 39.4, rot: 0.9 },
+    { kind: 'shelf', x: 83, z: 45, rot: 0 },
+    { kind: 'shelf', x: 83, z: 51, rot: 0 },
+    { kind: 'shelf', x: 89, z: 45, rot: Math.PI },
+    { kind: 'crate', x: 86, z: 58, rot: 0.4 },
+    { kind: 'crate', x: 87.4, z: 57.2, rot: -0.2 },
+    { kind: 'crate', x: 85.2, z: 56.4, rot: 0.9 },
   ];
 
   // Open space: quatro fileiras de mesas viradas de costas uma para a outra.
   for (let row = 0; row < 2; row += 1) {
     for (let column = 0; column < 4; column += 1) {
-      const x = 19.5 + column * 5.2;
-      const z = 5 + row * 9;
+      const x = 30 + column * 5.5;
+      const z = 8 + row * 8;
       props.push(...deskCluster(x, z, 0));
       props.push(...deskCluster(x, z + 4, Math.PI));
     }
@@ -342,51 +453,51 @@ function buildProps(): PropDef[] {
 }
 
 const TASK_SPOTS: TaskSpot[] = [
-  { id: 'rack-a', kind: 'rack', room: 'servidores', label: 'Religar o rack principal', x: 21.5, z: 32.4 },
-  { id: 'rack-b', kind: 'rack', room: 'servidores', label: 'Trocar o disco do backup', x: 25.5, z: 35.8 },
-  { id: 'cabos-a', kind: 'cabos', room: 'servidores', label: 'Refazer o cabeamento', x: 17.5, z: 35.8 },
-  { id: 'arquivo-a', kind: 'arquivo', room: 'arquivo', label: 'Arquivar os contratos', x: 4.4, z: 31.5 },
-  { id: 'arquivo-b', kind: 'arquivo', room: 'arquivo', label: 'Separar as notas fiscais', x: 9.6, z: 36.5 },
-  { id: 'senha-a', kind: 'senha', room: 'openspace', label: 'Destravar o PC da mesa 3', x: 24.7, z: 6.4 },
-  { id: 'senha-b', kind: 'senha', room: 'openspace', label: 'Destravar o PC da mesa 7', x: 35.1, z: 15.4 },
-  { id: 'cabos-b', kind: 'cabos', room: 'openspace', label: 'Ligar o cabo do projetor', x: 19.5, z: 15.4 },
-  { id: 'cafe-a', kind: 'cafe', room: 'copa', label: 'Calibrar a cafeteira', x: 61, z: 3.4 },
-  { id: 'estoque-a', kind: 'estoque', room: 'copa', label: 'Repor o estoque da copa', x: 61, z: 7.4 },
-  { id: 'impressora-a', kind: 'impressora', room: 'corredor', label: 'Desatolar a impressora', x: 12, z: 22.4 },
-  { id: 'senha-c', kind: 'senha', room: 'recepcao', label: 'Fechar o caixa da recepção', x: 8, z: 5.8 },
-  { id: 'estoque-b', kind: 'estoque', room: 'deposito', label: 'Conferir o inventário', x: 56.5, z: 31 },
-  { id: 'cabos-c', kind: 'cabos', room: 'garagem', label: 'Recarregar o carro da empresa', x: 45.2, z: 34 },
+  { id: 'rack-a', kind: 'rack', room: 'servidores', label: 'Religar o rack principal', x: 29, z: 47.5 },
+  { id: 'rack-b', kind: 'rack', room: 'servidores', label: 'Trocar o disco do backup', x: 35, z: 52.5 },
+  { id: 'cabos-a', kind: 'cabos', room: 'servidores', label: 'Refazer o cabeamento', x: 25.5, z: 52.5 },
+  { id: 'arquivo-a', kind: 'arquivo', room: 'arquivo', label: 'Arquivar os contratos', x: 7, z: 45 },
+  { id: 'arquivo-b', kind: 'arquivo', room: 'arquivo', label: 'Separar as notas fiscais', x: 14, z: 53 },
+  { id: 'senha-a', kind: 'senha', room: 'openspace', label: 'Destravar o PC da mesa 3', x: 32.75, z: 8 },
+  { id: 'senha-b', kind: 'senha', room: 'openspace', label: 'Destravar o PC da mesa 7', x: 43.75, z: 16 },
+  { id: 'cabos-b', kind: 'cabos', room: 'openspace', label: 'Ligar o cabo do projetor', x: 38.25, z: 21.5 },
+  { id: 'cafe-a', kind: 'cafe', room: 'copa', label: 'Calibrar a cafeteira', x: 88.6, z: 7.4 },
+  { id: 'estoque-a', kind: 'estoque', room: 'copa', label: 'Repor o estoque da copa', x: 88.6, z: 11.4 },
+  { id: 'impressora-a', kind: 'impressora', room: 'corredor', label: 'Desatolar a impressora', x: 14, z: 31.8 },
+  { id: 'senha-c', kind: 'senha', room: 'recepcao', label: 'Fechar o caixa da recepção', x: 12, z: 9.4 },
+  { id: 'estoque-b', kind: 'estoque', room: 'deposito', label: 'Conferir o inventário', x: 86, z: 47 },
+  { id: 'cabos-c', kind: 'cabos', room: 'garagem', label: 'Recarregar o carro da empresa', x: 65, z: 48.5 },
 ];
 
 const VENTS: VentDef[] = [
-  { id: 'vent-servidores', room: 'servidores', x: 26.4, z: 42.2, links: ['vent-arquivo', 'vent-copa'] },
-  { id: 'vent-arquivo', room: 'arquivo', x: 1.8, z: 42.2, links: ['vent-servidores', 'vent-garagem'] },
-  { id: 'vent-copa', room: 'copa', x: 62.4, z: 17.6, links: ['vent-servidores', 'vent-garagem'] },
-  { id: 'vent-garagem', room: 'garagem', x: 50.4, z: 42, links: ['vent-copa', 'vent-arquivo'] },
+  { id: 'vent-servidores', room: 'servidores', x: 39.5, z: 59, links: ['vent-arquivo', 'vent-copa'] },
+  { id: 'vent-arquivo', room: 'arquivo', x: 4.5, z: 59, links: ['vent-servidores', 'vent-garagem'] },
+  { id: 'vent-copa', room: 'copa', x: 90.5, z: 21.5, links: ['vent-servidores', 'vent-garagem'] },
+  { id: 'vent-garagem', room: 'garagem', x: 74.5, z: 59, links: ['vent-copa', 'vent-arquivo'] },
 ];
 
 export const OFFICE_MAP: GameMap = {
   name: 'Escritório Timbas',
-  bounds: { x: 0, z: 0, w: 64, d: 44 },
+  bounds: { x: 0, z: 0, w: 95, d: 65 },
   rooms: ROOMS,
   walls: buildWalls(ROOMS),
   props: buildProps(),
   taskSpots: TASK_SPOTS,
   vents: VENTS,
-  emergency: { x: 46, z: 11.5 },
+  emergency: { x: 64, z: 18 },
   spawns: [
-    { x: 5, z: 9 },
-    { x: 11, z: 9 },
-    { x: 5, z: 12 },
-    { x: 11, z: 12 },
-    { x: 8, z: 14 },
-    { x: 3.5, z: 15.5 },
-    { x: 12.5, z: 15.5 },
-    { x: 6.5, z: 17 },
-    { x: 9.5, z: 17 },
-    { x: 4, z: 6.5 },
-    { x: 12, z: 6.5 },
-    { x: 8, z: 17.8 },
+    { x: 5.5, z: 12 },
+    { x: 8.5, z: 12 },
+    { x: 11.5, z: 12 },
+    { x: 14.5, z: 12 },
+    { x: 17.5, z: 12 },
+    { x: 5.5, z: 14.5 },
+    { x: 8.5, z: 14.5 },
+    { x: 11.5, z: 14.5 },
+    { x: 14.5, z: 14.5 },
+    { x: 17.5, z: 14.5 },
+    { x: 7, z: 20.5 },
+    { x: 17, z: 20.5 },
   ],
 };
 
