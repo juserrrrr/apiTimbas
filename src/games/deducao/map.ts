@@ -27,6 +27,9 @@ export interface WallBox {
   /// navegador pinta o friso do alto com ela, e é isso que faz cada sala ter
   /// cara própria de longe. Opcional porque parede de teste não tem dono.
   accent?: string;
+  /// Chega na altura dos olhos, então além de barrar o corpo também corta a
+  /// linha de visão. Mesa e sofá não: dá para ver por cima deles.
+  tall?: boolean;
 }
 
 export type Side = 'north' | 'south' | 'east' | 'west';
@@ -116,6 +119,10 @@ export interface GameMap {
   bounds: Rect;
   rooms: RoomDef[];
   walls: WallBox[];
+  /// A pegada dos móveis no chão. Sai separada das paredes porque nem todo
+  /// móvel corta a visão, e porque o navegador desenha parede e móvel de
+  /// jeitos diferentes.
+  obstacles: WallBox[];
   props: PropDef[];
   taskSpots: TaskSpot[];
   vents: VentDef[];
@@ -469,6 +476,52 @@ const TASK_SPOTS: TaskSpot[] = [
   { id: 'cabos-c', kind: 'cabos', room: 'garagem', label: 'Recarregar o carro da empresa', x: 65, z: 48.5 },
 ];
 
+/// Quanto cada móvel ocupa do chão, e se ele chega alto o bastante para
+/// esconder alguém atrás. Este tamanho é a lei: o servidor barra o passo por
+/// ele e o navegador desenha a peça em cima dele. Móvel que não aparece aqui é
+/// atravessável de propósito (o monitor fica em cima da mesa, o cone se chuta).
+const FOOTPRINTS: Partial<Record<PropKind, { w: number; d: number; tall?: boolean }>> = {
+  desk: { w: 1.7, d: 0.85 },
+  chair: { w: 0.55, d: 0.55 },
+  plant: { w: 0.52, d: 0.52 },
+  sofa: { w: 2.0, d: 0.9 },
+  counter: { w: 4.5, d: 1.1 },
+  meetingTable: { w: 3.8, d: 1.7 },
+  rack: { w: 0.8, d: 1.0, tall: true },
+  locker: { w: 1.1, d: 0.55, tall: true },
+  shelf: { w: 2.6, d: 0.6, tall: true },
+  coffee: { w: 0.7, d: 0.6 },
+  crate: { w: 1.0, d: 1.0 },
+  printer: { w: 0.9, d: 0.7 },
+  whiteboard: { w: 2.7, d: 0.12 },
+  car: { w: 2.0, d: 4.3, tall: true },
+  sink: { w: 1.7, d: 0.6 },
+  vending: { w: 1.1, d: 0.75, tall: true },
+};
+
+/// O móvel girado continua sendo barrado por uma caixa alinhada aos eixos: é a
+/// menor caixa reta que cabe o retângulo girado. Girar a colisão junto sairia
+/// mais caro em todo quadro de todo jogador para ganhar centímetros.
+function buildObstacles(props: PropDef[]): WallBox[] {
+  const boxes: WallBox[] = [];
+  for (const prop of props) {
+    const size = FOOTPRINTS[prop.kind];
+    if (!size) continue;
+    const cos = Math.abs(Math.cos(prop.rot));
+    const sin = Math.abs(Math.sin(prop.rot));
+    const halfW = (size.w * cos + size.d * sin) / 2;
+    const halfD = (size.w * sin + size.d * cos) / 2;
+    boxes.push({
+      minX: prop.x - halfW,
+      minZ: prop.z - halfD,
+      maxX: prop.x + halfW,
+      maxZ: prop.z + halfD,
+      tall: size.tall,
+    });
+  }
+  return boxes;
+}
+
 const VENTS: VentDef[] = [
   { id: 'vent-servidores', room: 'servidores', x: 39.5, z: 59, links: ['vent-arquivo', 'vent-copa'] },
   { id: 'vent-arquivo', room: 'arquivo', x: 4.5, z: 59, links: ['vent-servidores', 'vent-garagem'] },
@@ -476,12 +529,17 @@ const VENTS: VentDef[] = [
   { id: 'vent-garagem', room: 'garagem', x: 74.5, z: 59, links: ['vent-copa', 'vent-arquivo'] },
 ];
 
+const PROPS_BUILT = buildProps();
+const WALLS_BUILT = buildWalls(ROOMS);
+const OBSTACLES_BUILT = buildObstacles(PROPS_BUILT);
+
 export const OFFICE_MAP: GameMap = {
   name: 'Escritório Timbas',
   bounds: { x: 0, z: 0, w: 95, d: 65 },
   rooms: ROOMS,
-  walls: buildWalls(ROOMS),
-  props: buildProps(),
+  walls: WALLS_BUILT,
+  obstacles: OBSTACLES_BUILT,
+  props: PROPS_BUILT,
   taskSpots: TASK_SPOTS,
   vents: VENTS,
   emergency: { x: 64, z: 18 },
@@ -500,6 +558,14 @@ export const OFFICE_MAP: GameMap = {
     { x: 17, z: 20.5 },
   ],
 };
+
+/// Tudo em que se esbarra: parede e móvel. Somado uma vez só, porque a conta
+/// roda para cada jogador em cada quadro.
+export const COLLIDERS: WallBox[] = [...WALLS_BUILT, ...OBSTACLES_BUILT];
+
+/// O que tapa a vista: parede e móvel alto. A mesa fica de fora porque quem
+/// está atrás dela continua à vista.
+export const SIGHT_BLOCKERS: WallBox[] = [...WALLS_BUILT, ...OBSTACLES_BUILT.filter((box) => box.tall)];
 
 export function roomAt(x: number, z: number): RoomDef | null {
   return (

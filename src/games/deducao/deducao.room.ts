@@ -7,7 +7,7 @@ import {
 import { Role as UserRole } from '../../enums/role.enum';
 import { gameDeps } from '../game-deps';
 import { ChatMessage, CorpseState, DeducaoState, PlayerState } from './deducao.state';
-import { OFFICE_MAP, taskSpotById, ventById } from './map';
+import { COLLIDERS, OFFICE_MAP, SIGHT_BLOCKERS, taskSpotById, ventById } from './map';
 import { distance, isWithin, moveTowards, PLAYER_RADIUS } from './movement';
 import {
   DEFAULT_CONFIG,
@@ -301,7 +301,7 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
     // nos dois casos a colisão do escritório não vale.
     const next =
       player.alive && !player.inVent
-        ? moveTowards({ x: player.x, z: player.z }, target, budget, OFFICE_MAP.walls)
+        ? moveTowards({ x: player.x, z: player.z }, target, budget, COLLIDERS)
         : this.clampToBounds(target, { x: player.x, z: player.z }, budget);
 
     player.x = next.x;
@@ -361,7 +361,7 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
     const victim = this.state.players.get(payload?.targetId ?? '');
     const victimSeat = this.seats.get(payload?.targetId ?? '');
     if (!victim || !victimSeat || !victim.alive || victimSeat.role === 'assassino') return;
-    if (!isWithin(killer, victim, this.state.config.killRange, OFFICE_MAP.walls)) return;
+    if (!isWithin(killer, victim, this.state.config.killRange, SIGHT_BLOCKERS)) return;
 
     victim.alive = false;
     victim.moving = false;

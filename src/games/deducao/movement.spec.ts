@@ -1,4 +1,4 @@
-import { OFFICE_MAP } from './map';
+import { COLLIDERS, OFFICE_MAP } from './map';
 import { clampStep, hasLineOfSight, moveTowards, resolveCollisions } from './movement';
 
 const wall = [{ minX: 10, minZ: 0, maxX: 10.4, maxZ: 20 }];
@@ -50,15 +50,21 @@ describe('hasLineOfSight', () => {
 });
 
 describe('o escritório', () => {
-  it('nasce com todo mundo em pé fora de parede', () => {
+  it('nasce com todo mundo em pé fora de parede e de móvel', () => {
     for (const spawn of OFFICE_MAP.spawns) {
-      expect(resolveCollisions(spawn, OFFICE_MAP.walls)).toEqual(spawn);
+      expect(resolveCollisions(spawn, COLLIDERS)).toEqual(spawn);
     }
   });
 
-  it('deixa cada ponto de tarefa alcançável de fora da parede', () => {
+  it('deixa cada ponto de tarefa alcançável sem esbarrar em nada', () => {
     for (const spot of OFFICE_MAP.taskSpots) {
-      expect(resolveCollisions({ x: spot.x, z: spot.z }, OFFICE_MAP.walls)).toEqual({ x: spot.x, z: spot.z });
+      expect(resolveCollisions({ x: spot.x, z: spot.z }, COLLIDERS)).toEqual({ x: spot.x, z: spot.z });
+    }
+  });
+
+  it('deixa cada duto alcançável sem esbarrar em nada', () => {
+    for (const vent of OFFICE_MAP.vents) {
+      expect(resolveCollisions({ x: vent.x, z: vent.z }, COLLIDERS)).toEqual({ x: vent.x, z: vent.z });
     }
   });
 
@@ -76,7 +82,7 @@ describe('o escritório', () => {
 
     const walkable = (column: number, row: number) => {
       const point = { x: originX + column * STEP, z: originZ + row * STEP };
-      const resolved = resolveCollisions(point, OFFICE_MAP.walls);
+      const resolved = resolveCollisions(point, COLLIDERS);
       return Math.abs(resolved.x - point.x) < 1e-9 && Math.abs(resolved.z - point.z) < 1e-9;
     };
 
