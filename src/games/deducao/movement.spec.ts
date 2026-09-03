@@ -1,4 +1,4 @@
-import { COLLIDERS, OFFICE_MAP } from './map';
+import { OFFICE_MAP, collidersFor } from './map';
 import { clampStep, hasLineOfSight, moveTowards, resolveCollisions } from './movement';
 
 const wall = [{ minX: 10, minZ: 0, maxX: 10.4, maxZ: 20 }];
@@ -52,88 +52,124 @@ describe('hasLineOfSight', () => {
 describe('o escritório', () => {
   it('nasce com todo mundo em pé fora de parede e de móvel', () => {
     for (const spawn of OFFICE_MAP.spawns) {
-      expect(resolveCollisions(spawn, COLLIDERS)).toEqual(spawn);
+      expect(resolveCollisions(spawn, collidersFor(spawn.level ?? 0))).toEqual({ x: spawn.x, z: spawn.z });
     }
   });
 
   it('deixa cada ponto de tarefa alcançável sem esbarrar em nada', () => {
     for (const spot of OFFICE_MAP.taskSpots) {
-      expect(resolveCollisions({ x: spot.x, z: spot.z }, COLLIDERS)).toEqual({ x: spot.x, z: spot.z });
+      expect(resolveCollisions({ x: spot.x, z: spot.z }, collidersFor(spot.level ?? 0))).toEqual({
+        x: spot.x,
+        z: spot.z,
+      });
     }
   });
 
   it('deixa cada duto alcançável sem esbarrar em nada', () => {
     for (const vent of OFFICE_MAP.vents) {
-      expect(resolveCollisions({ x: vent.x, z: vent.z }, COLLIDERS)).toEqual({ x: vent.x, z: vent.z });
+      expect(resolveCollisions({ x: vent.x, z: vent.z }, collidersFor(vent.level ?? 0))).toEqual({
+        x: vent.x,
+        z: vent.z,
+      });
+    }
+  });
+
+  it('mantém entradas e saídas das escadas livres e com caminho de volta', () => {
+    for (const stair of OFFICE_MAP.stairs) {
+      expect(resolveCollisions(stair, collidersFor(stair.level))).toEqual({ x: stair.x, z: stair.z });
+      expect(
+        resolveCollisions(
+          { x: stair.targetX, z: stair.targetZ },
+          collidersFor(stair.targetLevel),
+        ),
+      ).toEqual({ x: stair.targetX, z: stair.targetZ });
+
+      expect(
+        OFFICE_MAP.stairs.some(
+          (candidate) =>
+            candidate.level === stair.targetLevel && candidate.targetLevel === stair.level,
+        ),
+      ).toBe(true);
     }
   });
 
   it('deixa toda sala alcançável a pé desde o nascimento', () => {
-    // As salas viraram ilhas separadas por vazio, então uma passagem fora do
-    // lugar não deixa mais um buraco visível: deixa um cômodo mudo, que só
-    // aparece quando alguém recebe tarefa lá e não consegue chegar. Este
-    // caminhamento anda de meio em meio metro pelo mapa e cobra que todas as
-    // salas apareçam a partir do ponto onde os jogadores nascem.
+    // Uma porta fora do lugar deixa um cômodo mudo, que só apareceria quando
+    // alguém recebesse uma tarefa impossível. Este caminhamento anda de meio
+    // em meio metro pelos dois pisos e cobra que todos os ambientes apareçam
+    // a partir dos spawns ou da saída de uma escada.
     const STEP = 0.5;
     const { x: originX, z: originZ, w, d } = OFFICE_MAP.bounds;
     const columns = Math.round(w / STEP);
     const rows = Math.round(d / STEP);
-    const key = (column: number, row: number) => row * columns + column;
+    const stride = columns + 1;
+    const key = (column: number, row: number) => row * stride + column;
 
-    const walkable = (column: number, row: number) => {
-      const point = { x: originX + column * STEP, z: originZ + row * STEP };
-      const resolved = resolveCollisions(point, COLLIDERS);
-      return Math.abs(resolved.x - point.x) < 1e-9 && Math.abs(resolved.z - point.z) < 1e-9;
-    };
+    for (const level of [0, 1]) {
+      const levelColliders = collidersFor(level);
+      const walkable = (column: number, row: number) => {
+        const point = { x: originX + column * STEP, z: originZ + row * STEP };
+        const resolved = resolveCollisions(point, levelColliders);
+        return Math.abs(resolved.x - point.x) < 1e-9 && Math.abs(resolved.z - point.z) < 1e-9;
+      };
 
-    const seen = new Set<number>();
-    const queue: [number, number][] = [];
-    for (const spawn of OFFICE_MAP.spawns) {
-      const column = Math.round((spawn.x - originX) / STEP);
-      const row = Math.round((spawn.z - originZ) / STEP);
-      if (seen.has(key(column, row))) continue;
-      seen.add(key(column, row));
-      queue.push([column, row]);
-    }
-
-    while (queue.length > 0) {
-      const [column, row] = queue.pop()!;
-      for (const [dx, dz] of [
-        [1, 0],
-        [-1, 0],
-        [0, 1],
-        [0, -1],
-      ]) {
-        const nextColumn = column + dx;
-        const nextRow = row + dz;
-        if (nextColumn < 0 || nextRow < 0 || nextColumn > columns || nextRow > rows) continue;
-        if (seen.has(key(nextColumn, nextRow))) continue;
-        if (!walkable(nextColumn, nextRow)) continue;
-        seen.add(key(nextColumn, nextRow));
-        queue.push([nextColumn, nextRow]);
+      const starts = [
+        ...OFFICE_MAP.spawns.filter((spawn) => (spawn.level ?? 0) === level),
+        ...OFFICE_MAP.stairs
+          .filter((stair) => stair.targetLevel === level)
+          .map((stair) => ({ x: stair.targetX, z: stair.targetZ })),
+      ];
+      const seen = new Set<number>();
+      const queue: [number, number][] = [];
+      for (const start of starts) {
+        const column = Math.round((start.x - originX) / STEP);
+        const row = Math.round((start.z - originZ) / STEP);
+        if (seen.has(key(column, row))) continue;
+        seen.add(key(column, row));
+        queue.push([column, row]);
       }
-    }
 
-    const reached = new Set<string>();
-    for (const cell of seen) {
-      const column = cell % columns;
-      const row = (cell - column) / columns;
-      const x = originX + column * STEP;
-      const z = originZ + row * STEP;
-      for (const room of OFFICE_MAP.rooms) {
-        if (
-          x >= room.rect.x &&
-          x <= room.rect.x + room.rect.w &&
-          z >= room.rect.z &&
-          z <= room.rect.z + room.rect.d
-        ) {
-          reached.add(room.id);
+      while (queue.length > 0) {
+        const [column, row] = queue.pop()!;
+        for (const [dx, dz] of [
+          [1, 0],
+          [-1, 0],
+          [0, 1],
+          [0, -1],
+        ]) {
+          const nextColumn = column + dx;
+          const nextRow = row + dz;
+          if (nextColumn < 0 || nextRow < 0 || nextColumn > columns || nextRow > rows) continue;
+          if (seen.has(key(nextColumn, nextRow))) continue;
+          if (!walkable(nextColumn, nextRow)) continue;
+          seen.add(key(nextColumn, nextRow));
+          queue.push([nextColumn, nextRow]);
         }
       }
-    }
 
-    const ilhadas = OFFICE_MAP.rooms.filter((room) => !reached.has(room.id)).map((room) => room.id);
-    expect(ilhadas).toEqual([]);
+      const reached = new Set<string>();
+      for (const cell of seen) {
+        const column = cell % stride;
+        const row = (cell - column) / stride;
+        const x = originX + column * STEP;
+        const z = originZ + row * STEP;
+        for (const room of OFFICE_MAP.rooms.filter((candidate) => (candidate.level ?? 0) === level)) {
+          if (
+            x >= room.rect.x &&
+            x <= room.rect.x + room.rect.w &&
+            z >= room.rect.z &&
+            z <= room.rect.z + room.rect.d
+          ) {
+            reached.add(room.id);
+          }
+        }
+      }
+
+      const ilhadas = OFFICE_MAP.rooms
+        .filter((room) => (room.level ?? 0) === level && !reached.has(room.id))
+        .map((room) => room.id);
+      expect(ilhadas).toEqual([]);
+    }
   });
 
   it('liga os dutos nos dois sentidos', () => {

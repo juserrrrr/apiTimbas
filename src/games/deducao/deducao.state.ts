@@ -15,6 +15,7 @@ export class PlayerState extends Schema {
   @type('string') color = '#ffffff';
   @type('number') x = 0;
   @type('number') z = 0;
+  @type('number') level = 0;
   @type('number') dir = 0;
   @type('boolean') moving = false;
   @type('boolean') alive = true;
@@ -33,6 +34,7 @@ export class CorpseState extends Schema {
   @type('string') color = '#ffffff';
   @type('number') x = 0;
   @type('number') z = 0;
+  @type('number') level = 0;
   @type('boolean') reported = false;
 }
 

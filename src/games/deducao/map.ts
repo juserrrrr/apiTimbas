@@ -30,6 +30,11 @@ export interface WallBox {
   /// Chega na altura dos olhos, então além de barrar o corpo também corta a
   /// linha de visão. Mesa e sofá não: dá para ver por cima deles.
   tall?: boolean;
+  /// Pavimento ao qual a colisão pertence. Ausente significa térreo para os
+  /// testes e mapas antigos.
+  level?: number;
+  /// No terraço a borda barra o corpo, mas é baixa e não tapa a visão.
+  style?: 'parede' | 'guarda-corpo';
 }
 
 export type Side = 'north' | 'south' | 'east' | 'west';
@@ -41,7 +46,7 @@ export interface Door {
   width: number;
 }
 
-export type RoomKind = 'sala' | 'corredor';
+export type RoomKind = 'sala' | 'corredor' | 'terraco';
 
 export interface RoomDef {
   id: string;
@@ -51,6 +56,7 @@ export interface RoomDef {
   /// circulação mais baixo e sem tapete, para o corredor não competir com as
   /// salas na leitura de cima.
   kind: RoomKind;
+  level?: number;
   /// Cor do piso, no formato que o Three entende direto.
   floor: string;
   /// Cor de destaque da sala. É ela que acende no friso das paredes e diz de
@@ -85,6 +91,7 @@ export interface PropDef {
   z: number;
   /// Rotação em torno do eixo vertical, em radianos.
   rot: number;
+  level?: number;
 }
 
 export type TaskKind =
@@ -103,6 +110,7 @@ export interface TaskSpot {
   label: string;
   x: number;
   z: number;
+  level?: number;
 }
 
 export interface VentDef {
@@ -112,6 +120,18 @@ export interface VentDef {
   z: number;
   /// Para onde este duto leva. A ligação é sempre nos dois sentidos.
   links: string[];
+  level?: number;
+}
+
+export interface StairDef {
+  id: string;
+  level: number;
+  x: number;
+  z: number;
+  rot: number;
+  targetLevel: number;
+  targetX: number;
+  targetZ: number;
 }
 
 export interface GameMap {
@@ -126,8 +146,9 @@ export interface GameMap {
   props: PropDef[];
   taskSpots: TaskSpot[];
   vents: VentDef[];
-  emergency: { x: number; z: number };
-  spawns: { x: number; z: number }[];
+  stairs: StairDef[];
+  emergency: { x: number; z: number; level?: number };
+  spawns: { x: number; z: number; level?: number }[];
 }
 
 const WALL = 0.4;
@@ -160,7 +181,12 @@ function segmentsFor(room: RoomDef, side: Side): WallBox[] {
 function buildWalls(rooms: RoomDef[]): WallBox[] {
   return rooms.flatMap((room) =>
     (['north', 'south', 'east', 'west'] as Side[]).flatMap((side) =>
-      segmentsFor(room, side).map((box) => ({ ...box, accent: room.light })),
+      segmentsFor(room, side).map((box) => ({
+        ...box,
+        accent: room.light,
+        level: room.level ?? 0,
+        style: room.kind === 'terraco' ? ('guarda-corpo' as const) : ('parede' as const),
+      })),
     ),
   );
 }
@@ -225,24 +251,23 @@ function passagem(id: string, x: number, z: number, accent: string): RoomDef {
   };
 }
 
-/// A planta em três faixas: as salas do norte entre z 4 e 24, o corredor entre
-/// z 29 e 36, e as salas do sul entre z 41 e 61. Os cinco metros de vão entre
-/// uma faixa e a outra são vazio de verdade, atravessado só pelas passagens.
+/// Dois pavimentos em volta de um salão central. Não existe mais um corredor
+/// reto atravessando o mapa inteiro: toda ala tem pelo menos duas rotas e as
+/// duas escadas ficam em lados opostos do átrio.
 const ROOMS: RoomDef[] = [
-  // ── Faixa norte ──
   {
-    id: 'recepcao',
-    name: 'Recepção',
-    rect: { x: 3, z: 4, w: 18, d: 20 },
+    id: 'servidores',
+    name: 'Sala dos servidores',
+    rect: { x: 3, z: 3, w: 20, d: 14 },
     kind: 'sala',
-    floor: '#dfe5ef',
-    light: '#7aa2f7',
+    floor: '#cbdbe8',
+    light: '#38bdf8',
     doors: [],
   },
   {
     id: 'openspace',
     name: 'Open space',
-    rect: { x: 26, z: 4, w: 26, d: 20 },
+    rect: { x: 23, z: 3, w: 28, d: 14 },
     kind: 'sala',
     floor: '#e4e9f1',
     light: '#38bdf8',
@@ -251,112 +276,145 @@ const ROOMS: RoomDef[] = [
   {
     id: 'reuniao',
     name: 'Sala de reunião',
-    rect: { x: 57, z: 4, w: 14, d: 20 },
+    rect: { x: 51, z: 3, w: 20, d: 14 },
     kind: 'sala',
     floor: '#eee2cf',
     light: '#f6a35c',
     doors: [],
   },
   {
+    id: 'recepcao',
+    name: 'Recepção',
+    rect: { x: 3, z: 17, w: 16, d: 18 },
+    kind: 'sala',
+    floor: '#dfe5ef',
+    light: '#7aa2f7',
+    doors: [],
+  },
+  {
+    id: 'hall-central',
+    name: 'Átrio central',
+    rect: { x: 19, z: 17, w: 36, d: 24 },
+    kind: 'sala',
+    floor: '#e6e9ee',
+    light: '#93c5fd',
+    doors: [],
+  },
+  {
     id: 'copa',
     name: 'Copa',
-    rect: { x: 76, z: 4, w: 16, d: 20 },
+    rect: { x: 55, z: 17, w: 16, d: 18 },
     kind: 'sala',
     floor: '#dcecdf',
     light: '#4ade80',
     doors: [],
   },
-
-  // ── Circulação ──
-  {
-    id: 'corredor',
-    name: 'Corredor',
-    rect: { x: 3, z: 29, w: 89, d: 7 },
-    kind: 'corredor',
-    floor: CIRCULACAO,
-    light: '#a5b4fc',
-    doors: [],
-  },
-  passagem('pass-recepcao', 9, 24, '#7aa2f7'),
-  passagem('pass-openspace-oeste', 31, 24, '#38bdf8'),
-  passagem('pass-openspace-leste', 44, 24, '#38bdf8'),
-  passagem('pass-reuniao', 61, 24, '#f6a35c'),
-  passagem('pass-copa', 81, 24, '#4ade80'),
-  passagem('pass-arquivo', 8, 36, '#c084fc'),
-  passagem('pass-servidores', 29, 36, '#38bdf8'),
-  passagem('pass-banheiros', 48, 36, '#67e8f9'),
-  passagem('pass-garagem', 66, 36, '#fb923c'),
-  passagem('pass-deposito', 83, 36, '#facc15'),
-
-  // ── Faixa sul ──
-  {
-    id: 'arquivo',
-    name: 'Arquivo',
-    rect: { x: 3, z: 41, w: 16, d: 20 },
-    kind: 'sala',
-    floor: '#e6e0f0',
-    light: '#c084fc',
-    doors: [],
-  },
-  {
-    id: 'servidores',
-    name: 'Sala dos servidores',
-    rect: { x: 23, z: 41, w: 18, d: 20 },
-    kind: 'sala',
-    floor: '#d9e7f2',
-    light: '#38bdf8',
-    doors: [],
-  },
-  {
-    id: 'banheiros',
-    name: 'Banheiros',
-    rect: { x: 45, z: 41, w: 12, d: 20 },
-    kind: 'sala',
-    floor: '#dfeaf0',
-    light: '#67e8f9',
-    doors: [],
-  },
   {
     id: 'garagem',
     name: 'Garagem',
-    rect: { x: 61, z: 41, w: 15, d: 20 },
+    rect: { x: 3, z: 35, w: 16, d: 20 },
     kind: 'sala',
-    floor: '#dadde3',
+    floor: '#d4d7de',
     light: '#fb923c',
     doors: [],
   },
   {
     id: 'deposito',
     name: 'Depósito',
-    rect: { x: 80, z: 41, w: 12, d: 20 },
+    rect: { x: 55, z: 35, w: 16, d: 20 },
     kind: 'sala',
     floor: '#ebe4d0',
     light: '#facc15',
     doors: [],
   },
+
+  // Segundo andar
+  {
+    id: 'arquivo',
+    name: 'Arquivo executivo',
+    rect: { x: 3, z: 3, w: 20, d: 14 },
+    kind: 'sala',
+    level: 1,
+    floor: '#e6e0f0',
+    light: '#c084fc',
+    doors: [],
+  },
+  {
+    id: 'operacoes',
+    name: 'Central de operações',
+    rect: { x: 23, z: 3, w: 28, d: 14 },
+    kind: 'sala',
+    level: 1,
+    floor: '#d9e7f2',
+    light: '#22d3ee',
+    doors: [],
+  },
+  {
+    id: 'chefe',
+    name: 'Sala do chefe',
+    rect: { x: 51, z: 3, w: 20, d: 14 },
+    kind: 'sala',
+    level: 1,
+    floor: '#eadfce',
+    light: '#f59e0b',
+    doors: [],
+  },
+  {
+    id: 'lounge',
+    name: 'Lounge',
+    rect: { x: 3, z: 17, w: 16, d: 18 },
+    kind: 'sala',
+    level: 1,
+    floor: '#dce8e4',
+    light: '#34d399',
+    doors: [],
+  },
+  {
+    id: 'hall-superior',
+    name: 'Mezanino',
+    rect: { x: 19, z: 17, w: 36, d: 24 },
+    kind: 'sala',
+    level: 1,
+    floor: '#dfe5ef',
+    light: '#818cf8',
+    doors: [],
+  },
+  {
+    id: 'terraco',
+    name: 'Terraço',
+    rect: { x: 55, z: 17, w: 16, d: 38 },
+    kind: 'terraco',
+    level: 1,
+    floor: '#b8c4bf',
+    light: '#86efac',
+    doors: [],
+  },
+  {
+    id: 'conselho',
+    name: 'Sala do conselho',
+    rect: { x: 3, z: 35, w: 16, d: 20 },
+    kind: 'sala',
+    level: 1,
+    floor: '#e6dfd4',
+    light: '#f0abfc',
+    doors: [],
+  },
 ];
 
 const LINKS: Link[] = [
-  { a: 'recepcao', b: 'pass-recepcao' },
-  { a: 'pass-recepcao', b: 'corredor' },
-  { a: 'openspace', b: 'pass-openspace-oeste' },
-  { a: 'pass-openspace-oeste', b: 'corredor' },
-  { a: 'openspace', b: 'pass-openspace-leste' },
-  { a: 'pass-openspace-leste', b: 'corredor' },
-  { a: 'reuniao', b: 'pass-reuniao' },
-  { a: 'pass-reuniao', b: 'corredor' },
-  { a: 'copa', b: 'pass-copa' },
-  { a: 'pass-copa', b: 'corredor' },
-  { a: 'corredor', b: 'pass-arquivo' },
-  { a: 'pass-arquivo', b: 'arquivo' },
-  { a: 'corredor', b: 'pass-servidores' },
-  { a: 'pass-servidores', b: 'servidores' },
-  { a: 'corredor', b: 'pass-banheiros' },
-  { a: 'pass-banheiros', b: 'banheiros' },
-  { a: 'corredor', b: 'pass-garagem' },
-  { a: 'pass-garagem', b: 'garagem' },
-  { a: 'corredor', b: 'pass-deposito' },
-  { a: 'pass-deposito', b: 'deposito' },
+  { a: 'servidores', b: 'hall-central' },
+  { a: 'openspace', b: 'hall-central' },
+  { a: 'reuniao', b: 'hall-central' },
+  { a: 'recepcao', b: 'hall-central' },
+  { a: 'copa', b: 'hall-central' },
+  { a: 'garagem', b: 'hall-central' },
+  { a: 'deposito', b: 'hall-central' },
+  { a: 'arquivo', b: 'hall-superior' },
+  { a: 'operacoes', b: 'hall-superior' },
+  { a: 'chefe', b: 'hall-superior' },
+  { a: 'lounge', b: 'hall-superior' },
+  { a: 'terraco', b: 'hall-superior' },
+  { a: 'conselho', b: 'hall-superior' },
 ];
 
 openLinks(ROOMS, LINKS);
@@ -371,109 +429,121 @@ function deskCluster(x: number, z: number, rot: number): PropDef[] {
 
 function buildProps(): PropDef[] {
   const props: PropDef[] = [
-    // Recepção
-    { kind: 'counter', x: 12, z: 8, rot: 0 },
-    { kind: 'sofa', x: 7, z: 17, rot: 0 },
-    { kind: 'sofa', x: 17, z: 17, rot: Math.PI },
-    { kind: 'plant', x: 4.6, z: 5.6, rot: 0 },
-    { kind: 'plant', x: 19.4, z: 5.6, rot: 0 },
-    { kind: 'plant', x: 4.6, z: 22.4, rot: 0 },
-    // Sala de reunião
-    { kind: 'meetingTable', x: 64, z: 12, rot: 0 },
-    { kind: 'chair', x: 62.5, z: 10.6, rot: 0 },
-    { kind: 'chair', x: 64, z: 10.6, rot: 0 },
-    { kind: 'chair', x: 65.5, z: 10.6, rot: 0 },
-    { kind: 'chair', x: 62.5, z: 13.4, rot: Math.PI },
-    { kind: 'chair', x: 64, z: 13.4, rot: Math.PI },
-    { kind: 'chair', x: 65.5, z: 13.4, rot: Math.PI },
-    { kind: 'chair', x: 61.5, z: 12, rot: -Math.PI / 2 },
-    { kind: 'chair', x: 66.5, z: 12, rot: Math.PI / 2 },
-    { kind: 'whiteboard', x: 64, z: 5, rot: 0 },
-    { kind: 'plant', x: 58.6, z: 22.4, rot: 0 },
-    { kind: 'plant', x: 69.4, z: 22.4, rot: 0 },
-    // Copa
-    { kind: 'coffee', x: 90.2, z: 7.4, rot: -Math.PI / 2 },
-    { kind: 'vending', x: 90.2, z: 11.4, rot: -Math.PI / 2 },
-    { kind: 'sink', x: 77.8, z: 7.4, rot: Math.PI / 2 },
-    { kind: 'meetingTable', x: 84, z: 17, rot: 0 },
-    { kind: 'plant', x: 77.6, z: 22.4, rot: 0 },
-    // Corredor. Noventa metros de reta viram esteira rolante se estiverem
-    // vazios: cada peça aqui é um ponto de referência para quem descreve na
-    // reunião onde estava e por onde o outro passou.
-    { kind: 'plant', x: 4.6, z: 30.4, rot: 0 },
-    { kind: 'printer', x: 14, z: 30.6, rot: 0 },
-    { kind: 'crate', x: 21, z: 34.4, rot: 0.3 },
-    { kind: 'plant', x: 25, z: 34.6, rot: 0 },
-    { kind: 'coffee', x: 40, z: 30.3, rot: 0 },
-    { kind: 'plant', x: 58, z: 30.4, rot: 0 },
-    { kind: 'sofa', x: 57, z: 34.2, rot: Math.PI },
-    { kind: 'vending', x: 71, z: 30.3, rot: 0 },
-    { kind: 'plant', x: 78, z: 34.6, rot: 0 },
-    { kind: 'crate', x: 90.5, z: 34.3, rot: -0.2 },
-    // Arquivo
-    { kind: 'locker', x: 4.5, z: 44, rot: Math.PI / 2 },
-    { kind: 'locker', x: 4.5, z: 48, rot: Math.PI / 2 },
-    { kind: 'locker', x: 4.5, z: 52, rot: Math.PI / 2 },
-    { kind: 'locker', x: 17.5, z: 44, rot: -Math.PI / 2 },
-    { kind: 'locker', x: 17.5, z: 48, rot: -Math.PI / 2 },
-    { kind: 'shelf', x: 11, z: 58.5, rot: 0 },
-    // Servidores
-    { kind: 'rack', x: 26, z: 45, rot: 0 },
-    { kind: 'rack', x: 29, z: 45, rot: 0 },
-    { kind: 'rack', x: 32, z: 45, rot: 0 },
-    { kind: 'rack', x: 35, z: 45, rot: 0 },
-    { kind: 'rack', x: 38, z: 45, rot: 0 },
-    { kind: 'rack', x: 26, z: 55, rot: Math.PI },
-    { kind: 'rack', x: 29, z: 55, rot: Math.PI },
-    { kind: 'rack', x: 32, z: 55, rot: Math.PI },
-    { kind: 'rack', x: 35, z: 55, rot: Math.PI },
-    // Banheiros
-    { kind: 'sink', x: 46.6, z: 45, rot: Math.PI / 2 },
-    { kind: 'sink', x: 46.6, z: 48, rot: Math.PI / 2 },
-    { kind: 'sink', x: 46.6, z: 51, rot: Math.PI / 2 },
-    { kind: 'plant', x: 55.4, z: 59.4, rot: 0 },
-    // Garagem
-    { kind: 'car', x: 65, z: 52, rot: 0 },
-    { kind: 'car', x: 71, z: 52, rot: 0 },
-    { kind: 'cone', x: 68, z: 45, rot: 0 },
-    { kind: 'cone', x: 69.2, z: 46, rot: 0 },
-    { kind: 'crate', x: 63, z: 58.5, rot: 0 },
-    // Depósito
-    { kind: 'shelf', x: 83, z: 45, rot: 0 },
-    { kind: 'shelf', x: 83, z: 51, rot: 0 },
-    { kind: 'shelf', x: 89, z: 45, rot: Math.PI },
-    { kind: 'crate', x: 86, z: 58, rot: 0.4 },
-    { kind: 'crate', x: 87.4, z: 57.2, rot: -0.2 },
-    { kind: 'crate', x: 85.2, z: 56.4, rot: 0.9 },
+    // Térreo: recepção e átrio
+    { kind: 'counter', x: 10.5, z: 21, rot: 0 },
+    { kind: 'monitor', x: 10.5, z: 20.6, rot: 0 },
+    { kind: 'sofa', x: 7, z: 30.5, rot: 0 },
+    { kind: 'plant', x: 4.5, z: 19, rot: 0 },
+    { kind: 'plant', x: 17.2, z: 33, rot: 0 },
+    { kind: 'sofa', x: 29, z: 29, rot: Math.PI / 2 },
+    { kind: 'sofa', x: 45, z: 29, rot: -Math.PI / 2 },
+    { kind: 'plant', x: 21, z: 19, rot: 0 },
+    { kind: 'plant', x: 53, z: 39, rot: 0 },
+    { kind: 'coffee', x: 37, z: 20, rot: 0 },
+    { kind: 'printer', x: 37, z: 38, rot: Math.PI },
+
+    // Térreo: sala dos servidores
+    { kind: 'rack', x: 6, z: 6, rot: 0 },
+    { kind: 'rack', x: 9, z: 6, rot: 0 },
+    { kind: 'rack', x: 12, z: 6, rot: 0 },
+    { kind: 'rack', x: 15, z: 6, rot: 0 },
+    { kind: 'rack', x: 18, z: 6, rot: 0 },
+    { kind: 'rack', x: 8, z: 13, rot: Math.PI },
+    { kind: 'rack', x: 12, z: 13, rot: Math.PI },
+    { kind: 'rack', x: 16, z: 13, rot: Math.PI },
+
+    // Térreo: reunião e copa
+    { kind: 'meetingTable', x: 61, z: 9, rot: 0 },
+    { kind: 'chair', x: 59.4, z: 7.6, rot: 0 },
+    { kind: 'chair', x: 61, z: 7.6, rot: 0 },
+    { kind: 'chair', x: 62.6, z: 7.6, rot: 0 },
+    { kind: 'chair', x: 59.4, z: 10.4, rot: Math.PI },
+    { kind: 'chair', x: 61, z: 10.4, rot: Math.PI },
+    { kind: 'chair', x: 62.6, z: 10.4, rot: Math.PI },
+    { kind: 'whiteboard', x: 61, z: 4.1, rot: 0 },
+    { kind: 'coffee', x: 68.5, z: 20, rot: -Math.PI / 2 },
+    { kind: 'vending', x: 68.5, z: 24, rot: -Math.PI / 2 },
+    { kind: 'sink', x: 57, z: 20, rot: Math.PI / 2 },
+    { kind: 'meetingTable', x: 63, z: 30, rot: 0 },
+    { kind: 'plant', x: 69, z: 33, rot: 0 },
+
+    // Térreo: garagem e depósito
+    { kind: 'car', x: 8, z: 45.5, rot: 0 },
+    { kind: 'car', x: 14, z: 45.5, rot: 0 },
+    { kind: 'cone', x: 10.8, z: 52.5, rot: 0 },
+    { kind: 'cone', x: 12, z: 51.5, rot: 0 },
+    { kind: 'crate', x: 5, z: 53, rot: 0.2 },
+    { kind: 'shelf', x: 58, z: 39, rot: Math.PI / 2 },
+    { kind: 'shelf', x: 68, z: 39, rot: -Math.PI / 2 },
+    { kind: 'shelf', x: 58, z: 50, rot: Math.PI / 2 },
+    { kind: 'crate', x: 64, z: 51, rot: 0.3 },
+    { kind: 'crate', x: 66, z: 52, rot: -0.3 },
+
+    // Segundo andar: arquivo, lounge e mezanino
+    { kind: 'locker', x: 5, z: 6, rot: Math.PI / 2, level: 1 },
+    { kind: 'locker', x: 5, z: 10, rot: Math.PI / 2, level: 1 },
+    { kind: 'locker', x: 21, z: 6, rot: -Math.PI / 2, level: 1 },
+    { kind: 'shelf', x: 12, z: 15, rot: 0, level: 1 },
+    { kind: 'sofa', x: 8, z: 24, rot: 0, level: 1 },
+    { kind: 'sofa', x: 14, z: 30, rot: Math.PI, level: 1 },
+    { kind: 'vending', x: 17, z: 20, rot: -Math.PI / 2, level: 1 },
+    { kind: 'plant', x: 5, z: 33, rot: 0, level: 1 },
+    { kind: 'sofa', x: 30, z: 29, rot: Math.PI / 2, level: 1 },
+    { kind: 'sofa', x: 44, z: 29, rot: -Math.PI / 2, level: 1 },
+    { kind: 'plant', x: 21, z: 39, rot: 0, level: 1 },
+    { kind: 'plant', x: 53, z: 19, rot: 0, level: 1 },
+
+    // Segundo andar: sala do chefe
+    { kind: 'desk', x: 61, z: 8, rot: 0, level: 1 },
+    { kind: 'monitor', x: 61, z: 7.65, rot: 0, level: 1 },
+    { kind: 'chair', x: 61, z: 9.3, rot: 0, level: 1 },
+    { kind: 'sofa', x: 55, z: 13.5, rot: Math.PI / 2, level: 1 },
+    { kind: 'meetingTable', x: 67, z: 12.5, rot: Math.PI / 2, level: 1 },
+    { kind: 'plant', x: 69, z: 5, rot: 0, level: 1 },
+    { kind: 'whiteboard', x: 61, z: 4.1, rot: 0, level: 1 },
+
+    // Segundo andar: terraço e conselho
+    { kind: 'meetingTable', x: 63, z: 24, rot: Math.PI / 2, level: 1 },
+    { kind: 'meetingTable', x: 63, z: 36, rot: Math.PI / 2, level: 1 },
+    { kind: 'sofa', x: 66, z: 48, rot: Math.PI, level: 1 },
+    { kind: 'plant', x: 57, z: 20, rot: 0, level: 1 },
+    { kind: 'plant', x: 69, z: 31, rot: 0, level: 1 },
+    { kind: 'plant', x: 57, z: 52, rot: 0, level: 1 },
+    { kind: 'meetingTable', x: 11, z: 45, rot: Math.PI / 2, level: 1 },
+    { kind: 'chair', x: 8.8, z: 45, rot: -Math.PI / 2, level: 1 },
+    { kind: 'chair', x: 13.2, z: 45, rot: Math.PI / 2, level: 1 },
+    { kind: 'whiteboard', x: 11, z: 53.8, rot: Math.PI, level: 1 },
   ];
 
-  // Open space: quatro fileiras de mesas viradas de costas uma para a outra.
-  for (let row = 0; row < 2; row += 1) {
-    for (let column = 0; column < 4; column += 1) {
-      const x = 30 + column * 5.5;
-      const z = 8 + row * 8;
-      props.push(...deskCluster(x, z, 0));
-      props.push(...deskCluster(x, z + 4, Math.PI));
+  // Estações no térreo e na central de operações do piso superior.
+  for (const level of [0, 1]) {
+    for (let row = 0; row < 2; row += 1) {
+      for (let column = 0; column < 4; column += 1) {
+        const x = 27 + column * 6.2;
+        const z = 6 + row * 6;
+        for (const item of deskCluster(x, z, row ? Math.PI : 0)) props.push({ ...item, level });
+      }
     }
   }
   return props;
 }
 
 const TASK_SPOTS: TaskSpot[] = [
-  { id: 'rack-a', kind: 'rack', room: 'servidores', label: 'Religar o rack principal', x: 29, z: 47.5 },
-  { id: 'rack-b', kind: 'rack', room: 'servidores', label: 'Trocar o disco do backup', x: 35, z: 52.5 },
-  { id: 'cabos-a', kind: 'cabos', room: 'servidores', label: 'Refazer o cabeamento', x: 25.5, z: 52.5 },
-  { id: 'arquivo-a', kind: 'arquivo', room: 'arquivo', label: 'Arquivar os contratos', x: 7, z: 45 },
-  { id: 'arquivo-b', kind: 'arquivo', room: 'arquivo', label: 'Separar as notas fiscais', x: 14, z: 53 },
-  { id: 'senha-a', kind: 'senha', room: 'openspace', label: 'Destravar o PC da mesa 3', x: 32.75, z: 8 },
-  { id: 'senha-b', kind: 'senha', room: 'openspace', label: 'Destravar o PC da mesa 7', x: 43.75, z: 16 },
-  { id: 'cabos-b', kind: 'cabos', room: 'openspace', label: 'Ligar o cabo do projetor', x: 38.25, z: 21.5 },
-  { id: 'cafe-a', kind: 'cafe', room: 'copa', label: 'Calibrar a cafeteira', x: 88.6, z: 7.4 },
-  { id: 'estoque-a', kind: 'estoque', room: 'copa', label: 'Repor o estoque da copa', x: 88.6, z: 11.4 },
-  { id: 'impressora-a', kind: 'impressora', room: 'corredor', label: 'Desatolar a impressora', x: 14, z: 31.8 },
-  { id: 'senha-c', kind: 'senha', room: 'recepcao', label: 'Fechar o caixa da recepção', x: 12, z: 9.4 },
-  { id: 'estoque-b', kind: 'estoque', room: 'deposito', label: 'Conferir o inventário', x: 86, z: 47 },
-  { id: 'cabos-c', kind: 'cabos', room: 'garagem', label: 'Recarregar o carro da empresa', x: 65, z: 48.5 },
+  { id: 'rack-a', kind: 'rack', room: 'servidores', label: 'Religar o rack principal', x: 8, z: 8 },
+  { id: 'rack-b', kind: 'rack', room: 'servidores', label: 'Trocar o disco do backup', x: 17, z: 12 },
+  { id: 'cabos-a', kind: 'cabos', room: 'servidores', label: 'Refazer o cabeamento', x: 12, z: 14.5 },
+  { id: 'senha-a', kind: 'senha', room: 'openspace', label: 'Destravar a estação 3', x: 33.2, z: 4.5 },
+  { id: 'senha-b', kind: 'senha', room: 'openspace', label: 'Reiniciar a estação 7', x: 47.2, z: 12.8 },
+  { id: 'cafe-a', kind: 'cafe', room: 'copa', label: 'Calibrar a cafeteira', x: 67, z: 20 },
+  { id: 'estoque-a', kind: 'estoque', room: 'copa', label: 'Repor a máquina de venda', x: 67, z: 24 },
+  { id: 'senha-c', kind: 'senha', room: 'recepcao', label: 'Fechar o caixa da recepção', x: 10.5, z: 22.2 },
+  { id: 'estoque-b', kind: 'estoque', room: 'deposito', label: 'Conferir o inventário', x: 63, z: 48 },
+  { id: 'cabos-c', kind: 'cabos', room: 'garagem', label: 'Recarregar o carro da empresa', x: 8, z: 42.5 },
+  { id: 'arquivo-a', kind: 'arquivo', room: 'arquivo', label: 'Arquivar os contratos', x: 7, z: 8, level: 1 },
+  { id: 'arquivo-b', kind: 'arquivo', room: 'arquivo', label: 'Separar os documentos sigilosos', x: 16, z: 14, level: 1 },
+  { id: 'senha-d', kind: 'senha', room: 'operacoes', label: 'Autorizar o painel de operações', x: 41, z: 12.8, level: 1 },
+  { id: 'senha-chefe', kind: 'senha', room: 'chefe', label: 'Liberar o terminal do chefe', x: 63, z: 8, level: 1 },
+  { id: 'cabos-conselho', kind: 'cabos', room: 'conselho', label: 'Ligar a tela do conselho', x: 11, z: 52.5, level: 1 },
 ];
 
 /// Quanto cada móvel ocupa do chão, e se ele chega alto o bastante para
@@ -517,16 +587,25 @@ function buildObstacles(props: PropDef[]): WallBox[] {
       maxX: prop.x + halfW,
       maxZ: prop.z + halfD,
       tall: size.tall,
+      level: prop.level ?? 0,
     });
   }
   return boxes;
 }
 
 const VENTS: VentDef[] = [
-  { id: 'vent-servidores', room: 'servidores', x: 39.5, z: 59, links: ['vent-arquivo', 'vent-copa'] },
-  { id: 'vent-arquivo', room: 'arquivo', x: 4.5, z: 59, links: ['vent-servidores', 'vent-garagem'] },
-  { id: 'vent-copa', room: 'copa', x: 90.5, z: 21.5, links: ['vent-servidores', 'vent-garagem'] },
-  { id: 'vent-garagem', room: 'garagem', x: 74.5, z: 59, links: ['vent-copa', 'vent-arquivo'] },
+  { id: 'vent-servidores', room: 'servidores', x: 21, z: 15, links: ['vent-garagem', 'vent-operacoes'] },
+  { id: 'vent-garagem', room: 'garagem', x: 17, z: 53, links: ['vent-servidores', 'vent-terraco'] },
+  { id: 'vent-operacoes', room: 'operacoes', x: 49, z: 15, level: 1, links: ['vent-servidores', 'vent-chefe'] },
+  { id: 'vent-chefe', room: 'chefe', x: 69, z: 15, level: 1, links: ['vent-operacoes', 'vent-terraco'] },
+  { id: 'vent-terraco', room: 'terraco', x: 69, z: 53, level: 1, links: ['vent-chefe', 'vent-garagem'] },
+];
+
+const STAIRS: StairDef[] = [
+  { id: 'escada-oeste-terreo', level: 0, x: 24, z: 22, rot: 0, targetLevel: 1, targetX: 24, targetZ: 27 },
+  { id: 'escada-oeste-superior', level: 1, x: 24, z: 22, rot: 0, targetLevel: 0, targetX: 24, targetZ: 27 },
+  { id: 'escada-leste-terreo', level: 0, x: 50, z: 36, rot: Math.PI, targetLevel: 1, targetX: 50, targetZ: 31 },
+  { id: 'escada-leste-superior', level: 1, x: 50, z: 36, rot: Math.PI, targetLevel: 0, targetX: 50, targetZ: 31 },
 ];
 
 const PROPS_BUILT = buildProps();
@@ -535,27 +614,28 @@ const OBSTACLES_BUILT = buildObstacles(PROPS_BUILT);
 
 export const OFFICE_MAP: GameMap = {
   name: 'Escritório Timbas',
-  bounds: { x: 0, z: 0, w: 95, d: 65 },
+  bounds: { x: 0, z: 0, w: 74, d: 58 },
   rooms: ROOMS,
   walls: WALLS_BUILT,
   obstacles: OBSTACLES_BUILT,
   props: PROPS_BUILT,
   taskSpots: TASK_SPOTS,
   vents: VENTS,
-  emergency: { x: 64, z: 18 },
+  stairs: STAIRS,
+  emergency: { x: 37, z: 29, level: 0 },
   spawns: [
-    { x: 5.5, z: 12 },
-    { x: 8.5, z: 12 },
-    { x: 11.5, z: 12 },
-    { x: 14.5, z: 12 },
-    { x: 17.5, z: 12 },
-    { x: 5.5, z: 14.5 },
-    { x: 8.5, z: 14.5 },
-    { x: 11.5, z: 14.5 },
-    { x: 14.5, z: 14.5 },
-    { x: 17.5, z: 14.5 },
-    { x: 7, z: 20.5 },
-    { x: 17, z: 20.5 },
+    { x: 34, z: 26, level: 0 },
+    { x: 37, z: 26, level: 0 },
+    { x: 40, z: 26, level: 0 },
+    { x: 34, z: 29, level: 0 },
+    { x: 40, z: 29, level: 0 },
+    { x: 34, z: 32, level: 0 },
+    { x: 37, z: 32, level: 0 },
+    { x: 40, z: 32, level: 0 },
+    { x: 31, z: 26, level: 0 },
+    { x: 43, z: 26, level: 0 },
+    { x: 31, z: 32, level: 0 },
+    { x: 43, z: 32, level: 0 },
   ],
 };
 
@@ -567,10 +647,21 @@ export const COLLIDERS: WallBox[] = [...WALLS_BUILT, ...OBSTACLES_BUILT];
 /// está atrás dela continua à vista.
 export const SIGHT_BLOCKERS: WallBox[] = [...WALLS_BUILT, ...OBSTACLES_BUILT.filter((box) => box.tall)];
 
-export function roomAt(x: number, z: number): RoomDef | null {
+export function collidersFor(level: number): WallBox[] {
+  return COLLIDERS.filter((box) => (box.level ?? 0) === level);
+}
+
+export function sightBlockersFor(level: number): WallBox[] {
+  return SIGHT_BLOCKERS.filter(
+    (box) => (box.level ?? 0) === level && box.style !== 'guarda-corpo',
+  );
+}
+
+export function roomAt(x: number, z: number, level = 0): RoomDef | null {
   return (
     ROOMS.find(
       (room) =>
+        (room.level ?? 0) === level &&
         x >= room.rect.x &&
         x <= room.rect.x + room.rect.w &&
         z >= room.rect.z &&
