@@ -85,6 +85,8 @@ export class ConfigState extends Schema {
 
 export class DeducaoState extends Schema {
   @type('string') roomName = '';
+  @type('string') mapId = 'original';
+  @type('string') mapName = '';
   @type('string') code = '';
   @type('boolean') private = false;
   @type('string') hostId = '';

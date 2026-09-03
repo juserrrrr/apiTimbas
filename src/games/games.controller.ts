@@ -1,8 +1,22 @@
-import { BadRequestException, Body, Controller, Delete, Get, Post, Put, Req, UseGuards } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Post,
+  Put,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { matchMaker } from 'colyseus';
 import { Request } from 'express';
 import { AuthGuard } from '../auth/guards/auth.guard';
-import { PermissionGuard, RequirePermissions } from '../access/permission.guard';
+import {
+  PermissionGuard,
+  RequirePermissions,
+} from '../access/permission.guard';
 import { ActorService } from '../common/actor.service';
 import {
   FEATURE_DASHBOARD_GAMES,
@@ -43,20 +57,21 @@ export class GamesController {
       this.featureFlags.isEnabled(FEATURE_GAME_DEDUCAO),
     ]);
 
-    const games = isAdmin || (hub && deducao)
-      ? [
-          {
-            id: DEDUCAO_ROOM,
-            name: 'Timbas Detetive',
-            tagline: 'Jogo de dedução',
-            description:
-              'Descubra os assassinos antes que eles eliminem o grupo, ou conclua todas as tarefas para vencer.',
-            players: `${MIN_PLAYERS} a ${MAX_PLAYERS} jogadores`,
-            minutes: '10 a 20 min',
-            href: '/games/deducao',
-          },
-        ]
-      : [];
+    const games =
+      isAdmin || (hub && deducao)
+        ? [
+            {
+              id: DEDUCAO_ROOM,
+              name: 'Timbas Detetive',
+              tagline: 'Jogo de dedução',
+              description:
+                'Descubra os assassinos antes que eles eliminem o grupo, ou conclua todas as tarefas para vencer.',
+              players: `${MIN_PLAYERS} a ${MAX_PLAYERS} jogadores`,
+              minutes: '10 a 20 min',
+              href: '/games/deducao',
+            },
+          ]
+        : [];
 
     return { games };
   }
@@ -77,11 +92,18 @@ export class GamesController {
             // A listagem compartilhada pode sobreviver ao processo que mantinha
             // a sala. Uma leitura curta evita entregar esses registros órfãos ao
             // navegador e depois deixá-lo preso no timeout do matchmaking.
-            await matchMaker.remoteRoomCall(room.roomId, 'roomId', undefined, 1_000);
+            await matchMaker.remoteRoomCall(
+              room.roomId,
+              'roomId',
+              undefined,
+              1_000,
+            );
             return room;
           } catch {
             if (room.processId) {
-              void matchMaker.healthCheckProcessId(room.processId).catch(() => undefined);
+              void matchMaker
+                .healthCheckProcessId(room.processId)
+                .catch(() => undefined);
             }
             return null;
           }
@@ -94,6 +116,8 @@ export class GamesController {
       return {
         roomId: room.roomId,
         name: String(meta.name ?? 'Sala do Timbas'),
+        mapId: String(meta.mapId ?? 'original'),
+        mapName: String(meta.mapName ?? 'Mapa original'),
         code: String(meta.code ?? ''),
         host: String(meta.host ?? ''),
         phase: String(meta.phase ?? 'lobby'),
@@ -110,7 +134,30 @@ export class GamesController {
   @Get('deducao/map')
   async map(@Req() req: AuthedRequest) {
     await this.requireDeducaoAccess(req);
-    return { map: await this.maps.current(), config: DEFAULT_CONFIG, minPlayers: MIN_PLAYERS, maxPlayers: MAX_PLAYERS };
+    return {
+      map: await this.maps.current(),
+      config: DEFAULT_CONFIG,
+      minPlayers: MIN_PLAYERS,
+      maxPlayers: MAX_PLAYERS,
+    };
+  }
+
+  @Get('deducao/maps')
+  async mapCatalog(@Req() req: AuthedRequest) {
+    await this.requireDeducaoAccess(req);
+    return { maps: await this.maps.list() };
+  }
+
+  @Get('deducao/maps/:id')
+  async selectedMap(@Req() req: AuthedRequest, @Param('id') id: string) {
+    await this.requireDeducaoAccess(req);
+    const entry = await this.maps.get(id);
+    return {
+      ...entry,
+      config: DEFAULT_CONFIG,
+      minPlayers: MIN_PLAYERS,
+      maxPlayers: MAX_PLAYERS,
+    };
   }
 
   @Get('deducao/admin/map')
@@ -129,21 +176,74 @@ export class GamesController {
   @Delete('deducao/admin/map')
   @RequirePermissions('games.manage')
   async resetMap() {
-    await this.ensureNoActiveRooms();
-    return { map: await this.maps.reset() };
+    return { map: (await this.maps.get()).map };
+  }
+
+  @Get('deducao/admin/maps')
+  @RequirePermissions('games.manage')
+  async adminMaps() {
+    return { maps: await this.maps.list() };
+  }
+
+  @Get('deducao/admin/maps/:id')
+  @RequirePermissions('games.manage')
+  async adminSelectedMap(@Param('id') id: string) {
+    return this.maps.get(id);
+  }
+
+  @Post('deducao/admin/maps')
+  @RequirePermissions('games.manage')
+  async createMap(@Body() body: { map?: unknown }) {
+    return this.maps.create(body?.map);
+  }
+
+  @Put('deducao/admin/maps/:id')
+  @RequirePermissions('games.manage')
+  async updateMap(@Param('id') id: string, @Body() body: { map?: unknown }) {
+    await this.ensureMapHasNoActiveRooms(id);
+    return this.maps.update(id, body?.map);
+  }
+
+  @Delete('deducao/admin/maps/:id')
+  @RequirePermissions('games.manage')
+  async deleteMap(@Param('id') id: string) {
+    await this.ensureMapHasNoActiveRooms(id);
+    await this.maps.delete(id);
+    return { ok: true };
   }
 
   private async requireDeducaoAccess(req: AuthedRequest) {
     const person = await this.actor.require(req.tokenPayload?.discordId);
-    await this.featureFlags.ensureEnabledOrAdmin(FEATURE_DASHBOARD_GAMES, person.role);
-    await this.featureFlags.ensureEnabledOrAdmin(FEATURE_GAME_DEDUCAO, person.role);
+    await this.featureFlags.ensureEnabledOrAdmin(
+      FEATURE_DASHBOARD_GAMES,
+      person.role,
+    );
+    await this.featureFlags.ensureEnabledOrAdmin(
+      FEATURE_GAME_DEDUCAO,
+      person.role,
+    );
     return person;
   }
 
   private async ensureNoActiveRooms() {
     const rooms = await matchMaker.query({ name: DEDUCAO_ROOM });
     if (rooms.length > 0) {
-      throw new BadRequestException('Feche as salas abertas antes de publicar outro mapa.');
+      throw new BadRequestException(
+        'Feche as salas abertas antes de publicar outro mapa.',
+      );
+    }
+  }
+
+  private async ensureMapHasNoActiveRooms(mapId: string) {
+    const rooms = await matchMaker.query({ name: DEDUCAO_ROOM });
+    const inUse = rooms.some((room) => {
+      const meta = (room.metadata ?? {}) as Record<string, unknown>;
+      return String(meta.mapId ?? 'original') === mapId;
+    });
+    if (inUse) {
+      throw new BadRequestException(
+        'Esse mapa está em uso. Feche as salas dele antes de alterar ou remover.',
+      );
     }
   }
 }

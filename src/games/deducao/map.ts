@@ -63,7 +63,8 @@ export type FloorFinish =
   | 'concrete'
   | 'grass'
   | 'water'
-  | 'sport';
+  | 'sport'
+  | 'asphalt';
 
 export interface RoomDef {
   id: string;
@@ -105,7 +106,10 @@ export type PropKind =
   | 'cone'
   | 'sink'
   | 'vending'
-  | 'kitchen';
+  | 'kitchen'
+  | 'tree'
+  | 'streetLamp'
+  | 'bench';
 
 export interface PropDef {
   kind: PropKind;
@@ -935,6 +939,9 @@ const FOOTPRINTS: Partial<
   sink: { w: 1.7, d: 0.6 },
   vending: { w: 1.1, d: 0.75, tall: true },
   kitchen: { w: 4.2, d: 0.72, tall: true },
+  tree: { w: 1.35, d: 1.35, tall: true },
+  streetLamp: { w: 0.4, d: 0.4, tall: true },
+  bench: { w: 1.9, d: 0.65 },
 };
 
 /// O móvel girado continua sendo barrado por uma caixa alinhada aos eixos: é a

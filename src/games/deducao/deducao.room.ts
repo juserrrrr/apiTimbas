@@ -123,9 +123,13 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
     name?: string;
     password?: string;
     hostName?: string;
+    mapId?: string;
   }) {
-    this.officeMap = await gameDeps().maps.current();
+    const selectedMap = await gameDeps().maps.get(options?.mapId);
+    this.officeMap = selectedMap.map;
     this.setState(new DeducaoState());
+    this.state.mapId = selectedMap.id;
+    this.state.mapName = selectedMap.name;
     this.state.roomName =
       (options?.name ?? 'Sala do Timbas').slice(0, 32).trim() ||
       'Sala do Timbas';
@@ -1035,6 +1039,8 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
   private publishMetadata() {
     return this.setMetadata({
       name: this.state.roomName,
+      mapId: this.state.mapId,
+      mapName: this.state.mapName,
       code: this.state.code,
       private: this.state.private,
       phase: this.state.phase,

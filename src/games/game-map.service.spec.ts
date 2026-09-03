@@ -9,9 +9,15 @@ describe('GameMapService', () => {
     set: jest.fn(),
     remove: jest.fn(),
   };
-  const service = new GameMapService(settings as unknown as SettingsService);
+  let service: GameMapService;
 
-  beforeEach(() => jest.clearAllMocks());
+  beforeEach(() => {
+    jest.clearAllMocks();
+    settings.getMany.mockResolvedValue(new Map());
+    settings.set.mockResolvedValue(undefined);
+    settings.remove.mockResolvedValue(undefined);
+    service = new GameMapService(settings as unknown as SettingsService);
+  });
 
   it('normalizes the production map and rebuilds authoritative collision boxes', () => {
     const input = structuredClone(OFFICE_MAP);
@@ -90,17 +96,28 @@ describe('GameMapService', () => {
     expect(normalized.meetingSeats[10].dir).toBeCloseTo(1.05, 2);
   });
 
-  it('publishes only the normalized map', async () => {
-    settings.set.mockResolvedValue(undefined);
+  it('creates a custom map without changing the fixed original', async () => {
     const input = structuredClone(OFFICE_MAP);
+    input.name = 'Mapa da piscina';
     input.walls = [];
 
-    const published = await service.publish(input);
+    const created = await service.create(input);
+    const original = await service.get('original');
+    const catalog = await service.list();
 
-    expect(published.walls.length).toBeGreaterThan(0);
+    expect(created.id).not.toBe('original');
+    expect(created.map.walls.length).toBeGreaterThan(0);
+    expect(original.map).toBe(OFFICE_MAP);
+    expect(catalog.map((entry) => entry.name)).toEqual([
+      OFFICE_MAP.name,
+      'Mapa da piscina',
+    ]);
     expect(settings.set).toHaveBeenCalledWith(
-      'games.deducao.map.v1',
-      JSON.stringify(published),
+      'games.deducao.maps.v2',
+      expect.stringContaining('Mapa da piscina'),
+    );
+    await expect(service.update('original', input)).rejects.toThrow(
+      BadRequestException,
     );
   });
 });

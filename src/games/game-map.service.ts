@@ -1,4 +1,10 @@
-import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
+import { randomUUID } from 'crypto';
 import { SettingsService } from '../settings/settings.service';
 import {
   FloorFinish,
@@ -20,7 +26,27 @@ import {
   buildWalls,
 } from './deducao/map';
 
-const MAP_KEY = 'games.deducao.map.v1';
+const LEGACY_MAP_KEY = 'games.deducao.map.v1';
+const MAPS_KEY = 'games.deducao.maps.v2';
+export const ORIGINAL_MAP_ID = 'original';
+
+interface StoredGameMap {
+  id: string;
+  map: GameMap;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface GameMapSummary {
+  id: string;
+  name: string;
+  original: boolean;
+  updatedAt: string | null;
+}
+
+export interface GameMapEntry extends GameMapSummary {
+  map: GameMap;
+}
 const FINISHES = new Set<FloorFinish>([
   'carpet',
   'patternedCarpet',
@@ -34,6 +60,7 @@ const FINISHES = new Set<FloorFinish>([
   'grass',
   'water',
   'sport',
+  'asphalt',
 ]);
 const ROOM_KINDS = new Set<RoomKind>([
   'sala',
@@ -65,6 +92,9 @@ const PROP_KINDS = new Set<PropKind>([
   'sink',
   'vending',
   'kitchen',
+  'tree',
+  'streetLamp',
+  'bench',
 ]);
 const TASK_KINDS = new Set<TaskKind>([
   'rack',
@@ -188,30 +218,184 @@ function insideRoom(
 @Injectable()
 export class GameMapService {
   private readonly logger = new Logger(GameMapService.name);
+  private cache: StoredGameMap[] | null = null;
 
   constructor(private readonly settings: SettingsService) {}
 
-  async current(): Promise<GameMap> {
-    try {
-      const stored = (await this.settings.getMany([MAP_KEY])).get(MAP_KEY);
-      return stored ? this.normalize(JSON.parse(stored)) : OFFICE_MAP;
-    } catch (error) {
-      this.logger.warn(
-        `Mapa salvo ignorado: ${error instanceof Error ? error.message : 'conteúdo inválido'}`,
-      );
-      return OFFICE_MAP;
+  async list(): Promise<GameMapSummary[]> {
+    const stored = [...(await this.storedMaps())];
+    return [
+      {
+        id: ORIGINAL_MAP_ID,
+        name: OFFICE_MAP.name,
+        original: true,
+        updatedAt: null,
+      },
+      ...stored.map((entry) => ({
+        id: entry.id,
+        name: entry.map.name,
+        original: false,
+        updatedAt: entry.updatedAt,
+      })),
+    ];
+  }
+
+  async get(id = ORIGINAL_MAP_ID): Promise<GameMapEntry> {
+    if (!id || id === ORIGINAL_MAP_ID) {
+      return {
+        id: ORIGINAL_MAP_ID,
+        name: OFFICE_MAP.name,
+        original: true,
+        updatedAt: null,
+        map: OFFICE_MAP,
+      };
     }
+    const entry = (await this.storedMaps()).find(
+      (candidate) => candidate.id === id,
+    );
+    if (!entry) throw new NotFoundException('Esse mapa não existe mais.');
+    return {
+      id: entry.id,
+      name: entry.map.name,
+      original: false,
+      updatedAt: entry.updatedAt,
+      map: entry.map,
+    };
+  }
+
+  async current(): Promise<GameMap> {
+    return (await this.get()).map;
+  }
+
+  async create(value: unknown): Promise<GameMapEntry> {
+    const map = this.normalize(value);
+    const now = new Date().toISOString();
+    const entry: StoredGameMap = {
+      id: randomUUID(),
+      map,
+      createdAt: now,
+      updatedAt: now,
+    };
+    const stored = [...(await this.storedMaps())];
+    if (stored.length >= 40)
+      throw new BadRequestException(
+        'A biblioteca chegou ao limite de 40 mapas personalizados.',
+      );
+    stored.push(entry);
+    await this.save(stored);
+    return { ...entry, name: map.name, original: false };
+  }
+
+  async update(id: string, value: unknown): Promise<GameMapEntry> {
+    if (id === ORIGINAL_MAP_ID)
+      throw new BadRequestException(
+        'O mapa original é fixo. Crie uma cópia para editar.',
+      );
+    const map = this.normalize(value);
+    const stored = [...(await this.storedMaps())];
+    const index = stored.findIndex((entry) => entry.id === id);
+    if (index < 0) throw new NotFoundException('Esse mapa não existe mais.');
+    stored[index] = {
+      ...stored[index],
+      map,
+      updatedAt: new Date().toISOString(),
+    };
+    await this.save(stored);
+    return { ...stored[index], name: map.name, original: false };
+  }
+
+  async delete(id: string): Promise<void> {
+    if (id === ORIGINAL_MAP_ID)
+      throw new BadRequestException('O mapa original não pode ser removido.');
+    const stored = await this.storedMaps();
+    const next = stored.filter((entry) => entry.id !== id);
+    if (next.length === stored.length)
+      throw new NotFoundException('Esse mapa não existe mais.');
+    await this.save(next);
   }
 
   async publish(value: unknown): Promise<GameMap> {
-    const map = this.normalize(value);
-    await this.settings.set(MAP_KEY, JSON.stringify(map));
-    return map;
+    return (await this.create(value)).map;
   }
 
-  async reset(): Promise<GameMap> {
-    await this.settings.remove([MAP_KEY]);
-    return OFFICE_MAP;
+  private async storedMaps(): Promise<StoredGameMap[]> {
+    if (this.cache) return this.cache;
+    const values = await this.settings.getMany([MAPS_KEY, LEGACY_MAP_KEY]);
+    const rawLibrary = values.get(MAPS_KEY);
+    if (rawLibrary) {
+      try {
+        const parsed = JSON.parse(rawLibrary) as unknown;
+        if (!Array.isArray(parsed))
+          throw new Error('a biblioteca não é uma lista');
+        const library = parsed.slice(0, 40).flatMap((raw): StoredGameMap[] => {
+          if (!raw || typeof raw !== 'object') return [];
+          const candidate = raw as Partial<StoredGameMap>;
+          if (
+            typeof candidate.id !== 'string' ||
+            !candidate.id ||
+            !candidate.map
+          )
+            return [];
+          try {
+            return [
+              {
+                id: candidate.id.slice(0, 64),
+                map: this.normalize(candidate.map),
+                createdAt:
+                  typeof candidate.createdAt === 'string'
+                    ? candidate.createdAt
+                    : new Date(0).toISOString(),
+                updatedAt:
+                  typeof candidate.updatedAt === 'string'
+                    ? candidate.updatedAt
+                    : new Date(0).toISOString(),
+              },
+            ];
+          } catch (error) {
+            this.logger.warn(
+              `Mapa ${candidate.id} ignorado: ${error instanceof Error ? error.message : 'conteúdo inválido'}`,
+            );
+            return [];
+          }
+        });
+        this.cache = library;
+        return library;
+      } catch (error) {
+        this.logger.warn(
+          `Biblioteca de mapas ignorada: ${error instanceof Error ? error.message : 'conteúdo inválido'}`,
+        );
+      }
+    }
+
+    const legacy = values.get(LEGACY_MAP_KEY);
+    if (!legacy) {
+      this.cache = [];
+      return this.cache;
+    }
+    try {
+      const now = new Date().toISOString();
+      this.cache = [
+        {
+          id: 'mapa-migrado',
+          map: this.normalize(JSON.parse(legacy)),
+          createdAt: now,
+          updatedAt: now,
+        },
+      ];
+      return this.cache;
+    } catch (error) {
+      this.logger.warn(
+        `Mapa antigo ignorado: ${error instanceof Error ? error.message : 'conteúdo inválido'}`,
+      );
+      this.cache = [];
+      return this.cache;
+    }
+  }
+
+  private async save(entries: StoredGameMap[]) {
+    await this.settings.set(MAPS_KEY, JSON.stringify(entries));
+    await this.settings.remove([LEGACY_MAP_KEY]);
+    this.cache = entries;
   }
 
   normalize(value: unknown): GameMap {
