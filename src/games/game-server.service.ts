@@ -8,6 +8,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { DeducaoRoom } from './deducao/deducao.room';
 import { GameTicketsService } from './game-tickets.service';
 import { setGameDeps } from './game-deps';
+import { GameMapService } from './game-map.service';
 
 export const DEDUCAO_ROOM = 'deducao';
 
@@ -28,6 +29,7 @@ export class GameServerService {
     private readonly access: AccessService,
     private readonly featureFlags: FeatureFlagsService,
     private readonly prisma: PrismaService,
+    private readonly maps: GameMapService,
   ) {}
 
   async listen(httpServer: HttpServer, port: number | string, allowedOrigins: string[]) {
@@ -37,6 +39,7 @@ export class GameServerService {
       access: this.access,
       featureFlags: this.featureFlags,
       prisma: this.prisma,
+      maps: this.maps,
     });
 
     // As rotas de matchmaking passam ao lado do pipeline do Nest, então o CORS

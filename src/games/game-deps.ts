@@ -3,6 +3,7 @@ import type { ActorService } from '../common/actor.service';
 import type { FeatureFlagsService } from '../feature-flags/feature-flags.service';
 import type { GameTicketsService } from './game-tickets.service';
 import type { PrismaService } from '../prisma/prisma.service';
+import type { GameMapService } from './game-map.service';
 
 /// As salas do Colyseus são criadas pelo próprio framework, não pelo container
 /// do Nest, então elas não recebem nada por construtor. Este arquivo é a única
@@ -15,6 +16,7 @@ export interface GameDeps {
   access: AccessService;
   featureFlags: FeatureFlagsService;
   prisma: PrismaService;
+  maps: GameMapService;
 }
 
 let deps: GameDeps | null = null;

@@ -168,6 +168,14 @@ export interface GameMap {
   stairs: StairDef[];
   emergency: { x: number; z: number; level?: number };
   spawns: { x: number; z: number; level?: number }[];
+  meetingSeats: { x: number; z: number; level: number; dir: number }[];
+  source?: {
+    label?: string;
+    referenceUrl?: string;
+    latitude?: number;
+    longitude?: number;
+    gameUnitsPerMeter?: number;
+  };
 }
 
 const WALL = 0.4;
@@ -210,7 +218,7 @@ function segmentsFor(room: RoomDef, side: Side): WallBox[] {
   });
 }
 
-function buildWalls(rooms: RoomDef[]): WallBox[] {
+export function buildWalls(rooms: RoomDef[]): WallBox[] {
   const raw = rooms.flatMap((room) =>
     (['north', 'south', 'east', 'west'] as Side[]).flatMap((side) =>
       segmentsFor(room, side).map((box) => ({
@@ -225,10 +233,57 @@ function buildWalls(rooms: RoomDef[]): WallBox[] {
     ),
   );
 
+  // No editor basta abrir a porta por um dos lados da divisória. A sala vizinha
+  // ainda descreve a parede inteira, então todas as cópias no mesmo eixo são
+  // recortadas antes da união. Isso também impede colisão invisível na porta.
+  const openings = rooms.flatMap((room) =>
+    room.doors.map((door) => {
+      const horizontal = door.side === 'north' || door.side === 'south';
+      return {
+        level: room.level ?? 0,
+        horizontal,
+        axis: horizontal
+          ? room.rect.z + (door.side === 'south' ? room.rect.d : 0)
+          : room.rect.x + (door.side === 'east' ? room.rect.w : 0),
+        from: (horizontal ? room.rect.x : room.rect.z) + door.at,
+        to: (horizontal ? room.rect.x : room.rect.z) + door.at + door.width,
+      };
+    }),
+  );
+  const carved = raw.flatMap((box) => {
+    const horizontal = box.maxX - box.minX >= box.maxZ - box.minZ;
+    const axis = horizontal
+      ? (box.minZ + box.maxZ) / 2
+      : (box.minX + box.maxX) / 2;
+    let spans: Array<[number, number]> = [[
+      horizontal ? box.minX : box.minZ,
+      horizontal ? box.maxX : box.maxZ,
+    ]];
+    for (const opening of openings) {
+      if (
+        opening.level !== (box.level ?? 0) ||
+        opening.horizontal !== horizontal ||
+        Math.abs(opening.axis - axis) > 0.001
+      ) continue;
+      spans = spans.flatMap(([from, to]) => {
+        if (opening.to <= from || opening.from >= to) return [[from, to]];
+        return [
+          [from, Math.max(from, opening.from)],
+          [Math.min(to, opening.to), to],
+        ].filter(([left, right]) => right - left > 0.001) as Array<[number, number]>;
+      });
+    }
+    return spans.map(([from, to]) =>
+      horizontal
+        ? { ...box, minX: from, maxX: to }
+        : { ...box, minZ: from, maxZ: to },
+    );
+  });
+
   // Salas vizinhas descrevem a mesma divisória pelos dois lados. Unir os
   // trechos coplanares impede duas malhas de brigarem pelo mesmo pixel.
   const groups = new Map<string, WallBox[]>();
-  for (const box of raw) {
+  for (const box of carved) {
     const horizontal = box.maxX - box.minX >= box.maxZ - box.minZ;
     const axis = horizontal
       ? (box.minZ + box.maxZ) / 2
@@ -853,7 +908,7 @@ const FOOTPRINTS: Partial<
 /// O móvel girado continua sendo barrado por uma caixa alinhada aos eixos: é a
 /// menor caixa reta que cabe o retângulo girado. Girar a colisão junto sairia
 /// mais caro em todo quadro de todo jogador para ganhar centímetros.
-function buildObstacles(props: PropDef[]): WallBox[] {
+export function buildObstacles(props: PropDef[]): WallBox[] {
   const boxes: WallBox[] = [];
   for (const prop of props) {
     const size = FOOTPRINTS[prop.kind];
@@ -969,7 +1024,7 @@ export const MEETING_SEATS = [
   { x: 65.7, z: 9.5, dir: -Math.PI / 2, level: 0 },
 ];
 
-function buildStairBarriers(stairs: StairDef[]): WallBox[] {
+export function buildStairBarriers(stairs: StairDef[]): WallBox[] {
   const barriers: WallBox[] = [];
   for (const stair of stairs.filter((item) => item.targetLevel > item.level)) {
     const vertical =
@@ -1093,15 +1148,16 @@ export const OFFICE_MAP: GameMap = {
     { x: 31, z: 32, level: 0 },
     { x: 43, z: 32, level: 0 },
   ],
+  meetingSeats: MEETING_SEATS,
 };
 
 /// Encontra a posição contínua dentro de uma escada. Só a definição que sobe é
 /// usada para que a mesma coordenada sempre produza a mesma altura, independentemente
 /// do sentido em que a pessoa está andando.
-export function stairProgressAt(x: number, z: number): StairProgress | null {
+export function stairProgressAt(x: number, z: number, map: GameMap = OFFICE_MAP): StairProgress | null {
   let closest: (StairProgress & { distance: number }) | null = null;
 
-  for (const stair of STAIRS.filter((candidate) => candidate.targetLevel > candidate.level)) {
+  for (const stair of map.stairs.filter((candidate) => candidate.targetLevel > candidate.level)) {
     const dx = stair.targetX - stair.x;
     const dz = stair.targetZ - stair.z;
     const lengthSquared = dx * dx + dz * dz;
@@ -1133,12 +1189,12 @@ export const SIGHT_BLOCKERS: WallBox[] = [
   ...OBSTACLES_BUILT.filter((box) => box.tall),
 ];
 
-export function collidersFor(level: number): WallBox[] {
-  return COLLIDERS.filter((box) => (box.level ?? 0) === level);
+export function collidersFor(level: number, map: GameMap = OFFICE_MAP): WallBox[] {
+  return [...map.walls, ...map.obstacles].filter((box) => (box.level ?? 0) === level);
 }
 
-export function sightBlockersFor(level: number): WallBox[] {
-  return SIGHT_BLOCKERS.filter(
+export function sightBlockersFor(level: number, map: GameMap = OFFICE_MAP): WallBox[] {
+  return [...map.walls, ...map.obstacles.filter((box) => box.tall)].filter(
     (box) => (box.level ?? 0) === level && box.style !== 'guarda-corpo',
   );
 }
@@ -1156,10 +1212,10 @@ export function roomAt(x: number, z: number, level = 0): RoomDef | null {
   );
 }
 
-export function taskSpotById(id: string): TaskSpot | undefined {
-  return TASK_SPOTS.find((spot) => spot.id === id);
+export function taskSpotById(id: string, map: GameMap = OFFICE_MAP): TaskSpot | undefined {
+  return map.taskSpots.find((spot) => spot.id === id);
 }
 
-export function ventById(id: string): VentDef | undefined {
-  return VENTS.find((vent) => vent.id === id);
+export function ventById(id: string, map: GameMap = OFFICE_MAP): VentDef | undefined {
+  return map.vents.find((vent) => vent.id === id);
 }

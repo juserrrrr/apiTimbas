@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Req, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, Post, Put, Req, UseGuards } from '@nestjs/common';
 import { matchMaker } from 'colyseus';
 import { Request } from 'express';
 import { AuthGuard } from '../auth/guards/auth.guard';
@@ -10,8 +10,8 @@ import {
 } from '../feature-flags/feature-flags.constants';
 import { FeatureFlagsService } from '../feature-flags/feature-flags.service';
 import { Role } from '../enums/role.enum';
-import { OFFICE_MAP } from './deducao/map';
 import { DEFAULT_CONFIG, MAX_PLAYERS, MIN_PLAYERS } from './deducao/rules';
+import { GameMapService } from './game-map.service';
 import { DEDUCAO_ROOM } from './game-server.service';
 import { GameTicketsService } from './game-tickets.service';
 
@@ -25,6 +25,7 @@ export class GamesController {
     private readonly featureFlags: FeatureFlagsService,
     private readonly actor: ActorService,
     private readonly tickets: GameTicketsService,
+    private readonly maps: GameMapService,
   ) {}
 
   @Post('deducao/ticket')
@@ -109,7 +110,27 @@ export class GamesController {
   @Get('deducao/map')
   async map(@Req() req: AuthedRequest) {
     await this.requireDeducaoAccess(req);
-    return { map: OFFICE_MAP, config: DEFAULT_CONFIG, minPlayers: MIN_PLAYERS, maxPlayers: MAX_PLAYERS };
+    return { map: await this.maps.current(), config: DEFAULT_CONFIG, minPlayers: MIN_PLAYERS, maxPlayers: MAX_PLAYERS };
+  }
+
+  @Get('deducao/admin/map')
+  @RequirePermissions('games.manage')
+  async adminMap() {
+    return { map: await this.maps.current() };
+  }
+
+  @Put('deducao/admin/map')
+  @RequirePermissions('games.manage')
+  async publishMap(@Body() body: { map?: unknown }) {
+    await this.ensureNoActiveRooms();
+    return { map: await this.maps.publish(body?.map) };
+  }
+
+  @Delete('deducao/admin/map')
+  @RequirePermissions('games.manage')
+  async resetMap() {
+    await this.ensureNoActiveRooms();
+    return { map: await this.maps.reset() };
   }
 
   private async requireDeducaoAccess(req: AuthedRequest) {
@@ -117,5 +138,12 @@ export class GamesController {
     await this.featureFlags.ensureEnabledOrAdmin(FEATURE_DASHBOARD_GAMES, person.role);
     await this.featureFlags.ensureEnabledOrAdmin(FEATURE_GAME_DEDUCAO, person.role);
     return person;
+  }
+
+  private async ensureNoActiveRooms() {
+    const rooms = await matchMaker.query({ name: DEDUCAO_ROOM });
+    if (rooms.length > 0) {
+      throw new BadRequestException('Feche as salas abertas antes de publicar outro mapa.');
+    }
   }
 }

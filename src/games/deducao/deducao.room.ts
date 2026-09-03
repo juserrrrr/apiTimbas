@@ -10,6 +10,7 @@ import { ChatMessage, CorpseState, DeducaoState, PlayerState } from './deducao.s
 import {
   MEETING_SEATS,
   OFFICE_MAP,
+  GameMap,
   collidersFor,
   sightBlockersFor,
   stairProgressAt,
@@ -71,6 +72,7 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
   private seats = new Map<string, Seat>();
   private nextBlackoutAt = 0;
   private meetingDeadline = 0;
+  private officeMap: GameMap = OFFICE_MAP;
 
   async onAuth(client: Client, options: { ticket?: string; password?: string }) {
     const { tickets, actor, access, featureFlags } = gameDeps();
@@ -93,7 +95,8 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
     return person;
   }
 
-  onCreate(options: { name?: string; password?: string; hostName?: string }) {
+  async onCreate(options: { name?: string; password?: string; hostName?: string }) {
+    this.officeMap = await gameDeps().maps.current();
     this.setState(new DeducaoState());
     this.state.roomName = (options?.name ?? 'Sala do Timbas').slice(0, 32).trim() || 'Sala do Timbas';
     this.state.code = this.buildCode();
@@ -132,7 +135,7 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
     player.avatar = person.avatar ?? '';
     player.color = this.freeColor();
     player.emergenciesLeft = this.state.config.emergencyPerPlayer;
-    const spawn = OFFICE_MAP.spawns[this.state.players.size % OFFICE_MAP.spawns.length];
+    const spawn = this.officeMap.spawns[this.state.players.size % this.officeMap.spawns.length];
     player.x = spawn.x;
     player.z = spawn.z;
     player.level = spawn.level ?? 0;
@@ -223,7 +226,7 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
     this.applyConfig(config);
 
     const roles = assignRoles(ids, config);
-    const tasks = drawTasks(ids, OFFICE_MAP.taskSpots, config.tasksPerPlayer);
+    const tasks = drawTasks(ids, this.officeMap.taskSpots, config.tasksPerPlayer);
     const killers = ids.filter((id) => roles.get(id) === 'assassino');
 
     let crewTasks = 0;
@@ -310,7 +313,7 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
     // nos dois casos a colisão do escritório não vale.
     const next =
       player.alive && !player.inVent
-        ? moveTowards({ x: player.x, z: player.z }, target, budget, collidersFor(player.level))
+        ? moveTowards({ x: player.x, z: player.z }, target, budget, collidersFor(player.level, this.officeMap))
         : this.clampToBounds(target, { x: player.x, z: player.z }, budget);
 
     player.x = next.x;
@@ -319,7 +322,7 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
     player.moving = Boolean(payload.moving);
 
     if (player.alive && !player.inVent) {
-      const crossing = stairProgressAt(player.x, player.z);
+      const crossing = stairProgressAt(player.x, player.z, this.officeMap);
       const previousLevel = player.level;
 
       // A altura muda continuamente no navegador conforme x/z. O servidor só
@@ -351,7 +354,7 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
     if (!seat || !player || this.state.phase !== 'jogando') return;
 
     const assigned = seat.tasks.find((task) => task.spotId === payload?.spotId && !task.done);
-    const spot = assigned && taskSpotById(assigned.spotId);
+    const spot = assigned && taskSpotById(assigned.spotId, this.officeMap);
     if (!spot) return;
     if ((spot.level ?? 0) !== player.level || distance(player, spot) > TASK_RANGE) return;
 
@@ -368,7 +371,7 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
     if (!active || active.spotId !== payload?.spotId) return;
     if (Date.now() - active.startedAt < MIN_TASK_MS) return;
 
-    const spot = taskSpotById(active.spotId);
+    const spot = taskSpotById(active.spotId, this.officeMap);
     // Fantasma termina a tarefa de onde estiver: ele não anda mais pelo mapa
     // para provar que chegou lá.
     if (!spot || (player.alive && ((spot.level ?? 0) !== player.level || distance(player, spot) > TASK_RANGE))) return;
@@ -397,7 +400,7 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
     const victimSeat = this.seats.get(payload?.targetId ?? '');
     if (!victim || !victimSeat || !victim.alive || victimSeat.role === 'assassino') return;
     if (victim.level !== killer.level) return;
-    if (!isWithin(killer, victim, this.state.config.killRange, sightBlockersFor(killer.level))) return;
+    if (!isWithin(killer, victim, this.state.config.killRange, sightBlockersFor(killer.level, this.officeMap))) return;
 
     victim.alive = false;
     victim.moving = false;
@@ -437,10 +440,10 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
       return;
     }
 
-    const vent = ventById(payload.ventId);
+    const vent = ventById(payload.ventId, this.officeMap);
     if (!vent) return;
     if (player.inVent) {
-      const current = OFFICE_MAP.vents.find(
+      const current = this.officeMap.vents.find(
         (candidate) => (candidate.level ?? 0) === player.level && distance(player, candidate) < 0.6,
       );
       if (!current || !current.links.includes(vent.id)) return;
@@ -480,7 +483,7 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
     const player = this.state.players.get(client.sessionId);
     if (!player?.alive || this.state.phase !== 'jogando') return;
     if (player.emergenciesLeft <= 0) return;
-    if ((OFFICE_MAP.emergency.level ?? 0) !== player.level || distance(player, OFFICE_MAP.emergency) > REPORT_RANGE) return;
+    if ((this.officeMap.emergency.level ?? 0) !== player.level || distance(player, this.officeMap.emergency) > REPORT_RANGE) return;
 
     player.emergenciesLeft -= 1;
     this.openMeeting('emergencia', player, '');
@@ -729,7 +732,7 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
 
   private clampToBounds(target: { x: number; z: number }, from: { x: number; z: number }, budget: number) {
     const stepped = moveTowards(from, target, budget, [], PLAYER_RADIUS);
-    const { x, z, w, d } = OFFICE_MAP.bounds;
+    const { x, z, w, d } = this.officeMap.bounds;
     return {
       x: Math.min(Math.max(stepped.x, x + PLAYER_RADIUS), x + w - PLAYER_RADIUS),
       z: Math.min(Math.max(stepped.z, z + PLAYER_RADIUS), z + d - PLAYER_RADIUS),
@@ -739,7 +742,7 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
   private teleportToSpawns() {
     let index = 0;
     for (const player of this.state.players.values()) {
-      const spawn = OFFICE_MAP.spawns[index % OFFICE_MAP.spawns.length];
+      const spawn = this.officeMap.spawns[index % this.officeMap.spawns.length];
       player.x = spawn.x;
       player.z = spawn.z;
       player.level = spawn.level ?? 0;
@@ -751,7 +754,8 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
   private teleportToMeetingSeats() {
     let index = 0;
     for (const player of this.state.players.values()) {
-      const seat = MEETING_SEATS[index % MEETING_SEATS.length];
+      const seats = this.officeMap.meetingSeats.length > 0 ? this.officeMap.meetingSeats : MEETING_SEATS;
+      const seat = seats[index % seats.length];
       player.x = seat.x;
       player.z = seat.z;
       player.level = seat.level;
