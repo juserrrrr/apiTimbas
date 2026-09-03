@@ -6,7 +6,12 @@ import {
 } from '../../feature-flags/feature-flags.constants';
 import { Role as UserRole } from '../../enums/role.enum';
 import { gameDeps } from '../game-deps';
-import { ChatMessage, CorpseState, DeducaoState, PlayerState } from './deducao.state';
+import {
+  ChatMessage,
+  CorpseState,
+  DeducaoState,
+  PlayerState,
+} from './deducao.state';
 import {
   MEETING_SEATS,
   OFFICE_MAP,
@@ -36,6 +41,7 @@ import { AssignedTask, MIN_TASK_MS, TASK_RANGE, drawTasks } from './tasks';
 
 const TICK_MS = 50;
 const WALK_SPEED = 4.6;
+const RUN_SPEED = 7.1;
 const BLACKOUT_SPEED_BONUS = 1.15;
 /// A rede engasga, o quadro atrasa e o passo seguinte vem maior do que devia.
 /// Sem folga, quem joga de 4G ficaria preso na porta o tempo todo.
@@ -46,8 +52,18 @@ const CHAT_LIMIT = 80;
 const SABOTAGE_COOLDOWN_MS = 40_000;
 
 const COLORS = [
-  '#ef4444', '#3b82f6', '#22c55e', '#eab308', '#a855f7', '#f97316',
-  '#06b6d4', '#ec4899', '#84cc16', '#f5f5f5', '#78716c', '#14b8a6',
+  '#ef4444',
+  '#3b82f6',
+  '#22c55e',
+  '#eab308',
+  '#a855f7',
+  '#f97316',
+  '#06b6d4',
+  '#ec4899',
+  '#84cc16',
+  '#f5f5f5',
+  '#78716c',
+  '#14b8a6',
 ];
 
 interface Seat {
@@ -74,16 +90,25 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
   private meetingDeadline = 0;
   private officeMap: GameMap = OFFICE_MAP;
 
-  async onAuth(client: Client, options: { ticket?: string; password?: string }) {
+  async onAuth(
+    client: Client,
+    options: { ticket?: string; password?: string },
+  ) {
     const { tickets, actor, access, featureFlags } = gameDeps();
 
     const discordId = tickets.consume(options?.ticket);
-    if (!discordId) throw new Error('Sua entrada expirou. Volte para a lista de jogos e entre de novo.');
+    if (!discordId)
+      throw new Error(
+        'Sua entrada expirou. Volte para a lista de jogos e entre de novo.',
+      );
     const person = await actor.require(discordId);
 
     if (!(await access.has(person.id, ['dashboard.games'])))
       throw new Error('Seu acesso não inclui a área de jogos.');
-    await featureFlags.ensureEnabledOrAdmin(FEATURE_DASHBOARD_GAMES, person.role);
+    await featureFlags.ensureEnabledOrAdmin(
+      FEATURE_DASHBOARD_GAMES,
+      person.role,
+    );
     await featureFlags.ensureEnabledOrAdmin(FEATURE_GAME_DEDUCAO, person.role);
 
     if (this.password && options.password !== this.password)
@@ -95,27 +120,43 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
     return person;
   }
 
-  async onCreate(options: { name?: string; password?: string; hostName?: string }) {
+  async onCreate(options: {
+    name?: string;
+    password?: string;
+    hostName?: string;
+  }) {
     this.officeMap = await gameDeps().maps.current();
     this.setState(new DeducaoState());
-    this.state.roomName = (options?.name ?? 'Sala do Timbas').slice(0, 32).trim() || 'Sala do Timbas';
+    this.state.roomName =
+      (options?.name ?? 'Sala do Timbas').slice(0, 32).trim() ||
+      'Sala do Timbas';
     this.state.code = this.buildCode();
     this.password = (options?.password ?? '').slice(0, 24);
     this.state.private = Boolean(this.password);
     this.applyConfig(DEFAULT_CONFIG);
 
     this.onMessage('ready', (client) => this.onReady(client));
-    this.onMessage('config', (client, payload) => this.onConfig(client, payload));
+    this.onMessage('config', (client, payload) =>
+      this.onConfig(client, payload),
+    );
     this.onMessage('start', (client) => this.onStart(client));
     this.onMessage('move', (client, payload) => this.onMove(client, payload));
-    this.onMessage('task:begin', (client, payload) => this.onTaskBegin(client, payload));
-    this.onMessage('task:done', (client, payload) => this.onTaskDone(client, payload));
+    this.onMessage('task:begin', (client, payload) =>
+      this.onTaskBegin(client, payload),
+    );
+    this.onMessage('task:done', (client, payload) =>
+      this.onTaskDone(client, payload),
+    );
     this.onMessage('kill', (client, payload) => this.onKill(client, payload));
     this.onMessage('vent', (client, payload) => this.onVent(client, payload));
     this.onMessage('sabotage', (client) => this.onSabotage(client));
-    this.onMessage('report', (client, payload) => this.onReport(client, payload));
+    this.onMessage('report', (client, payload) =>
+      this.onReport(client, payload),
+    );
     this.onMessage('emergency', (client) => this.onEmergency(client));
-    this.onMessage('inspect', (client, payload) => this.onInspect(client, payload));
+    this.onMessage('inspect', (client, payload) =>
+      this.onInspect(client, payload),
+    );
     this.onMessage('vote', (client, payload) => this.onVote(client, payload));
     this.onMessage('chat', (client, payload) => this.onChat(client, payload));
     this.onMessage('restart', (client) => this.onRestart(client));
@@ -127,7 +168,13 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
   async onJoin(
     client: Client,
     _options: unknown,
-    person: { id: number; discordId: string; name: string; avatar: string | null; role: string },
+    person: {
+      id: number;
+      discordId: string;
+      name: string;
+      avatar: string | null;
+      role: string;
+    },
   ) {
     const player = new PlayerState();
     player.id = client.sessionId;
@@ -135,7 +182,10 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
     player.avatar = person.avatar ?? '';
     player.color = this.freeColor();
     player.emergenciesLeft = this.state.config.emergencyPerPlayer;
-    const spawn = this.officeMap.spawns[this.state.players.size % this.officeMap.spawns.length];
+    const spawn =
+      this.officeMap.spawns[
+        this.state.players.size % this.officeMap.spawns.length
+      ];
     player.x = spawn.x;
     player.z = spawn.z;
     player.level = spawn.level ?? 0;
@@ -187,9 +237,11 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
 
     if (this.state.hostId === client.sessionId) {
       this.state.hostId = [...this.state.players.keys()][0] ?? '';
-      this.state.hostCanStartSolo = this.seats.get(this.state.hostId)?.isAdmin ?? false;
+      this.state.hostCanStartSolo =
+        this.seats.get(this.state.hostId)?.isAdmin ?? false;
     }
-    if (this.state.phase !== 'lobby' && this.state.phase !== 'fim') this.checkEnd();
+    if (this.state.phase !== 'lobby' && this.state.phase !== 'fim')
+      this.checkEnd();
     await this.publishMetadata();
   }
 
@@ -202,19 +254,28 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
   }
 
   private onConfig(client: Client, payload: Partial<MatchConfig>) {
-    if (this.state.phase !== 'lobby' || client.sessionId !== this.state.hostId) return;
+    if (this.state.phase !== 'lobby' || client.sessionId !== this.state.hostId)
+      return;
     this.applyConfig({ ...this.currentConfig(), ...payload });
   }
 
   private onStart(client: Client) {
-    if (this.state.phase !== 'lobby' || client.sessionId !== this.state.hostId) return;
+    if (this.state.phase !== 'lobby' || client.sessionId !== this.state.hostId)
+      return;
     const ids = [...this.state.players.keys()];
     const isAdmin = this.seats.get(client.sessionId)?.isAdmin ?? false;
     if (!canStartMatch(ids.length, isAdmin)) {
-      client.send('erro', `A partida precisa de pelo menos ${MIN_PLAYERS} jogadores.`);
+      client.send(
+        'erro',
+        `A partida precisa de pelo menos ${MIN_PLAYERS} jogadores.`,
+      );
       return;
     }
-    if (ids.some((id) => !this.state.players.get(id)!.ready && id !== this.state.hostId)) {
+    if (
+      ids.some(
+        (id) => !this.state.players.get(id)!.ready && id !== this.state.hostId,
+      )
+    ) {
       client.send('erro', 'Ainda tem gente que não marcou pronto.');
       return;
     }
@@ -226,7 +287,11 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
     this.applyConfig(config);
 
     const roles = assignRoles(ids, config);
-    const tasks = drawTasks(ids, this.officeMap.taskSpots, config.tasksPerPlayer);
+    const tasks = drawTasks(
+      ids,
+      this.officeMap.taskSpots,
+      config.tasksPerPlayer,
+    );
     const killers = ids.filter((id) => roles.get(id) === 'assassino');
 
     let crewTasks = 0;
@@ -264,18 +329,24 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
 
     for (const id of ids) {
       const seat = this.seats.get(id)!;
-      const client = this.clients.find((candidate) => candidate.sessionId === id);
+      const client = this.clients.find(
+        (candidate) => candidate.sessionId === id,
+      );
       client?.send('papel', {
         role: seat.role,
         tasks: seat.tasks.map((task) => task.spotId),
-        allies: seat.role === 'assassino' ? killers.filter((killer) => killer !== id) : [],
+        allies:
+          seat.role === 'assassino'
+            ? killers.filter((killer) => killer !== id)
+            : [],
       });
     }
     void this.publishMetadata();
   }
 
   private onRestart(client: Client) {
-    if (this.state.phase !== 'fim' || client.sessionId !== this.state.hostId) return;
+    if (this.state.phase !== 'fim' || client.sessionId !== this.state.hostId)
+      return;
     this.state.phase = 'lobby';
     this.state.winner = '';
     this.state.endReason = '';
@@ -295,25 +366,46 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
 
   // ── Movimento e ações ────────────────────────────────────────────────────
 
-  private onMove(client: Client, payload: { x: number; z: number; dir: number; moving: boolean }) {
+  private onMove(
+    client: Client,
+    payload: {
+      x: number;
+      z: number;
+      dir: number;
+      moving: boolean;
+      sprint?: boolean;
+    },
+  ) {
     const player = this.state.players.get(client.sessionId);
     const seat = this.seats.get(client.sessionId);
     if (!player || !seat || !this.isPlayable()) return;
-    if (typeof payload?.x !== 'number' || typeof payload?.z !== 'number') return;
+    if (typeof payload?.x !== 'number' || typeof payload?.z !== 'number')
+      return;
 
     const now = Date.now();
     const elapsed = Math.min(Math.max(now - seat.lastMoveAt, 0), 400) / 1000;
     seat.lastMoveAt = now;
 
-    const blackoutBonus = this.state.blackout && seat.role === 'assassino' ? BLACKOUT_SPEED_BONUS : 1;
-    const budget = WALK_SPEED * blackoutBonus * SPEED_TOLERANCE * elapsed + 0.05;
+    const blackoutBonus =
+      this.state.blackout && seat.role === 'assassino'
+        ? BLACKOUT_SPEED_BONUS
+        : 1;
+    const requestedSpeed =
+      payload.sprint && payload.moving ? RUN_SPEED : WALK_SPEED;
+    const budget =
+      requestedSpeed * blackoutBonus * SPEED_TOLERANCE * elapsed + 0.05;
     const target = { x: payload.x, z: payload.z };
 
     // Fantasma atravessa parede, e quem está no duto se desloca por dentro dele:
     // nos dois casos a colisão do escritório não vale.
     const next =
       player.alive && !player.inVent
-        ? moveTowards({ x: player.x, z: player.z }, target, budget, collidersFor(player.level, this.officeMap))
+        ? moveTowards(
+            { x: player.x, z: player.z },
+            target,
+            budget,
+            collidersFor(player.level, this.officeMap),
+          )
         : this.clampToBounds(target, { x: player.x, z: player.z }, budget);
 
     player.x = next.x;
@@ -353,13 +445,23 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
     const player = this.state.players.get(client.sessionId);
     if (!seat || !player || this.state.phase !== 'jogando') return;
 
-    const assigned = seat.tasks.find((task) => task.spotId === payload?.spotId && !task.done);
+    const assigned = seat.tasks.find(
+      (task) => task.spotId === payload?.spotId && !task.done,
+    );
     const spot = assigned && taskSpotById(assigned.spotId, this.officeMap);
     if (!spot) return;
-    if ((spot.level ?? 0) !== player.level || distance(player, spot) > TASK_RANGE) return;
+    if (
+      (spot.level ?? 0) !== player.level ||
+      distance(player, spot) > TASK_RANGE
+    )
+      return;
 
     seat.activeTask = { spotId: spot.id, startedAt: Date.now() };
-    client.send('task:ok', { spotId: spot.id, kind: spot.kind, label: spot.label });
+    client.send('task:ok', {
+      spotId: spot.id,
+      kind: spot.kind,
+      label: spot.label,
+    });
   }
 
   private onTaskDone(client: Client, payload: { spotId?: string }) {
@@ -374,7 +476,13 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
     const spot = taskSpotById(active.spotId, this.officeMap);
     // Fantasma termina a tarefa de onde estiver: ele não anda mais pelo mapa
     // para provar que chegou lá.
-    if (!spot || (player.alive && ((spot.level ?? 0) !== player.level || distance(player, spot) > TASK_RANGE))) return;
+    if (
+      !spot ||
+      (player.alive &&
+        ((spot.level ?? 0) !== player.level ||
+          distance(player, spot) > TASK_RANGE))
+    )
+      return;
 
     const assigned = seat.tasks.find((task) => task.spotId === active.spotId);
     if (!assigned || assigned.done) return;
@@ -398,9 +506,23 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
 
     const victim = this.state.players.get(payload?.targetId ?? '');
     const victimSeat = this.seats.get(payload?.targetId ?? '');
-    if (!victim || !victimSeat || !victim.alive || victimSeat.role === 'assassino') return;
+    if (
+      !victim ||
+      !victimSeat ||
+      !victim.alive ||
+      victimSeat.role === 'assassino'
+    )
+      return;
     if (victim.level !== killer.level) return;
-    if (!isWithin(killer, victim, this.state.config.killRange, sightBlockersFor(killer.level, this.officeMap))) return;
+    if (
+      !isWithin(
+        killer,
+        victim,
+        this.state.config.killRange,
+        sightBlockersFor(killer.level, this.officeMap),
+      )
+    )
+      return;
 
     victim.alive = false;
     victim.moving = false;
@@ -444,10 +566,15 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
     if (!vent) return;
     if (player.inVent) {
       const current = this.officeMap.vents.find(
-        (candidate) => (candidate.level ?? 0) === player.level && distance(player, candidate) < 0.6,
+        (candidate) =>
+          (candidate.level ?? 0) === player.level &&
+          distance(player, candidate) < 0.6,
       );
       if (!current || !current.links.includes(vent.id)) return;
-    } else if ((vent.level ?? 0) !== player.level || distance(player, vent) > VENT_RANGE) {
+    } else if (
+      (vent.level ?? 0) !== player.level ||
+      distance(player, vent) > VENT_RANGE
+    ) {
       return;
     }
 
@@ -461,7 +588,8 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
     const seat = this.seats.get(client.sessionId);
     const player = this.state.players.get(client.sessionId);
     if (!seat || !player || seat.role !== 'assassino' || !player.alive) return;
-    if (this.state.phase !== 'jogando' || Date.now() < seat.sabotageReadyAt) return;
+    if (this.state.phase !== 'jogando' || Date.now() < seat.sabotageReadyAt)
+      return;
 
     seat.sabotageReadyAt = Date.now() + SABOTAGE_COOLDOWN_MS;
     this.startBlackout();
@@ -471,7 +599,9 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
     const player = this.state.players.get(client.sessionId);
     if (!player?.alive || this.state.phase !== 'jogando') return;
 
-    const corpse = this.state.corpses.find((candidate) => candidate.id === payload?.corpseId);
+    const corpse = this.state.corpses.find(
+      (candidate) => candidate.id === payload?.corpseId,
+    );
     if (!corpse || corpse.reported || corpse.level !== player.level) return;
     if (distance(player, corpse) > REPORT_RANGE) return;
 
@@ -483,7 +613,11 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
     const player = this.state.players.get(client.sessionId);
     if (!player?.alive || this.state.phase !== 'jogando') return;
     if (player.emergenciesLeft <= 0) return;
-    if ((this.officeMap.emergency.level ?? 0) !== player.level || distance(player, this.officeMap.emergency) > REPORT_RANGE) return;
+    if (
+      (this.officeMap.emergency.level ?? 0) !== player.level ||
+      distance(player, this.officeMap.emergency) > REPORT_RANGE
+    )
+      return;
 
     player.emergenciesLeft -= 1;
     this.openMeeting('emergencia', player, '');
@@ -507,7 +641,13 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
   private onVote(client: Client, payload: { targetId?: string }) {
     const seat = this.seats.get(client.sessionId);
     const player = this.state.players.get(client.sessionId);
-    if (!seat || !player?.alive || this.state.phase !== 'votacao' || seat.vote !== null) return;
+    if (
+      !seat ||
+      !player?.alive ||
+      this.state.phase !== 'votacao' ||
+      seat.vote !== null
+    )
+      return;
 
     const targetId = payload?.targetId ?? '';
     if (targetId && !this.state.players.get(targetId)?.alive) return;
@@ -516,7 +656,8 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
     this.state.meeting.voted.set(client.sessionId, true);
 
     const pending = [...this.state.players.values()].filter(
-      (candidate) => candidate.alive && this.seats.get(candidate.id)?.vote === null,
+      (candidate) =>
+        candidate.alive && this.seats.get(candidate.id)?.vote === null,
     );
     if (pending.length === 0) this.closeVoting();
   }
@@ -526,25 +667,46 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
     const text = (payload?.text ?? '').trim().slice(0, 200);
     if (!player || !text) return;
 
-    const talkingPhase = this.state.phase === 'lobby' || this.state.phase === 'reuniao' || this.state.phase === 'votacao' || this.state.phase === 'fim';
+    const talkingPhase =
+      this.state.phase === 'lobby' ||
+      this.state.phase === 'reuniao' ||
+      this.state.phase === 'votacao' ||
+      this.state.phase === 'fim';
     if (!talkingPhase && player.alive) return;
 
     // Morto conversa com morto. Se a fala dele entrasse no estado da sala, quem
     // está vivo leria o nome do assassino em dois minutos de jogo.
     if (!player.alive && this.state.phase !== 'fim') {
-      const ghosts = this.clients.filter((candidate) => !this.state.players.get(candidate.sessionId)?.alive);
+      const ghosts = this.clients.filter(
+        (candidate) => !this.state.players.get(candidate.sessionId)?.alive,
+      );
       for (const ghost of ghosts) {
-        ghost.send('chat:fantasma', { name: player.name, color: player.color, text, at: Date.now() });
+        ghost.send('chat:fantasma', {
+          name: player.name,
+          color: player.color,
+          text,
+          at: Date.now(),
+        });
       }
       return;
     }
 
-    this.pushChat({ from: player.id, name: player.name, color: player.color, text, system: false });
+    this.pushChat({
+      from: player.id,
+      name: player.name,
+      color: player.color,
+      text,
+      system: false,
+    });
   }
 
   // ── Reunião ──────────────────────────────────────────────────────────────
 
-  private openMeeting(reason: 'corpo' | 'emergencia', by: PlayerState, victimName: string) {
+  private openMeeting(
+    reason: 'corpo' | 'emergencia',
+    by: PlayerState,
+    victimName: string,
+  ) {
     this.state.phase = 'reuniao';
     this.state.blackout = false;
     this.state.chat.clear();
@@ -590,10 +752,16 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
       if (!seat.pendingReading) continue;
       const targetSeat = this.seats.get(seat.pendingReading.targetId);
       const target = this.state.players.get(seat.pendingReading.targetId);
-      const client = this.clients.find((candidate) => candidate.sessionId === sessionId);
+      const client = this.clients.find(
+        (candidate) => candidate.sessionId === sessionId,
+      );
       if (targetSeat && target) {
         client?.send('investigacao', {
-          status: detectiveReading({ id: target.id, role: targetSeat.role, alive: target.alive }),
+          status: detectiveReading({
+            id: target.id,
+            role: targetSeat.role,
+            alive: target.alive,
+          }),
           name: seat.pendingReading.targetName,
         });
       }
@@ -604,7 +772,8 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
   private startVoting() {
     this.state.phase = 'votacao';
     this.state.meeting.voting = true;
-    this.state.meeting.endsAt = Date.now() + this.state.config.voteSeconds * 1000;
+    this.state.meeting.endsAt =
+      Date.now() + this.state.config.voteSeconds * 1000;
     this.meetingDeadline = this.state.meeting.endsAt;
   }
 
@@ -620,7 +789,8 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
     meeting.voting = false;
     meeting.tie = result.tie;
     meeting.skips = [...votes.values()].filter((vote) => !vote).length;
-    for (const [targetId, count] of Object.entries(result.counts)) meeting.tally.set(targetId, count);
+    for (const [targetId, count] of Object.entries(result.counts))
+      meeting.tally.set(targetId, count);
 
     if (result.ejected) {
       const ejected = this.state.players.get(result.ejected);
@@ -631,7 +801,9 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
         ejected.inVent = false;
         meeting.ejectedId = ejected.id;
         meeting.ejectedName = ejected.name;
-        meeting.ejectedRole = this.state.config.revealRoleOnEject ? ejectedSeat.role : '';
+        meeting.ejectedRole = this.state.config.revealRoleOnEject
+          ? ejectedSeat.role
+          : '';
       }
     }
 
@@ -651,7 +823,10 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
     this.meetingDeadline = 0;
     for (const seat of this.seats.values()) {
       seat.vote = null;
-      seat.killReadyAt = Math.max(seat.killReadyAt, Date.now() + this.state.config.killCooldownMs);
+      seat.killReadyAt = Math.max(
+        seat.killReadyAt,
+        Date.now() + this.state.config.killCooldownMs,
+      );
     }
   }
 
@@ -665,13 +840,15 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
       return;
     }
     if (this.state.phase === 'votacao') {
-      if (this.state.meeting.voting && now >= this.meetingDeadline) this.closeVoting();
+      if (this.state.meeting.voting && now >= this.meetingDeadline)
+        this.closeVoting();
       else if (!this.state.meeting.voting && now >= this.meetingDeadline) {
         this.closeMeeting();
         if (!this.checkEnd()) {
           this.teleportToSpawns();
           this.state.phase = 'jogando';
-          this.nextBlackoutAt = now + this.state.config.blackoutEverySeconds * 1000;
+          this.nextBlackoutAt =
+            now + this.state.config.blackoutEverySeconds * 1000;
         }
       }
       return;
@@ -681,7 +858,11 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
     if (this.state.blackout && now >= this.state.blackoutEndsAt) {
       this.state.blackout = false;
       this.nextBlackoutAt = now + this.state.config.blackoutEverySeconds * 1000;
-    } else if (!this.state.blackout && this.nextBlackoutAt > 0 && now >= this.nextBlackoutAt) {
+    } else if (
+      !this.state.blackout &&
+      this.nextBlackoutAt > 0 &&
+      now >= this.nextBlackoutAt
+    ) {
       this.startBlackout();
     }
   }
@@ -691,7 +872,8 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
   private startBlackout() {
     if (this.state.phase !== 'jogando' || this.state.blackout) return;
     this.state.blackout = true;
-    this.state.blackoutEndsAt = Date.now() + this.state.config.blackoutSeconds * 1000;
+    this.state.blackoutEndsAt =
+      Date.now() + this.state.config.blackoutSeconds * 1000;
     this.nextBlackoutAt = 0;
     this.broadcast('apagao', { until: this.state.blackoutEndsAt });
   }
@@ -702,7 +884,11 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
       role: this.seats.get(player.id)?.role ?? 'funcionario',
       alive: player.alive,
     }));
-    const winner = winnerFor(players, this.state.tasksDone, this.state.tasksTotal);
+    const winner = winnerFor(
+      players,
+      this.state.tasksDone,
+      this.state.tasksTotal,
+    );
     if (!winner) return false;
 
     this.state.phase = 'fim';
@@ -718,7 +904,10 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
 
     this.broadcast('fim', {
       winner,
-      roles: [...this.seats.entries()].map(([sessionId, seat]) => ({ id: sessionId, role: seat.role })),
+      roles: [...this.seats.entries()].map(([sessionId, seat]) => ({
+        id: sessionId,
+        role: seat.role,
+      })),
     });
     void this.publishMetadata();
     return true;
@@ -730,12 +919,22 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
     return this.state.phase === 'jogando' || this.state.phase === 'lobby';
   }
 
-  private clampToBounds(target: { x: number; z: number }, from: { x: number; z: number }, budget: number) {
+  private clampToBounds(
+    target: { x: number; z: number },
+    from: { x: number; z: number },
+    budget: number,
+  ) {
     const stepped = moveTowards(from, target, budget, [], PLAYER_RADIUS);
     const { x, z, w, d } = this.officeMap.bounds;
     return {
-      x: Math.min(Math.max(stepped.x, x + PLAYER_RADIUS), x + w - PLAYER_RADIUS),
-      z: Math.min(Math.max(stepped.z, z + PLAYER_RADIUS), z + d - PLAYER_RADIUS),
+      x: Math.min(
+        Math.max(stepped.x, x + PLAYER_RADIUS),
+        x + w - PLAYER_RADIUS,
+      ),
+      z: Math.min(
+        Math.max(stepped.z, z + PLAYER_RADIUS),
+        z + d - PLAYER_RADIUS,
+      ),
     };
   }
 
@@ -754,7 +953,10 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
   private teleportToMeetingSeats() {
     let index = 0;
     for (const player of this.state.players.values()) {
-      const seats = this.officeMap.meetingSeats.length > 0 ? this.officeMap.meetingSeats : MEETING_SEATS;
+      const seats =
+        this.officeMap.meetingSeats.length > 0
+          ? this.officeMap.meetingSeats
+          : MEETING_SEATS;
       const seat = seats[index % seats.length];
       player.x = seat.x;
       player.z = seat.z;
@@ -784,25 +986,45 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
   }
 
   private applyConfig(next: MatchConfig) {
-    const clean = sanitizeConfig(next, Math.max(this.state.players.size, MIN_PLAYERS));
+    const clean = sanitizeConfig(
+      next,
+      Math.max(this.state.players.size, MIN_PLAYERS),
+    );
     Object.assign(this.state.config, clean);
   }
 
   private freeColor(): string {
-    const taken = new Set([...this.state.players.values()].map((player) => player.color));
+    const taken = new Set(
+      [...this.state.players.values()].map((player) => player.color),
+    );
     return COLORS.find((color) => !taken.has(color)) ?? COLORS[0];
   }
 
   private buildCode(): string {
     const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-    return Array.from({ length: 5 }, () => alphabet[Math.floor(Math.random() * alphabet.length)]).join('');
+    return Array.from(
+      { length: 5 },
+      () => alphabet[Math.floor(Math.random() * alphabet.length)],
+    ).join('');
   }
 
   private system(text: string) {
-    this.pushChat({ from: '', name: 'Sistema', color: '#94a3b8', text, system: true });
+    this.pushChat({
+      from: '',
+      name: 'Sistema',
+      color: '#94a3b8',
+      text,
+      system: true,
+    });
   }
 
-  private pushChat(input: { from: string; name: string; color: string; text: string; system: boolean }) {
+  private pushChat(input: {
+    from: string;
+    name: string;
+    color: string;
+    text: string;
+    system: boolean;
+  }) {
     const message = new ChatMessage();
     message.id = randomUUID();
     message.from = input.from;
