@@ -44,7 +44,13 @@ export interface Door {
   width: number;
 }
 
-export type RoomKind = 'sala' | 'corredor' | 'terraco';
+export type RoomKind =
+  | 'sala'
+  | 'corredor'
+  | 'terraco'
+  | 'externa'
+  | 'agua'
+  | 'campo';
 export type FloorFinish =
   | 'carpet'
   | 'patternedCarpet'
@@ -54,7 +60,10 @@ export type FloorFinish =
   | 'terrazzo'
   | 'vinyl'
   | 'pantry'
-  | 'concrete';
+  | 'concrete'
+  | 'grass'
+  | 'water'
+  | 'sport';
 
 export interface RoomDef {
   id: string;
@@ -219,8 +228,14 @@ function segmentsFor(room: RoomDef, side: Side): WallBox[] {
 }
 
 export function buildWalls(rooms: RoomDef[]): WallBox[] {
-  const raw = rooms.flatMap((room) =>
-    (['north', 'south', 'east', 'west'] as Side[]).flatMap((side) =>
+  const raw = rooms.flatMap((room) => {
+    if (
+      room.kind === 'externa' ||
+      room.kind === 'agua' ||
+      room.kind === 'campo'
+    )
+      return [];
+    return (['north', 'south', 'east', 'west'] as Side[]).flatMap((side) =>
       segmentsFor(room, side).map((box) => ({
         ...box,
         accent: room.light,
@@ -230,8 +245,8 @@ export function buildWalls(rooms: RoomDef[]): WallBox[] {
             ? ('guarda-corpo' as const)
             : ('parede' as const),
       })),
-    ),
-  );
+    );
+  });
 
   // No editor basta abrir a porta por um dos lados da divisória. A sala vizinha
   // ainda descreve a parede inteira, então todas as cópias no mesmo eixo são
@@ -255,22 +270,24 @@ export function buildWalls(rooms: RoomDef[]): WallBox[] {
     const axis = horizontal
       ? (box.minZ + box.maxZ) / 2
       : (box.minX + box.maxX) / 2;
-    let spans: Array<[number, number]> = [[
-      horizontal ? box.minX : box.minZ,
-      horizontal ? box.maxX : box.maxZ,
-    ]];
+    let spans: Array<[number, number]> = [
+      [horizontal ? box.minX : box.minZ, horizontal ? box.maxX : box.maxZ],
+    ];
     for (const opening of openings) {
       if (
         opening.level !== (box.level ?? 0) ||
         opening.horizontal !== horizontal ||
         Math.abs(opening.axis - axis) > 0.001
-      ) continue;
+      )
+        continue;
       spans = spans.flatMap(([from, to]) => {
         if (opening.to <= from || opening.from >= to) return [[from, to]];
         return [
           [from, Math.max(from, opening.from)],
           [Math.min(to, opening.to), to],
-        ].filter(([left, right]) => right - left > 0.001) as Array<[number, number]>;
+        ].filter(([left, right]) => right - left > 0.001) as Array<
+          [number, number]
+        >;
       });
     }
     return spans.map(([from, to]) =>
@@ -318,6 +335,21 @@ export function buildWalls(rooms: RoomDef[]): WallBox[] {
   }
 
   return merged;
+}
+
+/// Água é cenário atravessável visualmente, mas não chão jogável. A borda não
+/// ganha parede: a colisão ocupa somente a lâmina da piscina/lago.
+export function buildTerrainObstacles(rooms: RoomDef[]): WallBox[] {
+  return rooms
+    .filter((room) => room.kind === 'agua')
+    .map((room) => ({
+      minX: room.rect.x + 0.15,
+      minZ: room.rect.z + 0.15,
+      maxX: room.rect.x + room.rect.w - 0.15,
+      maxZ: room.rect.z + room.rect.d - 0.15,
+      level: room.level ?? 0,
+      tall: false,
+    }));
 }
 
 interface Link {
@@ -1154,14 +1186,21 @@ export const OFFICE_MAP: GameMap = {
 /// Encontra a posição contínua dentro de uma escada. Só a definição que sobe é
 /// usada para que a mesma coordenada sempre produza a mesma altura, independentemente
 /// do sentido em que a pessoa está andando.
-export function stairProgressAt(x: number, z: number, map: GameMap = OFFICE_MAP): StairProgress | null {
+export function stairProgressAt(
+  x: number,
+  z: number,
+  map: GameMap = OFFICE_MAP,
+): StairProgress | null {
   let closest: (StairProgress & { distance: number }) | null = null;
 
-  for (const stair of map.stairs.filter((candidate) => candidate.targetLevel > candidate.level)) {
+  for (const stair of map.stairs.filter(
+    (candidate) => candidate.targetLevel > candidate.level,
+  )) {
     const dx = stair.targetX - stair.x;
     const dz = stair.targetZ - stair.z;
     const lengthSquared = dx * dx + dz * dz;
-    const rawProgress = ((x - stair.x) * dx + (z - stair.z) * dz) / lengthSquared;
+    const rawProgress =
+      ((x - stair.x) * dx + (z - stair.z) * dz) / lengthSquared;
     if (rawProgress < -0.08 || rawProgress > 1.08) continue;
 
     const progress = Math.min(1, Math.max(0, rawProgress));
@@ -1189,11 +1228,19 @@ export const SIGHT_BLOCKERS: WallBox[] = [
   ...OBSTACLES_BUILT.filter((box) => box.tall),
 ];
 
-export function collidersFor(level: number, map: GameMap = OFFICE_MAP): WallBox[] {
-  return [...map.walls, ...map.obstacles].filter((box) => (box.level ?? 0) === level);
+export function collidersFor(
+  level: number,
+  map: GameMap = OFFICE_MAP,
+): WallBox[] {
+  return [...map.walls, ...map.obstacles].filter(
+    (box) => (box.level ?? 0) === level,
+  );
 }
 
-export function sightBlockersFor(level: number, map: GameMap = OFFICE_MAP): WallBox[] {
+export function sightBlockersFor(
+  level: number,
+  map: GameMap = OFFICE_MAP,
+): WallBox[] {
   return [...map.walls, ...map.obstacles.filter((box) => box.tall)].filter(
     (box) => (box.level ?? 0) === level && box.style !== 'guarda-corpo',
   );
@@ -1212,10 +1259,16 @@ export function roomAt(x: number, z: number, level = 0): RoomDef | null {
   );
 }
 
-export function taskSpotById(id: string, map: GameMap = OFFICE_MAP): TaskSpot | undefined {
+export function taskSpotById(
+  id: string,
+  map: GameMap = OFFICE_MAP,
+): TaskSpot | undefined {
   return map.taskSpots.find((spot) => spot.id === id);
 }
 
-export function ventById(id: string, map: GameMap = OFFICE_MAP): VentDef | undefined {
+export function ventById(
+  id: string,
+  map: GameMap = OFFICE_MAP,
+): VentDef | undefined {
   return map.vents.find((vent) => vent.id === id);
 }
