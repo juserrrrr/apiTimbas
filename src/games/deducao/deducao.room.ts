@@ -42,7 +42,6 @@ import { AssignedTask, MIN_TASK_MS, TASK_RANGE, drawTasks } from './tasks';
 const TICK_MS = 50;
 const WALK_SPEED = 4.6;
 const RUN_SPEED = 7.1;
-const BLACKOUT_SPEED_BONUS = 1.15;
 /// A rede engasga, o quadro atrasa e o passo seguinte vem maior do que devia.
 /// Sem folga, quem joga de 4G ficaria preso na porta o tempo todo.
 const SPEED_TOLERANCE = 1.35;
@@ -386,14 +385,9 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
     const elapsed = Math.min(Math.max(now - seat.lastMoveAt, 0), 400) / 1000;
     seat.lastMoveAt = now;
 
-    const blackoutBonus =
-      this.state.blackout && seat.role === 'assassino'
-        ? BLACKOUT_SPEED_BONUS
-        : 1;
     const requestedSpeed =
       payload.sprint && payload.moving ? RUN_SPEED : WALK_SPEED;
-    const budget =
-      requestedSpeed * blackoutBonus * SPEED_TOLERANCE * elapsed + 0.05;
+    const budget = requestedSpeed * SPEED_TOLERANCE * elapsed + 0.05;
     const target = { x: payload.x, z: payload.z };
 
     // Fantasma atravessa parede, e quem está no duto se desloca por dentro dele:
@@ -867,8 +861,8 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
     }
   }
 
-  /// A luz cai, a visão de todo mundo encolhe e o assassino anda mais rápido. É
-  /// a janela de tensão do round, herdada do Deceit.
+  /// A luz cai e a visão de todos encolhe do mesmo jeito. O papel continua
+  /// secreto; o apagão não concede visão ou velocidade privilegiadas.
   private startBlackout() {
     if (this.state.phase !== 'jogando' || this.state.blackout) return;
     this.state.blackout = true;
