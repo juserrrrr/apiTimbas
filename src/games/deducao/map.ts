@@ -144,6 +144,12 @@ export interface StairDef {
   targetZ: number;
 }
 
+export interface StairProgress {
+  stair: StairDef;
+  /// 0 é o piso de baixo e 1 é o piso de cima.
+  progress: number;
+}
+
 export interface GameMap {
   name: string;
   bounds: Rect;
@@ -329,7 +335,7 @@ const ROOMS: RoomDef[] = [
     name: 'Sala dos servidores',
     rect: { x: 3, z: 3, w: 20, d: 14 },
     kind: 'sala',
-    floor: '#24384a',
+    floor: '#4c718a',
     finish: 'server',
     light: '#38bdf8',
     doors: [],
@@ -339,7 +345,7 @@ const ROOMS: RoomDef[] = [
     name: 'Open space',
     rect: { x: 23, z: 3, w: 28, d: 14 },
     kind: 'sala',
-    floor: '#334155',
+    floor: '#6e8299',
     finish: 'carpet',
     light: '#38bdf8',
     doors: [],
@@ -349,7 +355,7 @@ const ROOMS: RoomDef[] = [
     name: 'Sala de reunião',
     rect: { x: 51, z: 3, w: 20, d: 14 },
     kind: 'sala',
-    floor: '#70513a',
+    floor: '#a97850',
     finish: 'wood',
     light: '#f6a35c',
     doors: [],
@@ -359,7 +365,7 @@ const ROOMS: RoomDef[] = [
     name: 'Recepção',
     rect: { x: 3, z: 17, w: 16, d: 18 },
     kind: 'sala',
-    floor: '#59616b',
+    floor: '#8b98a8',
     finish: 'terrazzo',
     light: '#7aa2f7',
     doors: [],
@@ -369,7 +375,7 @@ const ROOMS: RoomDef[] = [
     name: 'Corredor oeste',
     rect: { x: 19, z: 17, w: 8, d: 24 },
     kind: 'corredor',
-    floor: '#4b5563',
+    floor: '#8794a5',
     finish: 'terrazzo',
     light: '#60a5fa',
     doors: [],
@@ -379,7 +385,7 @@ const ROOMS: RoomDef[] = [
     name: 'Átrio central',
     rect: { x: 27, z: 17, w: 20, d: 24 },
     kind: 'sala',
-    floor: '#2f3b4d',
+    floor: '#677b95',
     finish: 'carpet',
     light: '#93c5fd',
     doors: [],
@@ -389,7 +395,7 @@ const ROOMS: RoomDef[] = [
     name: 'Corredor leste',
     rect: { x: 47, z: 17, w: 8, d: 24 },
     kind: 'corredor',
-    floor: '#4b5563',
+    floor: '#8794a5',
     finish: 'terrazzo',
     light: '#60a5fa',
     doors: [],
@@ -399,7 +405,7 @@ const ROOMS: RoomDef[] = [
     name: 'Copa',
     rect: { x: 55, z: 17, w: 16, d: 18 },
     kind: 'sala',
-    floor: '#40594b',
+    floor: '#668c79',
     finish: 'pantry',
     light: '#4ade80',
     doors: [],
@@ -409,7 +415,7 @@ const ROOMS: RoomDef[] = [
     name: 'Garagem',
     rect: { x: 3, z: 35, w: 16, d: 20 },
     kind: 'sala',
-    floor: '#4b4f56',
+    floor: '#777f89',
     finish: 'concrete',
     light: '#fb923c',
     doors: [],
@@ -419,7 +425,7 @@ const ROOMS: RoomDef[] = [
     name: 'Dispensa',
     rect: { x: 55, z: 35, w: 16, d: 10 },
     kind: 'sala',
-    floor: '#46594d',
+    floor: '#718d7b',
     finish: 'pantry',
     light: '#facc15',
     doors: [],
@@ -429,7 +435,7 @@ const ROOMS: RoomDef[] = [
     name: 'Depósito',
     rect: { x: 55, z: 45, w: 16, d: 10 },
     kind: 'sala',
-    floor: '#504b43',
+    floor: '#837565',
     finish: 'concrete',
     light: '#f59e0b',
     doors: [],
@@ -442,7 +448,7 @@ const ROOMS: RoomDef[] = [
     rect: { x: 3, z: 3, w: 20, d: 14 },
     kind: 'sala',
     level: 1,
-    floor: '#443c55',
+    floor: '#766a8b',
     finish: 'carpet',
     light: '#c084fc',
     doors: [],
@@ -453,7 +459,7 @@ const ROOMS: RoomDef[] = [
     rect: { x: 23, z: 3, w: 28, d: 14 },
     kind: 'sala',
     level: 1,
-    floor: '#263a4a',
+    floor: '#4f748b',
     finish: 'server',
     light: '#22d3ee',
     doors: [],
@@ -464,7 +470,7 @@ const ROOMS: RoomDef[] = [
     rect: { x: 51, z: 3, w: 20, d: 14 },
     kind: 'sala',
     level: 1,
-    floor: '#684a35',
+    floor: '#9a704e',
     finish: 'wood',
     light: '#f59e0b',
     doors: [],
@@ -475,7 +481,7 @@ const ROOMS: RoomDef[] = [
     rect: { x: 3, z: 17, w: 16, d: 18 },
     kind: 'sala',
     level: 1,
-    floor: '#354b45',
+    floor: '#5e8378',
     finish: 'carpet',
     light: '#34d399',
     doors: [],
@@ -486,7 +492,7 @@ const ROOMS: RoomDef[] = [
     rect: { x: 19, z: 17, w: 8, d: 24 },
     kind: 'corredor',
     level: 1,
-    floor: '#485366',
+    floor: '#75849a',
     finish: 'terrazzo',
     light: '#818cf8',
     doors: [],
@@ -497,7 +503,7 @@ const ROOMS: RoomDef[] = [
     rect: { x: 27, z: 17, w: 20, d: 24 },
     kind: 'sala',
     level: 1,
-    floor: '#30394b',
+    floor: '#687996',
     finish: 'carpet',
     light: '#818cf8',
     doors: [],
@@ -508,7 +514,7 @@ const ROOMS: RoomDef[] = [
     rect: { x: 47, z: 17, w: 8, d: 24 },
     kind: 'corredor',
     level: 1,
-    floor: '#485366',
+    floor: '#75849a',
     finish: 'terrazzo',
     light: '#818cf8',
     doors: [],
@@ -519,7 +525,7 @@ const ROOMS: RoomDef[] = [
     rect: { x: 55, z: 17, w: 16, d: 38 },
     kind: 'terraco',
     level: 1,
-    floor: '#565b5d',
+    floor: '#7f898c',
     finish: 'concrete',
     light: '#86efac',
     doors: [],
@@ -530,7 +536,7 @@ const ROOMS: RoomDef[] = [
     rect: { x: 3, z: 35, w: 16, d: 20 },
     kind: 'sala',
     level: 1,
-    floor: '#594737',
+    floor: '#8e7058',
     finish: 'wood',
     light: '#f0abfc',
     doors: [],
@@ -1085,6 +1091,33 @@ export const OFFICE_MAP: GameMap = {
     { x: 43, z: 32, level: 0 },
   ],
 };
+
+/// Encontra a posição contínua dentro de uma escada. Só a definição que sobe é
+/// usada para que a mesma coordenada sempre produza a mesma altura, independentemente
+/// do sentido em que a pessoa está andando.
+export function stairProgressAt(x: number, z: number): StairProgress | null {
+  let closest: (StairProgress & { distance: number }) | null = null;
+
+  for (const stair of STAIRS.filter((candidate) => candidate.targetLevel > candidate.level)) {
+    const dx = stair.targetX - stair.x;
+    const dz = stair.targetZ - stair.z;
+    const lengthSquared = dx * dx + dz * dz;
+    const rawProgress = ((x - stair.x) * dx + (z - stair.z) * dz) / lengthSquared;
+    if (rawProgress < -0.08 || rawProgress > 1.08) continue;
+
+    const progress = Math.min(1, Math.max(0, rawProgress));
+    const projectedX = stair.x + dx * progress;
+    const projectedZ = stair.z + dz * progress;
+    const perpendicularDistance = Math.hypot(x - projectedX, z - projectedZ);
+    if (perpendicularDistance > 1.16) continue;
+
+    if (!closest || perpendicularDistance < closest.distance) {
+      closest = { stair, progress, distance: perpendicularDistance };
+    }
+  }
+
+  return closest ? { stair: closest.stair, progress: closest.progress } : null;
+}
 
 /// Tudo em que se esbarra: parede e móvel. Somado uma vez só, porque a conta
 /// roda para cada jogador em cada quadro.

@@ -7,7 +7,15 @@ import {
 import { Role as UserRole } from '../../enums/role.enum';
 import { gameDeps } from '../game-deps';
 import { ChatMessage, CorpseState, DeducaoState, PlayerState } from './deducao.state';
-import { MEETING_SEATS, OFFICE_MAP, collidersFor, sightBlockersFor, taskSpotById, ventById } from './map';
+import {
+  MEETING_SEATS,
+  OFFICE_MAP,
+  collidersFor,
+  sightBlockersFor,
+  stairProgressAt,
+  taskSpotById,
+  ventById,
+} from './map';
 import { distance, isWithin, moveTowards, PLAYER_RADIUS } from './movement';
 import {
   DEFAULT_CONFIG,
@@ -49,7 +57,6 @@ interface Seat {
   lastMoveAt: number;
   killReadyAt: number;
   sabotageReadyAt: number;
-  stairReadyAt: number;
   activeTask: { spotId: string; startedAt: number } | null;
   vote: string | null;
   /// Leitura que o detetive pediu na reunião passada e recebe nesta.
@@ -139,7 +146,6 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
       lastMoveAt: Date.now(),
       killReadyAt: 0,
       sabotageReadyAt: 0,
-      stairReadyAt: 0,
       activeTask: null,
       vote: null,
       pendingReading: null,
@@ -312,17 +318,28 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
     player.dir = Number.isFinite(payload.dir) ? payload.dir : player.dir;
     player.moving = Boolean(payload.moving);
 
-    if (player.alive && !player.inVent && now >= seat.stairReadyAt) {
-      const stair = OFFICE_MAP.stairs.find(
-        (candidate) => candidate.level === player.level && distance(player, candidate) <= 1.15,
-      );
-      if (stair) {
-        player.level = stair.targetLevel;
-        player.x = stair.targetX;
-        player.z = stair.targetZ;
-        player.moving = false;
+    if (player.alive && !player.inVent) {
+      const crossing = stairProgressAt(player.x, player.z);
+      const previousLevel = player.level;
+
+      // A altura muda continuamente no navegador conforme x/z. O servidor só
+      // troca a camada de colisão depois do meio da escada, sem mover o jogador.
+      if (
+        crossing &&
+        player.level === crossing.stair.level &&
+        crossing.progress >= 0.52
+      ) {
+        player.level = crossing.stair.targetLevel;
+      } else if (
+        crossing &&
+        player.level === crossing.stair.targetLevel &&
+        crossing.progress <= 0.48
+      ) {
+        player.level = crossing.stair.level;
+      }
+
+      if (player.level !== previousLevel) {
         seat.activeTask = null;
-        seat.stairReadyAt = now + 1_450;
         client.send('andar', { level: player.level });
       }
     }

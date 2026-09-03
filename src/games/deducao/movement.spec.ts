@@ -1,4 +1,4 @@
-import { OFFICE_MAP, collidersFor } from './map';
+import { OFFICE_MAP, collidersFor, stairProgressAt } from './map';
 import { clampStep, hasLineOfSight, moveTowards, resolveCollisions } from './movement';
 
 const wall = [{ minX: 10, minZ: 0, maxX: 10.4, maxZ: 20 }];
@@ -24,6 +24,25 @@ describe('resolveCollisions', () => {
   it('quem está longe da parede não é empurrado', () => {
     const next = resolveCollisions({ x: 4, z: 5 }, wall);
     expect(next).toEqual({ x: 4, z: 5 });
+  });
+});
+
+describe('stairProgressAt', () => {
+  it('mantém uma altura contínua do primeiro ao último degrau', () => {
+    const stair = OFFICE_MAP.stairs.find((candidate) => candidate.targetLevel > candidate.level)!;
+    const middle = stairProgressAt(
+      (stair.x + stair.targetX) / 2,
+      (stair.z + stair.targetZ) / 2,
+    );
+
+    expect(stairProgressAt(stair.x, stair.z)?.progress).toBeCloseTo(0);
+    expect(middle?.progress).toBeCloseTo(0.5);
+    expect(stairProgressAt(stair.targetX, stair.targetZ)?.progress).toBeCloseTo(1);
+  });
+
+  it('não trata o corredor ao lado como degrau', () => {
+    const stair = OFFICE_MAP.stairs.find((candidate) => candidate.targetLevel > candidate.level)!;
+    expect(stairProgressAt(stair.x + 2, stair.z)).toBeNull();
   });
 });
 
