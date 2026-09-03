@@ -112,6 +112,12 @@ function numberValue(
   return Math.round(parsed * 100) / 100;
 }
 
+function angleValue(value: unknown, label: string): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) fail(`${label} precisa ser um ângulo válido.`);
+  return Math.round(Math.atan2(Math.sin(parsed), Math.cos(parsed)) * 100) / 100;
+}
+
 function levelValue(value: unknown, label: string): number {
   const parsed = numberValue(value ?? 0, label, 0, 1);
   if (!Number.isInteger(parsed)) fail(`${label} precisa ser 0 ou 1.`);
@@ -292,12 +298,7 @@ export class GameMapService {
             bounds.z,
             bounds.z + bounds.d,
           ),
-          rot: numberValue(
-            item.rot ?? 0,
-            `objetos[${index}].rot`,
-            -Math.PI * 2,
-            Math.PI * 2,
-          ),
+          rot: angleValue(item.rot ?? 0, `objetos[${index}].rot`),
           level: levelValue(item.level, `objetos[${index}].level`),
         };
         if (!roomContaining(rooms, prop))
@@ -401,12 +402,7 @@ export class GameMapService {
             bounds.z,
             bounds.z + bounds.d,
           ),
-          rot: numberValue(
-            item.rot ?? 0,
-            `escadas[${index}].rot`,
-            -Math.PI * 2,
-            Math.PI * 2,
-          ),
+          rot: angleValue(item.rot ?? 0, `escadas[${index}].rot`),
           targetLevel: levelValue(
             item.targetLevel,
             `escadas[${index}].targetLevel`,
@@ -461,12 +457,7 @@ export class GameMapService {
       const seat = record(raw, `lugar da reunião ${index + 1}`);
       return {
         ...point(seat, `lugar da reunião ${index + 1}`),
-        dir: numberValue(
-          seat.dir ?? 0,
-          `direção do lugar ${index + 1}`,
-          -Math.PI * 2,
-          Math.PI * 2,
-        ),
+        dir: angleValue(seat.dir ?? 0, `direção do lugar ${index + 1}`),
       };
     });
     if (meetingSeats.length < 4)

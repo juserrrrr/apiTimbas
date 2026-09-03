@@ -81,6 +81,15 @@ describe('GameMapService', () => {
     expect(() => service.normalize(input)).toThrow(BadRequestException);
   });
 
+  it('wraps generated seat directions instead of rejecting a full turn', () => {
+    const input = structuredClone(OFFICE_MAP);
+    input.meetingSeats[10].dir = Math.PI * 2 + 1.05;
+
+    const normalized = service.normalize(input);
+
+    expect(normalized.meetingSeats[10].dir).toBeCloseTo(1.05, 2);
+  });
+
   it('publishes only the normalized map', async () => {
     settings.set.mockResolvedValue(undefined);
     const input = structuredClone(OFFICE_MAP);
