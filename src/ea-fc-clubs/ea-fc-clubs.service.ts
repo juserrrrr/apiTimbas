@@ -19,6 +19,7 @@ import { EaFcClubsProvider } from './ea-fc-clubs.provider';
 import {
   completeFormation,
   formationShape,
+  rankPlayerPositions,
   selectBestFormation,
 } from './ea-formation';
 import { analyseRecentPlayerMatches } from './ea-player-analysis';
@@ -401,6 +402,14 @@ export class EaFcClubsService {
           select: {
             position: true,
             rating: true,
+            goals: true,
+            assists: true,
+            shots: true,
+            passesCompleted: true,
+            passesAttempted: true,
+            tacklesCompleted: true,
+            tacklesAttempted: true,
+            saves: true,
             player: { select: { id: true, playerName: true } },
           },
         },
@@ -411,9 +420,22 @@ export class EaFcClubsService {
       {
         id: string;
         playerName: string;
-        positions: Map<string, number>;
-        ratingSum: number;
-        ratedMatches: number;
+        positions: Map<
+          string,
+          {
+            appearances: number;
+            ratingSum: number;
+            ratedMatches: number;
+            goals: number;
+            assists: number;
+            shots: number;
+            passesCompleted: number;
+            passesAttempted: number;
+            tacklesCompleted: number;
+            tacklesAttempted: number;
+            saves: number;
+          }
+        >;
         appearances: number;
       }
     >();
@@ -422,15 +444,35 @@ export class EaFcClubsService {
         if (!stat.position) continue;
         const player = aggregated.get(stat.player.id) ?? {
           ...stat.player,
-          positions: new Map<string, number>(),
-          ratingSum: 0,
-          ratedMatches: 0,
+          positions: new Map(),
           appearances: 0,
         };
         const position = stat.position.trim().toUpperCase();
-        player.positions.set(position, (player.positions.get(position) ?? 0) + 1);
-        player.ratingSum += stat.rating ?? 0;
-        player.ratedMatches += stat.rating === null ? 0 : 1;
+        const performance = player.positions.get(position) ?? {
+          appearances: 0,
+          ratingSum: 0,
+          ratedMatches: 0,
+          goals: 0,
+          assists: 0,
+          shots: 0,
+          passesCompleted: 0,
+          passesAttempted: 0,
+          tacklesCompleted: 0,
+          tacklesAttempted: 0,
+          saves: 0,
+        };
+        performance.appearances += 1;
+        performance.ratingSum += stat.rating ?? 0;
+        performance.ratedMatches += stat.rating === null ? 0 : 1;
+        performance.goals += stat.goals ?? 0;
+        performance.assists += stat.assists ?? 0;
+        performance.shots += stat.shots ?? 0;
+        performance.passesCompleted += stat.passesCompleted ?? 0;
+        performance.passesAttempted += stat.passesAttempted ?? 0;
+        performance.tacklesCompleted += stat.tacklesCompleted ?? 0;
+        performance.tacklesAttempted += stat.tacklesAttempted ?? 0;
+        performance.saves += stat.saves ?? 0;
+        player.positions.set(position, performance);
         player.appearances += 1;
         aggregated.set(player.id, player);
       }
@@ -449,21 +491,29 @@ export class EaFcClubsService {
       formationSummary: selectedFormation,
       summary: {
         matches: matches.length,
-        wins: matches.filter((match) => match.result === EaClubMatchResult.WIN).length,
-        draws: matches.filter((match) => match.result === EaClubMatchResult.DRAW).length,
+        wins: matches.filter((match) => match.result === EaClubMatchResult.WIN)
+          .length,
+        draws: matches.filter(
+          (match) => match.result === EaClubMatchResult.DRAW,
+        ).length,
       },
       players: [...aggregated.values()]
-        .map((player) => ({
-          id: player.id,
-          playerName: player.playerName,
-          position:
-            [...player.positions.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ??
-            'MIDFIELDER',
-          rating: player.ratedMatches
-            ? player.ratingSum / player.ratedMatches
-            : null,
-          appearances: player.appearances,
-        }))
+        .map((player) => {
+          const positionRatings = rankPlayerPositions(
+            [...player.positions.entries()].map(([position, performance]) => ({
+              position,
+              ...performance,
+            })),
+          );
+          return {
+            id: player.id,
+            playerName: player.playerName,
+            position: positionRatings[0]?.position ?? 'MIDFIELDER',
+            rating: positionRatings[0]?.averageRating ?? null,
+            appearances: player.appearances,
+            positionRatings,
+          };
+        })
         .sort(
           (a, b) =>
             Number(b.rating ?? -1) - Number(a.rating ?? -1) ||
