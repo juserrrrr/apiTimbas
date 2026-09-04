@@ -85,6 +85,11 @@ export class EaFcClubsController {
     return this.clubs.getPlayers(id);
   }
 
+  @Get(':id/field')
+  field(@Param('id') id: string) {
+    return this.clubs.getField(id);
+  }
+
   @Get(':id/players/:playerId')
   player(@Param('id') id: string, @Param('playerId') playerId: string) {
     return this.clubs.getPlayer(id, playerId);

@@ -379,6 +379,62 @@ export class EaFcClubsService {
     }));
   }
 
+  async getField(id: string) {
+    await this.requireClub(id);
+    const players = await this.prisma.eaClubPlayer.findMany({
+      where: { clubId: id, matchStats: { some: {} } },
+      select: {
+        id: true,
+        playerName: true,
+        matchStats: {
+          select: {
+            match: { select: { playedAt: true } },
+            position: true,
+            rating: true,
+            goals: true,
+            assists: true,
+            shots: true,
+            passesAttempted: true,
+            passesCompleted: true,
+            tacklesAttempted: true,
+            tacklesCompleted: true,
+            saves: true,
+            manOfTheMatch: true,
+          },
+        },
+      },
+      orderBy: { playerName: 'asc' },
+    });
+
+    return players
+      .map(({ matchStats, ...player }) => {
+        const analysis = analyseRecentPlayerMatches(
+          [...matchStats]
+            .sort(
+              (a, b) => b.match.playedAt.getTime() - a.match.playedAt.getTime(),
+            )
+            .map(({ match: _match, ...stat }) => stat),
+        );
+        const bestPosition = [...analysis.positionAnalysis]
+          .filter((position) => position.averageRating !== null)
+          .sort(
+            (a, b) =>
+              Number(b.averageRating) - Number(a.averageRating) ||
+              b.appearances - a.appearances,
+          )[0];
+        return {
+          ...player,
+          primaryPosition: analysis.primaryPosition,
+          primaryPositionAppearances: analysis.positionAnalysis[0]?.appearances ?? 0,
+          averageRating: analysis.averageRating,
+          bestPosition: bestPosition?.position ?? null,
+          bestPositionRating: bestPosition?.averageRating ?? null,
+          matchesAvailable: analysis.matchesAvailable,
+        };
+      })
+      .filter((player) => player.primaryPosition !== null);
+  }
+
   async getPlayer(id: string, playerId: string) {
     await this.requireClub(id);
     const player = await this.prisma.eaClubPlayer.findFirst({
