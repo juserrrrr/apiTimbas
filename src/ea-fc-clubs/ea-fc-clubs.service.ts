@@ -16,7 +16,6 @@ import {
 import { EaLeaderboardQueryDto } from './dto/leaderboard-query.dto';
 import { EaMatchQueryDto } from './dto/match-query.dto';
 import { EaFcClubsProvider } from './ea-fc-clubs.provider';
-import { selectPreferredFormation } from './ea-formation';
 import { analyseRecentPlayerMatches } from './ea-player-analysis';
 import {
   EaClubMatch,
@@ -390,37 +389,69 @@ export class EaFcClubsService {
         id: true,
         playedAt: true,
         result: true,
-        playerStats: { select: { position: true } },
+        playerStats: {
+          select: {
+            position: true,
+            rating: true,
+            player: { select: { id: true, playerName: true } },
+          },
+        },
       },
     });
-    const choice = selectPreferredFormation(
-      matches.map((match) => ({
-        ...match,
-        positions: match.playerStats.flatMap((stat) => stat.position ?? []),
-      })),
-    );
-    if (!choice) return { match: null, formation: null, summary: null, players: [] };
-    const selectedMatch = matches.find((match) => match.id === choice.matchId);
-    if (!selectedMatch) return { match: null, formation: null, summary: null, players: [] };
-    const players = await this.prisma.eaMatchPlayerStat.findMany({
-      where: { matchId: selectedMatch.id, position: { not: null } },
-      select: {
-        position: true,
-        rating: true,
-        player: { select: { id: true, playerName: true } },
-      },
-      orderBy: { player: { playerName: 'asc' } },
-    });
+    const aggregated = new Map<
+      string,
+      {
+        id: string;
+        playerName: string;
+        positions: Map<string, number>;
+        ratingSum: number;
+        ratedMatches: number;
+        appearances: number;
+      }
+    >();
+    for (const match of matches) {
+      for (const stat of match.playerStats) {
+        if (!stat.position) continue;
+        const player = aggregated.get(stat.player.id) ?? {
+          ...stat.player,
+          positions: new Map<string, number>(),
+          ratingSum: 0,
+          ratedMatches: 0,
+          appearances: 0,
+        };
+        const position = stat.position.trim().toUpperCase();
+        player.positions.set(position, (player.positions.get(position) ?? 0) + 1);
+        player.ratingSum += stat.rating ?? 0;
+        player.ratedMatches += stat.rating === null ? 0 : 1;
+        player.appearances += 1;
+        aggregated.set(player.id, player);
+      }
+    }
     return {
-      match: { playedAt: selectedMatch.playedAt },
-      formation: choice.formation,
-      summary: { matches: choice.matches, wins: choice.wins, draws: choice.draws },
-      players: players.map((stat) => ({
-        id: stat.player.id,
-        playerName: stat.player.playerName,
-        position: stat.position,
-        rating: stat.rating,
-      })),
+      match: matches[0] ? { playedAt: matches[0].playedAt } : null,
+      formation: '4-3-3',
+      summary: {
+        matches: matches.length,
+        wins: matches.filter((match) => match.result === EaClubMatchResult.WIN).length,
+        draws: matches.filter((match) => match.result === EaClubMatchResult.DRAW).length,
+      },
+      players: [...aggregated.values()]
+        .map((player) => ({
+          id: player.id,
+          playerName: player.playerName,
+          position:
+            [...player.positions.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ??
+            'MIDFIELDER',
+          rating: player.ratedMatches
+            ? player.ratingSum / player.ratedMatches
+            : null,
+          appearances: player.appearances,
+        }))
+        .sort(
+          (a, b) =>
+            Number(b.rating ?? -1) - Number(a.rating ?? -1) ||
+            b.appearances - a.appearances,
+        ),
     };
   }
 
