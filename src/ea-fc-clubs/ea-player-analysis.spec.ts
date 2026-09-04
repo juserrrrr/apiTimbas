@@ -16,11 +16,11 @@ const match = (overrides = {}) => ({
 });
 
 describe('analyseRecentPlayerMatches', () => {
-  it('keeps the newest fifteen snapshots and calculates position and efficiency metrics', () => {
+  it('keeps the newest twenty-five snapshots and calculates position and efficiency metrics', () => {
     const analysis = analyseRecentPlayerMatches(
-      Array.from({ length: 16 }, (_, index) =>
+      Array.from({ length: 26 }, (_, index) =>
         match({
-          position: index < 10 ? 'ST' : 'RW',
+          position: index < 15 ? 'ST' : 'RW',
           goals: 1,
           shots: 4,
           passesAttempted: 10,
@@ -29,16 +29,16 @@ describe('analyseRecentPlayerMatches', () => {
       ),
     );
 
-    expect(analysis.windowSize).toBe(15);
-    expect(analysis.matchesAvailable).toBe(15);
+    expect(analysis.windowSize).toBe(25);
+    expect(analysis.matchesAvailable).toBe(25);
     expect(analysis.primaryPosition).toBe('ST');
-    expect(analysis.goals).toBe(15);
+    expect(analysis.goals).toBe(25);
     expect(analysis.shotConversion).toBe(25);
     expect(analysis.passAccuracy).toBe(80);
     expect(analysis.positionAnalysis).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ position: 'ST', appearances: 10 }),
-        expect.objectContaining({ position: 'RW', appearances: 5 }),
+        expect.objectContaining({ position: 'ST', appearances: 15 }),
+        expect.objectContaining({ position: 'RW', appearances: 10 }),
       ]),
     );
   });

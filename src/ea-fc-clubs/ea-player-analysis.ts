@@ -1,4 +1,4 @@
-const WINDOW_SIZE = 15;
+const WINDOW_SIZE = 25;
 
 export interface PlayerMatchSnapshot {
   position: string | null;

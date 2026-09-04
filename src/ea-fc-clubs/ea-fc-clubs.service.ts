@@ -16,6 +16,7 @@ import {
 import { EaLeaderboardQueryDto } from './dto/leaderboard-query.dto';
 import { EaMatchQueryDto } from './dto/match-query.dto';
 import { EaFcClubsProvider } from './ea-fc-clubs.provider';
+import { selectPreferredFormation } from './ea-formation';
 import { analyseRecentPlayerMatches } from './ea-player-analysis';
 import {
   EaClubMatch,
@@ -381,58 +382,46 @@ export class EaFcClubsService {
 
   async getField(id: string) {
     await this.requireClub(id);
-    const players = await this.prisma.eaClubPlayer.findMany({
-      where: { clubId: id, matchStats: { some: {} } },
+    const matches = await this.prisma.eaClubMatch.findMany({
+      where: { clubId: id },
+      orderBy: { playedAt: 'desc' },
+      take: 25,
       select: {
         id: true,
-        playerName: true,
-        matchStats: {
-          select: {
-            match: { select: { playedAt: true } },
-            position: true,
-            rating: true,
-            goals: true,
-            assists: true,
-            shots: true,
-            passesAttempted: true,
-            passesCompleted: true,
-            tacklesAttempted: true,
-            tacklesCompleted: true,
-            saves: true,
-            manOfTheMatch: true,
-          },
-        },
+        playedAt: true,
+        result: true,
+        playerStats: { select: { position: true } },
       },
-      orderBy: { playerName: 'asc' },
     });
-
-    return players
-      .map(({ matchStats, ...player }) => {
-        const analysis = analyseRecentPlayerMatches(
-          [...matchStats]
-            .sort(
-              (a, b) => b.match.playedAt.getTime() - a.match.playedAt.getTime(),
-            )
-            .map(({ match: _match, ...stat }) => stat),
-        );
-        const bestPosition = [...analysis.positionAnalysis]
-          .filter((position) => position.averageRating !== null)
-          .sort(
-            (a, b) =>
-              Number(b.averageRating) - Number(a.averageRating) ||
-              b.appearances - a.appearances,
-          )[0];
-        return {
-          ...player,
-          primaryPosition: analysis.primaryPosition,
-          primaryPositionAppearances: analysis.positionAnalysis[0]?.appearances ?? 0,
-          averageRating: analysis.averageRating,
-          bestPosition: bestPosition?.position ?? null,
-          bestPositionRating: bestPosition?.averageRating ?? null,
-          matchesAvailable: analysis.matchesAvailable,
-        };
-      })
-      .filter((player) => player.primaryPosition !== null);
+    const choice = selectPreferredFormation(
+      matches.map((match) => ({
+        ...match,
+        positions: match.playerStats.flatMap((stat) => stat.position ?? []),
+      })),
+    );
+    if (!choice) return { match: null, formation: null, summary: null, players: [] };
+    const selectedMatch = matches.find((match) => match.id === choice.matchId);
+    if (!selectedMatch) return { match: null, formation: null, summary: null, players: [] };
+    const players = await this.prisma.eaMatchPlayerStat.findMany({
+      where: { matchId: selectedMatch.id, position: { not: null } },
+      select: {
+        position: true,
+        rating: true,
+        player: { select: { id: true, playerName: true } },
+      },
+      orderBy: { player: { playerName: 'asc' } },
+    });
+    return {
+      match: { playedAt: selectedMatch.playedAt },
+      formation: choice.formation,
+      summary: { matches: choice.matches, wins: choice.wins, draws: choice.draws },
+      players: players.map((stat) => ({
+        id: stat.player.id,
+        playerName: stat.player.playerName,
+        position: stat.position,
+        rating: stat.rating,
+      })),
+    };
   }
 
   async getPlayer(id: string, playerId: string) {
