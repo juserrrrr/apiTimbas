@@ -16,6 +16,7 @@ import {
   SearchEaClubsDto,
   ValidateEaClubDto,
 } from './dto/create-ea-club.dto';
+import { EaFieldQueryDto } from './dto/field-query.dto';
 import { EaLeaderboardQueryDto } from './dto/leaderboard-query.dto';
 import { EaMatchQueryDto } from './dto/match-query.dto';
 import { EaFcClubsService } from './ea-fc-clubs.service';
@@ -86,8 +87,8 @@ export class EaFcClubsController {
   }
 
   @Get(':id/field')
-  field(@Param('id') id: string) {
-    return this.clubs.getField(id);
+  field(@Param('id') id: string, @Query() query: EaFieldQueryDto) {
+    return this.clubs.getField(id, query.matches);
   }
 
   @Get(':id/players/:playerId')

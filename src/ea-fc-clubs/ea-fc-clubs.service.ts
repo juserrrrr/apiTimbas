@@ -385,12 +385,12 @@ export class EaFcClubsService {
     }));
   }
 
-  async getField(id: string) {
+  async getField(id: string, matchLimit = 25) {
     await this.requireClub(id);
     const matches = await this.prisma.eaClubMatch.findMany({
       where: { clubId: id },
       orderBy: { playedAt: 'desc' },
-      take: 25,
+      take: matchLimit,
       select: {
         id: true,
         playedAt: true,
