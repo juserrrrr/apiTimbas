@@ -389,6 +389,9 @@ export class EaFcClubsService {
         id: true,
         playedAt: true,
         result: true,
+        opponentName: true,
+        goalsFor: true,
+        goalsAgainst: true,
         playerStats: {
           select: {
             position: true,
@@ -452,6 +455,26 @@ export class EaFcClubsService {
             Number(b.rating ?? -1) - Number(a.rating ?? -1) ||
             b.appearances - a.appearances,
         ),
+      history: matches.map((match) => {
+        const positions = { goalkeeper: 0, defense: 0, midfield: 0, attack: 0 };
+        for (const stat of match.playerStats) {
+          const position = stat.position?.trim().toUpperCase();
+          if (!position) continue;
+          if (position === 'GK' || position === 'GOALKEEPER') positions.goalkeeper += 1;
+          else if (/(CB|LB|RB|LWB|RWB|SW|DEFENDER|DEF)/.test(position)) positions.defense += 1;
+          else if (/(ST|CF|LW|RW|LF|RF|FORWARD|ATT)/.test(position)) positions.attack += 1;
+          else positions.midfield += 1;
+        }
+        return {
+          id: match.id,
+          playedAt: match.playedAt,
+          result: match.result,
+          opponentName: match.opponentName,
+          goalsFor: match.goalsFor,
+          goalsAgainst: match.goalsAgainst,
+          positions,
+        };
+      }),
     };
   }
 
