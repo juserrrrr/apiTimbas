@@ -49,6 +49,8 @@ const REPORT_RANGE = 2.6;
 const VENT_RANGE = 1.8;
 const CHAT_LIMIT = 80;
 const SABOTAGE_COOLDOWN_MS = 40_000;
+const VOICE_SDP_LIMIT = 32_000;
+const VOICE_ICE_LIMIT = 2_048;
 
 const COLORS = [
   '#ef4444',
@@ -88,6 +90,7 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
   private nextBlackoutAt = 0;
   private meetingDeadline = 0;
   private officeMap: GameMap = OFFICE_MAP;
+  private voiceClients = new Set<string>();
 
   async onAuth(
     client: Client,
@@ -162,6 +165,11 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
     );
     this.onMessage('vote', (client, payload) => this.onVote(client, payload));
     this.onMessage('chat', (client, payload) => this.onChat(client, payload));
+    this.onMessage('voice:join', (client) => this.onVoiceJoin(client));
+    this.onMessage('voice:leave', (client) => this.onVoiceLeave(client));
+    this.onMessage('voice:signal', (client, payload) =>
+      this.onVoiceSignal(client, payload),
+    );
     this.onMessage('restart', (client) => this.onRestart(client));
 
     this.setSimulationInterval(() => this.tick(), TICK_MS);
@@ -219,6 +227,7 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
   async onLeave(client: Client, code?: number) {
     const player = this.state.players.get(client.sessionId);
     if (player) player.connected = false;
+    this.onVoiceLeave(client);
 
     // Saída pela porta é a pessoa clicando em sair. Qualquer outro código é
     // queda de conexão, e aí vale esperar ela voltar.
@@ -715,6 +724,97 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
       color: player.color,
       text,
       system: false,
+    });
+  }
+
+  // O servidor carrega apenas a sinalização. O som segue direto entre os
+  // navegadores por WebRTC, portanto andar pelo mapa não aumenta o tick nem o
+  // tamanho do estado sincronizado da partida.
+  private onVoiceJoin(client: Client) {
+    const peers = [...this.voiceClients].filter(
+      (sessionId) =>
+        sessionId !== client.sessionId &&
+        this.clients.some((candidate) => candidate.sessionId === sessionId),
+    );
+    client.send('voice:peers', { peers });
+    if (this.voiceClients.has(client.sessionId)) return;
+    this.voiceClients.add(client.sessionId);
+    this.broadcast(
+      'voice:peer-joined',
+      { id: client.sessionId },
+      { except: client },
+    );
+  }
+
+  private onVoiceLeave(client: Client) {
+    if (!this.voiceClients.delete(client.sessionId)) return;
+    this.broadcast('voice:peer-left', { id: client.sessionId });
+  }
+
+  private onVoiceSignal(
+    client: Client,
+    payload: {
+      to?: string;
+      kind?: string;
+      description?: { type?: string; sdp?: string };
+      candidate?: {
+        candidate?: string;
+        sdpMid?: string | null;
+        sdpMLineIndex?: number | null;
+        usernameFragment?: string | null;
+      };
+    },
+  ) {
+    if (!this.voiceClients.has(client.sessionId)) this.onVoiceJoin(client);
+    const to = typeof payload?.to === 'string' ? payload.to : '';
+    if (!to || to === client.sessionId || !this.voiceClients.has(to)) return;
+    const target = this.clients.find((candidate) => candidate.sessionId === to);
+    if (!target) return;
+
+    if (payload.kind === 'offer' || payload.kind === 'answer') {
+      const expectedType = payload.kind;
+      const description = payload.description;
+      if (
+        description?.type !== expectedType ||
+        typeof description.sdp !== 'string' ||
+        description.sdp.length === 0 ||
+        description.sdp.length > VOICE_SDP_LIMIT
+      )
+        return;
+      target.send('voice:signal', {
+        from: client.sessionId,
+        kind: expectedType,
+        description: { type: expectedType, sdp: description.sdp },
+      });
+      return;
+    }
+
+    if (payload.kind !== 'ice') return;
+    const candidate = payload.candidate;
+    if (
+      typeof candidate?.candidate !== 'string' ||
+      candidate.candidate.length === 0 ||
+      candidate.candidate.length > VOICE_ICE_LIMIT
+    )
+      return;
+    target.send('voice:signal', {
+      from: client.sessionId,
+      kind: 'ice',
+      candidate: {
+        candidate: candidate.candidate,
+        sdpMid:
+          typeof candidate.sdpMid === 'string'
+            ? candidate.sdpMid.slice(0, 64)
+            : null,
+        sdpMLineIndex:
+          typeof candidate.sdpMLineIndex === 'number'
+            ? candidate.sdpMLineIndex
+            : null,
+        usernameFragment:
+          typeof candidate.usernameFragment === 'string'
+            ? candidate.usernameFragment.slice(0, 128)
+            : null,
+      },
     });
   }
 

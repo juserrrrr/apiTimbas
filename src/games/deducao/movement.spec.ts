@@ -126,6 +126,25 @@ describe('o escritório', () => {
     ).toBeLessThanOrEqual(2.6);
   });
 
+  it('mantém o banheiro equipado e a tarefa junto da bancada', () => {
+    const bathroom = OFFICE_MAP.rooms.find((room) => room.id === 'banheiro');
+    const vanity = OFFICE_MAP.props.find(
+      (prop) => prop.kind === 'bathroomVanity',
+    );
+    const toilets = OFFICE_MAP.props.filter((prop) => prop.kind === 'toilet');
+    const task = OFFICE_MAP.taskSpots.find(
+      (spot) => spot.id === 'higiene-banheiro',
+    );
+
+    expect(bathroom).toMatchObject({ name: 'Banheiro', finish: 'bathroom' });
+    expect(vanity).toBeDefined();
+    expect(toilets).toHaveLength(2);
+    expect(task).toMatchObject({ room: 'banheiro' });
+    expect(Math.hypot(task!.x - vanity!.x, task!.z - vanity!.z)).toBeLessThan(
+      1.5,
+    );
+  });
+
   it('permite ficar sobre o sofá depois de um pulo', () => {
     const sofa = OFFICE_MAP.props.find((prop) => prop.kind === 'sofa')!;
     const height = surfaceHeightAt(sofa.x, sofa.z, sofa.level ?? 0);

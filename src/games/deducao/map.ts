@@ -63,6 +63,7 @@ export type FloorFinish =
   | 'terrazzo'
   | 'vinyl'
   | 'pantry'
+  | 'bathroom'
   | 'concrete'
   | 'grass'
   | 'water'
@@ -109,6 +110,8 @@ export type PropKind =
   | 'sportCar'
   | 'cone'
   | 'sink'
+  | 'bathroomVanity'
+  | 'toilet'
   | 'vending'
   | 'kitchen'
   | 'gameTable'
@@ -523,13 +526,13 @@ const ROOMS: RoomDef[] = [
     doors: [],
   },
   {
-    id: 'dispensa',
-    name: 'Dispensa',
+    id: 'banheiro',
+    name: 'Banheiro',
     rect: { x: 55, z: 35, w: 16, d: 10 },
     kind: 'sala',
-    floor: '#718d7b',
-    finish: 'pantry',
-    light: '#facc15',
+    floor: '#778493',
+    finish: 'bathroom',
+    light: '#67e8f9',
     doors: [],
   },
   {
@@ -654,8 +657,8 @@ const LINKS: Link[] = [
   { a: 'hall-central', b: 'corredor-leste' },
   { a: 'copa', b: 'corredor-leste' },
   { a: 'garagem', b: 'corredor-oeste' },
-  { a: 'dispensa', b: 'corredor-leste' },
-  { a: 'dispensa', b: 'deposito' },
+  { a: 'banheiro', b: 'corredor-leste' },
+  { a: 'banheiro', b: 'deposito' },
   { a: 'arquivo', b: 'corredor-superior-oeste' },
   { a: 'operacoes', b: 'hall-superior' },
   { a: 'chefe', b: 'corredor-superior-leste' },
@@ -743,8 +746,10 @@ function buildProps(): PropDef[] {
     { kind: 'cone', x: 10.8, z: 52.5, rot: 0 },
     { kind: 'cone', x: 12, z: 51.5, rot: 0 },
     { kind: 'crate', x: 5, z: 53, rot: 0.2 },
-    { kind: 'shelf', x: 58, z: 39, rot: Math.PI / 2 },
-    { kind: 'shelf', x: 68, z: 39, rot: -Math.PI / 2 },
+    { kind: 'bathroomVanity', x: 69.65, z: 40.4, rot: -Math.PI / 2 },
+    { kind: 'toilet', x: 58.5, z: 42.6, rot: Math.PI },
+    { kind: 'toilet', x: 62.2, z: 42.6, rot: Math.PI },
+    { kind: 'plant', x: 68.5, z: 36.5, rot: 0 },
     { kind: 'shelf', x: 58, z: 50, rot: Math.PI / 2 },
     { kind: 'shelf', x: 68, z: 50, rot: -Math.PI / 2 },
     { kind: 'crate', x: 64, z: 51, rot: 0.3 },
@@ -882,12 +887,12 @@ const TASK_SPOTS: TaskSpot[] = [
     z: 25.1,
   },
   {
-    id: 'estoque-dispensa',
+    id: 'higiene-banheiro',
     kind: 'estoque',
-    room: 'dispensa',
-    label: 'Conferir os mantimentos',
-    x: 61,
-    z: 42,
+    room: 'banheiro',
+    label: 'Repor itens de higiene',
+    x: 68.35,
+    z: 40.4,
   },
   {
     id: 'senha-c',
@@ -985,6 +990,8 @@ const FOOTPRINTS: Partial<
   car: { w: 2.0, d: 4.3, h: 1.5, tall: true },
   sportCar: { w: 2.0, d: 4.45, h: 1.65, tall: true },
   sink: { w: 1.7, d: 0.6, h: 0.95 },
+  bathroomVanity: { w: 2.8, d: 0.68, h: 0.94 },
+  toilet: { w: 0.72, d: 1.08, h: 0.48 },
   vending: { w: 1.1, d: 0.75, h: 2, tall: true },
   kitchen: { w: 4.2, d: 0.72, h: 2.2, tall: true },
   gameTable: { w: 2.25, d: 1.25, h: 0.92 },
