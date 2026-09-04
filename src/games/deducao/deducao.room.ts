@@ -314,6 +314,7 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
       player.inVent = false;
       player.crouching = false;
       player.airborne = false;
+      player.elevation = 0;
       player.tasksDone = 0;
       player.tasksTotal = seat.tasks.length;
       player.emergenciesLeft = config.emergencyPerPlayer;
@@ -364,6 +365,7 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
       player.inVent = false;
       player.crouching = false;
       player.airborne = false;
+      player.elevation = 0;
       player.tasksDone = 0;
       player.tasksTotal = 0;
     }
@@ -383,6 +385,7 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
       sprint?: boolean;
       crouching?: boolean;
       airborne?: boolean;
+      elevation?: number;
     },
   ) {
     const player = this.state.players.get(client.sessionId);
@@ -399,6 +402,9 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
       payload.sprint && payload.moving ? RUN_SPEED : WALK_SPEED;
     const budget = requestedSpeed * SPEED_TOLERANCE * elapsed + 0.05;
     const target = { x: payload.x, z: payload.z };
+    const elevation = Number.isFinite(payload.elevation)
+      ? Math.min(1.2, Math.max(0, Number(payload.elevation)))
+      : 0;
 
     // Fantasma atravessa parede, e quem está no duto se desloca por dentro dele:
     // nos dois casos a colisão do escritório não vale.
@@ -408,13 +414,14 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
             { x: player.x, z: player.z },
             target,
             budget,
-            collidersFor(player.level, this.officeMap),
+            collidersFor(player.level, this.officeMap, elevation),
           )
         : this.clampToBounds(target, { x: player.x, z: player.z }, budget);
 
     player.x = next.x;
     player.z = next.z;
     player.dir = Number.isFinite(payload.dir) ? payload.dir : player.dir;
+    player.elevation = elevation;
     player.moving = Boolean(payload.moving);
     player.crouching = Boolean(payload.crouching);
     player.airborne = Boolean(payload.airborne);
@@ -535,6 +542,7 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
     victim.inVent = false;
     victim.crouching = false;
     victim.airborne = false;
+    victim.elevation = 0;
     victimSeat.activeTask = null;
 
     const corpse = new CorpseState();
@@ -550,6 +558,7 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
     killer.x = victim.x;
     killer.z = victim.z;
     killer.level = victim.level;
+    killer.elevation = 0;
     seat.killReadyAt = Date.now() + this.state.config.killCooldownMs;
 
     this.clients
@@ -589,6 +598,7 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
     player.x = vent.x;
     player.z = vent.z;
     player.level = vent.level ?? 0;
+    player.elevation = 0;
     player.inVent = true;
   }
 
@@ -746,6 +756,7 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
       player.moving = false;
       player.crouching = false;
       player.airborne = false;
+      player.elevation = 0;
     }
     this.teleportToMeetingSeats();
     this.deliverReadings();
@@ -811,6 +822,7 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
         ejected.inVent = false;
         ejected.crouching = false;
         ejected.airborne = false;
+        ejected.elevation = 0;
         meeting.ejectedId = ejected.id;
         meeting.ejectedName = ejected.name;
         meeting.ejectedRole = this.state.config.revealRoleOnEject
@@ -879,8 +891,8 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
     }
   }
 
-  /// A luz cai e a visão de todos encolhe do mesmo jeito. O papel continua
-  /// secreto; o apagão não concede visão ou velocidade privilegiadas.
+  /// A luz cai para todos, sem ocultar os jogadores. O papel continua secreto;
+  /// o apagão não concede visão ou velocidade privilegiadas.
   private startBlackout() {
     if (this.state.phase !== 'jogando' || this.state.blackout) return;
     this.state.blackout = true;
@@ -960,6 +972,7 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
       player.moving = false;
       player.crouching = false;
       player.airborne = false;
+      player.elevation = 0;
       index += 1;
     }
   }
@@ -979,6 +992,7 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
       player.moving = false;
       player.crouching = false;
       player.airborne = false;
+      player.elevation = 0;
       index += 1;
     }
   }

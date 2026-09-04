@@ -1,15 +1,4 @@
-import {
-  BadRequestException,
-  Body,
-  Controller,
-  Delete,
-  Get,
-  Param,
-  Post,
-  Put,
-  Req,
-  UseGuards,
-} from '@nestjs/common';
+import { Controller, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
 import { matchMaker } from 'colyseus';
 import { Request } from 'express';
 import { AuthGuard } from '../auth/guards/auth.guard';
@@ -160,58 +149,6 @@ export class GamesController {
     };
   }
 
-  @Get('deducao/admin/map')
-  @RequirePermissions('games.manage')
-  async adminMap() {
-    return { map: await this.maps.current() };
-  }
-
-  @Put('deducao/admin/map')
-  @RequirePermissions('games.manage')
-  async publishMap(@Body() body: { map?: unknown }) {
-    await this.ensureNoActiveRooms();
-    return { map: await this.maps.publish(body?.map) };
-  }
-
-  @Delete('deducao/admin/map')
-  @RequirePermissions('games.manage')
-  async resetMap() {
-    return { map: (await this.maps.get()).map };
-  }
-
-  @Get('deducao/admin/maps')
-  @RequirePermissions('games.manage')
-  async adminMaps() {
-    return { maps: await this.maps.list() };
-  }
-
-  @Get('deducao/admin/maps/:id')
-  @RequirePermissions('games.manage')
-  async adminSelectedMap(@Param('id') id: string) {
-    return this.maps.get(id);
-  }
-
-  @Post('deducao/admin/maps')
-  @RequirePermissions('games.manage')
-  async createMap(@Body() body: { map?: unknown }) {
-    return this.maps.create(body?.map);
-  }
-
-  @Put('deducao/admin/maps/:id')
-  @RequirePermissions('games.manage')
-  async updateMap(@Param('id') id: string, @Body() body: { map?: unknown }) {
-    await this.ensureMapHasNoActiveRooms(id);
-    return this.maps.update(id, body?.map);
-  }
-
-  @Delete('deducao/admin/maps/:id')
-  @RequirePermissions('games.manage')
-  async deleteMap(@Param('id') id: string) {
-    await this.ensureMapHasNoActiveRooms(id);
-    await this.maps.delete(id);
-    return { ok: true };
-  }
-
   private async requireDeducaoAccess(req: AuthedRequest) {
     const person = await this.actor.require(req.tokenPayload?.discordId);
     await this.featureFlags.ensureEnabledOrAdmin(
@@ -223,27 +160,5 @@ export class GamesController {
       person.role,
     );
     return person;
-  }
-
-  private async ensureNoActiveRooms() {
-    const rooms = await matchMaker.query({ name: DEDUCAO_ROOM });
-    if (rooms.length > 0) {
-      throw new BadRequestException(
-        'Feche as salas abertas antes de publicar outro mapa.',
-      );
-    }
-  }
-
-  private async ensureMapHasNoActiveRooms(mapId: string) {
-    const rooms = await matchMaker.query({ name: DEDUCAO_ROOM });
-    const inUse = rooms.some((room) => {
-      const meta = (room.metadata ?? {}) as Record<string, unknown>;
-      return String(meta.mapId ?? 'original') === mapId;
-    });
-    if (inUse) {
-      throw new BadRequestException(
-        'Esse mapa está em uso. Feche as salas dele antes de alterar ou remover.',
-      );
-    }
   }
 }

@@ -1,5 +1,15 @@
-import { OFFICE_MAP, collidersFor, stairProgressAt } from './map';
-import { clampStep, hasLineOfSight, moveTowards, resolveCollisions } from './movement';
+import {
+  OFFICE_MAP,
+  collidersFor,
+  stairProgressAt,
+  surfaceHeightAt,
+} from './map';
+import {
+  clampStep,
+  hasLineOfSight,
+  moveTowards,
+  resolveCollisions,
+} from './movement';
 
 const wall = [{ minX: 10, minZ: 0, maxX: 10.4, maxZ: 20 }];
 
@@ -29,7 +39,9 @@ describe('resolveCollisions', () => {
 
 describe('stairProgressAt', () => {
   it('mantém uma altura contínua do primeiro ao último degrau', () => {
-    const stair = OFFICE_MAP.stairs.find((candidate) => candidate.targetLevel > candidate.level)!;
+    const stair = OFFICE_MAP.stairs.find(
+      (candidate) => candidate.targetLevel > candidate.level,
+    )!;
     const middle = stairProgressAt(
       (stair.x + stair.targetX) / 2,
       (stair.z + stair.targetZ) / 2,
@@ -37,11 +49,15 @@ describe('stairProgressAt', () => {
 
     expect(stairProgressAt(stair.x, stair.z)?.progress).toBeCloseTo(0);
     expect(middle?.progress).toBeCloseTo(0.5);
-    expect(stairProgressAt(stair.targetX, stair.targetZ)?.progress).toBeCloseTo(1);
+    expect(stairProgressAt(stair.targetX, stair.targetZ)?.progress).toBeCloseTo(
+      1,
+    );
   });
 
   it('não trata o corredor ao lado como degrau', () => {
-    const stair = OFFICE_MAP.stairs.find((candidate) => candidate.targetLevel > candidate.level)!;
+    const stair = OFFICE_MAP.stairs.find(
+      (candidate) => candidate.targetLevel > candidate.level,
+    )!;
     expect(stairProgressAt(stair.x + 2, stair.z)).toBeNull();
   });
 });
@@ -56,6 +72,14 @@ describe('moveTowards', () => {
     const next = moveTowards({ x: 9.4, z: 5 }, { x: 10.4, z: 7 }, 3, wall);
     expect(next.z).toBeGreaterThan(5);
   });
+
+  it('mantém o avanço ao inverter a direção junto da parede', () => {
+    const forward = moveTowards({ x: 9.4, z: 5 }, { x: 10.4, z: 7 }, 3, wall);
+    const backward = moveTowards(forward, { x: 10.4, z: 4 }, 3, wall);
+
+    expect(backward.x).toBeLessThan(10);
+    expect(backward.z).toBeLessThan(forward.z);
+  });
 });
 
 describe('hasLineOfSight', () => {
@@ -69,15 +93,36 @@ describe('hasLineOfSight', () => {
 });
 
 describe('o escritório', () => {
+  it('permite ficar sobre o sofá depois de um pulo', () => {
+    const sofa = OFFICE_MAP.props.find((prop) => prop.kind === 'sofa')!;
+    const height = surfaceHeightAt(sofa.x, sofa.z, sofa.level ?? 0);
+
+    expect(height).toBeCloseTo(0.46);
+    expect(
+      resolveCollisions(
+        { x: sofa.x, z: sofa.z },
+        collidersFor(sofa.level ?? 0, OFFICE_MAP, height),
+      ),
+    ).toEqual({ x: sofa.x, z: sofa.z });
+  });
+
   it('nasce com todo mundo em pé fora de parede e de móvel', () => {
     for (const spawn of OFFICE_MAP.spawns) {
-      expect(resolveCollisions(spawn, collidersFor(spawn.level ?? 0))).toEqual({ x: spawn.x, z: spawn.z });
+      expect(resolveCollisions(spawn, collidersFor(spawn.level ?? 0))).toEqual({
+        x: spawn.x,
+        z: spawn.z,
+      });
     }
   });
 
   it('deixa cada ponto de tarefa alcançável sem esbarrar em nada', () => {
     for (const spot of OFFICE_MAP.taskSpots) {
-      expect(resolveCollisions({ x: spot.x, z: spot.z }, collidersFor(spot.level ?? 0))).toEqual({
+      expect(
+        resolveCollisions(
+          { x: spot.x, z: spot.z },
+          collidersFor(spot.level ?? 0),
+        ),
+      ).toEqual({
         x: spot.x,
         z: spot.z,
       });
@@ -86,7 +131,12 @@ describe('o escritório', () => {
 
   it('deixa cada duto alcançável sem esbarrar em nada', () => {
     for (const vent of OFFICE_MAP.vents) {
-      expect(resolveCollisions({ x: vent.x, z: vent.z }, collidersFor(vent.level ?? 0))).toEqual({
+      expect(
+        resolveCollisions(
+          { x: vent.x, z: vent.z },
+          collidersFor(vent.level ?? 0),
+        ),
+      ).toEqual({
         x: vent.x,
         z: vent.z,
       });
@@ -95,7 +145,10 @@ describe('o escritório', () => {
 
   it('mantém entradas e saídas das escadas livres e com caminho de volta', () => {
     for (const stair of OFFICE_MAP.stairs) {
-      expect(resolveCollisions(stair, collidersFor(stair.level))).toEqual({ x: stair.x, z: stair.z });
+      expect(resolveCollisions(stair, collidersFor(stair.level))).toEqual({
+        x: stair.x,
+        z: stair.z,
+      });
       expect(
         resolveCollisions(
           { x: stair.targetX, z: stair.targetZ },
@@ -106,7 +159,8 @@ describe('o escritório', () => {
       expect(
         OFFICE_MAP.stairs.some(
           (candidate) =>
-            candidate.level === stair.targetLevel && candidate.targetLevel === stair.level,
+            candidate.level === stair.targetLevel &&
+            candidate.targetLevel === stair.level,
         ),
       ).toBe(true);
     }
@@ -129,7 +183,10 @@ describe('o escritório', () => {
       const walkable = (column: number, row: number) => {
         const point = { x: originX + column * STEP, z: originZ + row * STEP };
         const resolved = resolveCollisions(point, levelColliders);
-        return Math.abs(resolved.x - point.x) < 1e-9 && Math.abs(resolved.z - point.z) < 1e-9;
+        return (
+          Math.abs(resolved.x - point.x) < 1e-9 &&
+          Math.abs(resolved.z - point.z) < 1e-9
+        );
       };
 
       const starts = [
@@ -158,7 +215,13 @@ describe('o escritório', () => {
         ]) {
           const nextColumn = column + dx;
           const nextRow = row + dz;
-          if (nextColumn < 0 || nextRow < 0 || nextColumn > columns || nextRow > rows) continue;
+          if (
+            nextColumn < 0 ||
+            nextRow < 0 ||
+            nextColumn > columns ||
+            nextRow > rows
+          )
+            continue;
           if (seen.has(key(nextColumn, nextRow))) continue;
           if (!walkable(nextColumn, nextRow)) continue;
           seen.add(key(nextColumn, nextRow));
@@ -172,7 +235,9 @@ describe('o escritório', () => {
         const row = (cell - column) / stride;
         const x = originX + column * STEP;
         const z = originZ + row * STEP;
-        for (const room of OFFICE_MAP.rooms.filter((candidate) => (candidate.level ?? 0) === level)) {
+        for (const room of OFFICE_MAP.rooms.filter(
+          (candidate) => (candidate.level ?? 0) === level,
+        )) {
           if (
             x >= room.rect.x &&
             x <= room.rect.x + room.rect.w &&
@@ -194,8 +259,21 @@ describe('o escritório', () => {
   it('liga os dutos nos dois sentidos', () => {
     for (const vent of OFFICE_MAP.vents) {
       for (const link of vent.links) {
-        const other = OFFICE_MAP.vents.find((candidate) => candidate.id === link);
+        const other = OFFICE_MAP.vents.find(
+          (candidate) => candidate.id === link,
+        );
         expect(other?.links).toContain(vent.id);
+      }
+    }
+  });
+
+  it('mantém livres as duas entradas laterais do átrio', () => {
+    for (const level of [0, 1]) {
+      for (const point of [
+        { x: 28, z: 29 },
+        { x: 46, z: 29 },
+      ]) {
+        expect(resolveCollisions(point, collidersFor(level))).toEqual(point);
       }
     }
   });

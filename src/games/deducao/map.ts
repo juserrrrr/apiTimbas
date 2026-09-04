@@ -21,6 +21,9 @@ export interface WallBox {
   minZ: number;
   maxX: number;
   maxZ: number;
+  /// Altura da superfície em metros. Paredes não precisam informar: elas
+  /// continuam bloqueando em qualquer altura alcançável pelo jogador.
+  height?: number;
   /// Cor de destaque do cômodo dono desta parede. A colisão ignora, mas o
   /// navegador pinta o friso do alto com ela, e é isso que faz cada sala ter
   /// cara própria de longe. Opcional porque parede de teste não tem dono.
@@ -680,8 +683,8 @@ function buildProps(): PropDef[] {
     { kind: 'sofa', x: 7, z: 30.5, rot: 0 },
     { kind: 'plant', x: 4.5, z: 19, rot: 0 },
     { kind: 'plant', x: 17.2, z: 33, rot: 0 },
-    { kind: 'sofa', x: 29, z: 29, rot: Math.PI / 2 },
-    { kind: 'sofa', x: 45, z: 29, rot: -Math.PI / 2 },
+    { kind: 'sofa', x: 30.5, z: 20.2, rot: 0 },
+    { kind: 'sofa', x: 43.5, z: 37.8, rot: Math.PI },
     { kind: 'plant', x: 21, z: 19, rot: 0 },
     { kind: 'plant', x: 53, z: 39, rot: 0 },
     { kind: 'printer', x: 49, z: 15, rot: Math.PI },
@@ -737,8 +740,8 @@ function buildProps(): PropDef[] {
     { kind: 'sofa', x: 14, z: 30, rot: Math.PI, level: 1 },
     { kind: 'vending', x: 17, z: 20, rot: -Math.PI / 2, level: 1 },
     { kind: 'plant', x: 5, z: 33, rot: 0, level: 1 },
-    { kind: 'sofa', x: 30, z: 29, rot: Math.PI / 2, level: 1 },
-    { kind: 'sofa', x: 44, z: 29, rot: -Math.PI / 2, level: 1 },
+    { kind: 'sofa', x: 30.5, z: 20.2, rot: 0, level: 1 },
+    { kind: 'sofa', x: 43.5, z: 37.8, rot: Math.PI, level: 1 },
     { kind: 'plant', x: 21, z: 39, rot: 0, level: 1 },
     { kind: 'plant', x: 53, z: 19, rot: 0, level: 1 },
 
@@ -919,29 +922,31 @@ const TASK_SPOTS: TaskSpot[] = [
 /// ele e o navegador desenha a peça em cima dele. Móvel que não aparece aqui é
 /// atravessável de propósito (o monitor fica em cima da mesa, o cone se chuta).
 const FOOTPRINTS: Partial<
-  Record<PropKind, { w: number; d: number; tall?: boolean }>
+  Record<PropKind, { w: number; d: number; h: number; tall?: boolean }>
 > = {
-  desk: { w: 1.7, d: 0.85 },
-  chair: { w: 0.55, d: 0.55 },
-  plant: { w: 0.52, d: 0.52 },
-  sofa: { w: 2.0, d: 0.9 },
-  counter: { w: 4.5, d: 1.1 },
-  meetingTable: { w: 6.6, d: 2.45 },
-  cafeTable: { w: 1.35, d: 1.35 },
-  rack: { w: 0.8, d: 1.0, tall: true },
-  locker: { w: 1.1, d: 0.55, tall: true },
-  shelf: { w: 2.6, d: 0.6, tall: true },
-  coffee: { w: 0.7, d: 0.6 },
-  crate: { w: 1.0, d: 1.0 },
-  printer: { w: 0.9, d: 0.7 },
-  whiteboard: { w: 2.7, d: 0.12 },
-  car: { w: 2.0, d: 4.3, tall: true },
-  sink: { w: 1.7, d: 0.6 },
-  vending: { w: 1.1, d: 0.75, tall: true },
-  kitchen: { w: 4.2, d: 0.72, tall: true },
-  tree: { w: 1.35, d: 1.35, tall: true },
-  streetLamp: { w: 0.4, d: 0.4, tall: true },
-  bench: { w: 1.9, d: 0.65 },
+  desk: { w: 1.82, d: 0.9, h: 0.84 },
+  chair: { w: 0.72, d: 0.72, h: 1.18 },
+  plant: { w: 0.52, d: 0.52, h: 0.38 },
+  // O modelo inteiro chega a 79 cm por causa do encosto. Para caminhar e
+  // aterrissar, interessa a altura real do assento.
+  sofa: { w: 2.2, d: 1.03, h: 0.46 },
+  counter: { w: 4.5, d: 1.1, h: 1.13 },
+  meetingTable: { w: 6.65, d: 2.5, h: 0.86 },
+  cafeTable: { w: 1.35, d: 1.35, h: 0.82 },
+  rack: { w: 0.8, d: 1.0, h: 2, tall: true },
+  locker: { w: 1.1, d: 0.55, h: 2, tall: true },
+  shelf: { w: 2.6, d: 0.6, h: 1.9, tall: true },
+  coffee: { w: 0.7, d: 0.6, h: 1 },
+  crate: { w: 1.0, d: 1.0, h: 0.94 },
+  printer: { w: 0.9, d: 0.7, h: 0.9 },
+  whiteboard: { w: 2.7, d: 0.12, h: 2.05 },
+  car: { w: 2.0, d: 4.3, h: 1.5, tall: true },
+  sink: { w: 1.7, d: 0.6, h: 0.95 },
+  vending: { w: 1.1, d: 0.75, h: 2, tall: true },
+  kitchen: { w: 4.2, d: 0.72, h: 2.2, tall: true },
+  tree: { w: 1.35, d: 1.35, h: 4, tall: true },
+  streetLamp: { w: 0.4, d: 0.4, h: 4, tall: true },
+  bench: { w: 1.9, d: 0.65, h: 0.95 },
 };
 
 /// O móvel girado continua sendo barrado por uma caixa alinhada aos eixos: é a
@@ -961,6 +966,7 @@ export function buildObstacles(props: PropDef[]): WallBox[] {
       minZ: prop.z - halfD,
       maxX: prop.x + halfW,
       maxZ: prop.z + halfD,
+      height: size.h,
       tall: size.tall,
       level: prop.level ?? 0,
     });
@@ -1238,10 +1244,39 @@ export const SIGHT_BLOCKERS: WallBox[] = [
 export function collidersFor(
   level: number,
   map: GameMap = OFFICE_MAP,
+  feetHeight = 0,
 ): WallBox[] {
-  return [...map.walls, ...map.obstacles].filter(
-    (box) => (box.level ?? 0) === level,
-  );
+  return [
+    ...map.walls.filter((box) => (box.level ?? 0) === level),
+    ...map.obstacles.filter(
+      (box) =>
+        (box.level ?? 0) === level &&
+        (box.height === undefined || box.height > feetHeight + 0.06),
+    ),
+  ];
+}
+
+export function surfaceHeightAt(
+  x: number,
+  z: number,
+  level: number,
+  map: GameMap = OFFICE_MAP,
+  maxHeight = 1.2,
+): number {
+  return map.obstacles.reduce((height, box) => {
+    if (
+      (box.level ?? 0) !== level ||
+      box.height === undefined ||
+      box.height > maxHeight ||
+      x < box.minX ||
+      x > box.maxX ||
+      z < box.minZ ||
+      z > box.maxZ
+    ) {
+      return height;
+    }
+    return Math.max(height, box.height);
+  }, 0);
 }
 
 export function sightBlockersFor(

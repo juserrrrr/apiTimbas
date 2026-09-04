@@ -52,7 +52,6 @@ export const PERMISSION_CATEGORIES = [
       { key: 'economy.manage', label: 'Gerir moedas', hint: 'Ajusta saldo da carteira de conta' },
       { key: 'demo.manage', label: 'Laboratório', hint: 'Gera e apaga dados de teste' },
       { key: 'features.manage', label: 'Gerir recursos', hint: 'Liga e desliga funcionalidades da plataforma' },
-      { key: 'games.manage', label: 'Criar mapas de jogo', hint: 'Edita e publica mapas usados nas salas' },
       { key: 'stream.broadcast', label: 'Transmitir tela', hint: 'Abre transmissão ao vivo para quem tiver o link' },
       { key: 'stream.manage', label: 'Configurar transmissões', hint: 'Escolhe onde o bot anuncia as lives' },
     ],
