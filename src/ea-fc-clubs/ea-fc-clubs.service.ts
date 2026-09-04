@@ -16,6 +16,7 @@ import {
 import { EaLeaderboardQueryDto } from './dto/leaderboard-query.dto';
 import { EaMatchQueryDto } from './dto/match-query.dto';
 import { EaFcClubsProvider } from './ea-fc-clubs.provider';
+import { analyseRecentPlayerMatches } from './ea-player-analysis';
 import {
   EaClubMatch,
   EaFcClubNotFoundError,
@@ -49,36 +50,69 @@ export class EaFcClubsService {
     const clubs = await this.callProvider(() =>
       this.provider.searchClubs(dto.name.trim(), dto.platform),
     );
-    return Array.from(new Map(clubs.map((club) => [club.externalId, {
-      externalClubId: club.externalId,
-      name: club.name,
-      platform: club.platform,
-    }])).values());
+    return Array.from(
+      new Map(
+        clubs.map((club) => [
+          club.externalId,
+          {
+            externalClubId: club.externalId,
+            name: club.name,
+            platform: club.platform,
+          },
+        ]),
+      ).values(),
+    );
   }
 
   async resolveTournamentClub(name: string, platform: 'common-gen5') {
-    const clubs = await this.callProvider(() => this.provider.searchClubs(name.trim(), platform));
+    const clubs = await this.callProvider(() =>
+      this.provider.searchClubs(name.trim(), platform),
+    );
     const normalized = name.normalize('NFKC').trim().toLocaleLowerCase('pt-BR');
-    const exact = Array.from(new Map(
-      clubs
-        .filter((club) => club.name.normalize('NFKC').trim().toLocaleLowerCase('pt-BR') === normalized)
-        .map((club) => [club.externalId, club]),
-    ).values());
-    if (exact.length === 0) throw new NotFoundException('Não encontramos um clube com esse nome exato na EA.');
-    if (exact.length > 1) throw new BadGatewayException('A EA retornou mais de um clube com esse nome. Tente um nome mais específico.');
-    return { externalClubId: exact[0].externalId, name: exact[0].name, platform: exact[0].platform };
+    const exact = Array.from(
+      new Map(
+        clubs
+          .filter(
+            (club) =>
+              club.name.normalize('NFKC').trim().toLocaleLowerCase('pt-BR') ===
+              normalized,
+          )
+          .map((club) => [club.externalId, club]),
+      ).values(),
+    );
+    if (exact.length === 0)
+      throw new NotFoundException(
+        'Não encontramos um clube com esse nome exato na EA.',
+      );
+    if (exact.length > 1)
+      throw new BadGatewayException(
+        'A EA retornou mais de um clube com esse nome. Tente um nome mais específico.',
+      );
+    return {
+      externalClubId: exact[0].externalId,
+      name: exact[0].name,
+      platform: exact[0].platform,
+    };
   }
 
   async requireTournamentClub(externalClubId: string, platform: 'common-gen5') {
-    const club = await this.callProvider(() => this.provider.getClub(externalClubId, platform));
-    return { externalClubId: club.externalId, name: club.name, platform: club.platform };
+    const club = await this.callProvider(() =>
+      this.provider.getClub(externalClubId, platform),
+    );
+    return {
+      externalClubId: club.externalId,
+      name: club.name,
+      platform: club.platform,
+    };
   }
 
   async friendlyMatches(externalClubId: string, platform: 'common-gen5') {
-    return this.callProvider(() => this.provider.getClubMatches(externalClubId, platform, {
-      matchType: 'friendlyMatch',
-      maxResultCount: 10,
-    }));
+    return this.callProvider(() =>
+      this.provider.getClubMatches(externalClubId, platform, {
+        matchType: 'friendlyMatch',
+        maxResultCount: 10,
+      }),
+    );
   }
 
   async createClub(dto: CreateEaClubDto) {
@@ -352,10 +386,12 @@ export class EaFcClubsService {
       include: {
         matchStats: {
           select: {
+            match: { select: { playedAt: true } },
             position: true,
             rating: true,
             goals: true,
             assists: true,
+            shots: true,
             passesAttempted: true,
             passesCompleted: true,
             tacklesAttempted: true,
@@ -368,6 +404,11 @@ export class EaFcClubsService {
     });
     if (!player) throw new NotFoundException('Jogador não encontrado.');
     const { matchStats, ...profile } = player;
+    const recentAnalysis = analyseRecentPlayerMatches(
+      [...matchStats]
+        .sort((a, b) => b.match.playedAt.getTime() - a.match.playedAt.getTime())
+        .map(({ match: _match, ...stat }) => stat),
+    );
     const grouped = new Map<
       string,
       {
@@ -457,6 +498,7 @@ export class EaFcClubsService {
       mostPlayedPosition: positionAnalysis[0]?.position ?? null,
       bestPosition: bestPosition?.position ?? null,
       positionAnalysisMinimumAppearances: this.defaultMinimumAppearances,
+      recentAnalysis,
     };
   }
 
