@@ -93,6 +93,16 @@ describe('hasLineOfSight', () => {
 });
 
 describe('o escritório', () => {
+  it('reduz os ambientes sem encolher os móveis', () => {
+    const openSpace = OFFICE_MAP.rooms.find((room) => room.id === 'openspace')!;
+    const meeting = OFFICE_MAP.rooms.find((room) => room.id === 'reuniao')!;
+
+    expect(OFFICE_MAP.bounds.w).toBeCloseTo(63.12);
+    expect(OFFICE_MAP.bounds.d).toBeCloseTo(49.68);
+    expect(openSpace.rect.w).toBeCloseTo(23.52);
+    expect(meeting.rect.d).toBeCloseTo(11.76);
+  });
+
   it('mantém um carro original e um SUV cupê com colisão', () => {
     const cars = OFFICE_MAP.props.filter((prop) =>
       ['car', 'sportCar'].includes(prop.kind),
@@ -115,7 +125,7 @@ describe('o escritório', () => {
       (prop) => prop.kind === 'meetingTable' && (prop.level ?? 0) === 0,
     )!;
     const button = OFFICE_MAP.emergency;
-    const approach = { x: 61, z: 12.7 };
+    const approach = { x: button.x, z: button.z + 2.25 };
 
     expect(Math.abs(button.x - table.x)).toBeLessThanOrEqual(6.65 / 2);
     expect(Math.abs(button.z - table.z)).toBeLessThanOrEqual(2.5 / 2);
@@ -321,9 +331,15 @@ describe('o escritório', () => {
 
   it('mantém livres as duas entradas laterais do átrio', () => {
     for (const level of [0, 1]) {
+      const hall = OFFICE_MAP.rooms.find(
+        (room) => room.id === (level === 0 ? 'hall-central' : 'hall-superior'),
+      )!;
       for (const point of [
-        { x: 28, z: 29 },
-        { x: 46, z: 29 },
+        { x: hall.rect.x + 0.84, z: hall.rect.z + hall.rect.d / 2 },
+        {
+          x: hall.rect.x + hall.rect.w - 0.84,
+          z: hall.rect.z + hall.rect.d / 2,
+        },
       ]) {
         expect(resolveCollisions(point, collidersFor(level))).toEqual(point);
       }

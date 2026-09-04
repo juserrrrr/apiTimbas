@@ -434,6 +434,49 @@ function openLinks(rooms: RoomDef[], links: Link[]) {
 
 /// Dois pavimentos dentro do mesmo volume. Corredores laterais separam as salas
 /// do átrio, dão quinas para perseguição e evitam o aspecto de tabuleiro aberto.
+const OFFICE_LAYOUT_ORIGIN = 3;
+const OFFICE_LAYOUT_SCALE = 0.84;
+const ORIGINAL_BOUNDS = { w: 74, d: 58 } as const;
+
+function compactAxis(value: number) {
+  return (
+    OFFICE_LAYOUT_ORIGIN + (value - OFFICE_LAYOUT_ORIGIN) * OFFICE_LAYOUT_SCALE
+  );
+}
+
+function compactPlacement<T extends { x: number; z: number }>(item: T): T {
+  return {
+    ...item,
+    x: compactAxis(item.x),
+    z: compactAxis(item.z),
+  };
+}
+
+function compactRoom(room: RoomDef): RoomDef {
+  return {
+    ...room,
+    rect: {
+      x: compactAxis(room.rect.x),
+      z: compactAxis(room.rect.z),
+      w: room.rect.w * OFFICE_LAYOUT_SCALE,
+      d: room.rect.d * OFFICE_LAYOUT_SCALE,
+    },
+    doors: room.doors.map((door) => ({
+      ...door,
+      at: door.at * OFFICE_LAYOUT_SCALE,
+      width: door.width * OFFICE_LAYOUT_SCALE,
+    })),
+  };
+}
+
+function compactStair(stair: StairDef): StairDef {
+  return {
+    ...compactPlacement(stair),
+    targetX: compactAxis(stair.targetX),
+    targetZ: compactAxis(stair.targetZ),
+  };
+}
+
 const ROOMS: RoomDef[] = [
   {
     id: 'servidores',
@@ -859,7 +902,7 @@ const TASK_SPOTS: TaskSpot[] = [
     kind: 'senha',
     room: 'openspace',
     label: 'Destravar a estação 3',
-    x: 34.1,
+    x: 34.35,
     z: 7.2,
   },
   {
@@ -867,7 +910,7 @@ const TASK_SPOTS: TaskSpot[] = [
     kind: 'senha',
     room: 'openspace',
     label: 'Reiniciar a estação 7',
-    x: 46.5,
+    x: 46.75,
     z: 10.7,
   },
   {
@@ -916,7 +959,7 @@ const TASK_SPOTS: TaskSpot[] = [
     room: 'garagem',
     label: 'Recarregar o carro da empresa',
     x: 8,
-    z: 42.5,
+    z: 42.25,
   },
   {
     id: 'arquivo-a',
@@ -941,7 +984,7 @@ const TASK_SPOTS: TaskSpot[] = [
     kind: 'senha',
     room: 'operacoes',
     label: 'Autorizar o painel de operações',
-    x: 40.3,
+    x: 40.55,
     z: 10.7,
     level: 1,
   },
@@ -950,8 +993,8 @@ const TASK_SPOTS: TaskSpot[] = [
     kind: 'senha',
     room: 'chefe',
     label: 'Liberar o terminal do chefe',
-    x: 62,
-    z: 9.25,
+    x: 62.8,
+    z: 8,
     level: 1,
   },
   {
@@ -1112,7 +1155,7 @@ const STAIRS: StairDef[] = [
 
 /// Cadeiras da sala de reunião. A direção já aponta para o centro da mesa,
 /// então a câmera e o corpo chegam olhando para a discussão.
-export const MEETING_SEATS = [
+const BASE_MEETING_SEATS = [
   ...[58, 59.5, 61, 62.5, 64].flatMap((x) => [
     { x, z: 7.15, dir: 0, level: 0 },
     { x, z: 11.85, dir: Math.PI, level: 0 },
@@ -1120,6 +1163,8 @@ export const MEETING_SEATS = [
   { x: 56.3, z: 9.5, dir: Math.PI / 2, level: 0 },
   { x: 65.7, z: 9.5, dir: -Math.PI / 2, level: 0 },
 ];
+
+export const MEETING_SEATS = BASE_MEETING_SEATS.map(compactPlacement);
 
 export function buildStairBarriers(stairs: StairDef[]): WallBox[] {
   const barriers: WallBox[] = [];
@@ -1213,24 +1258,37 @@ export function buildStairBarriers(stairs: StairDef[]): WallBox[] {
   return barriers;
 }
 
-const PROPS_BUILT = buildProps();
-const WALLS_BUILT = buildWalls(ROOMS);
+const ROOMS_BUILT = ROOMS.map(compactRoom);
+const PROPS_BUILT = buildProps().map(compactPlacement);
+const TASK_SPOTS_BUILT = TASK_SPOTS.map(compactPlacement);
+const VENTS_BUILT = VENTS.map(compactPlacement);
+const STAIRS_BUILT = STAIRS.map(compactStair);
+const WALLS_BUILT = buildWalls(ROOMS_BUILT);
 const OBSTACLES_BUILT = [
   ...buildObstacles(PROPS_BUILT),
-  ...buildStairBarriers(STAIRS),
+  ...buildStairBarriers(STAIRS_BUILT),
 ];
 
 export const OFFICE_MAP: GameMap = {
   name: 'Escritório Timbas',
-  bounds: { x: 0, z: 0, w: 74, d: 58 },
-  rooms: ROOMS,
+  bounds: {
+    x: 0,
+    z: 0,
+    w:
+      OFFICE_LAYOUT_ORIGIN * 2 +
+      (ORIGINAL_BOUNDS.w - OFFICE_LAYOUT_ORIGIN * 2) * OFFICE_LAYOUT_SCALE,
+    d:
+      OFFICE_LAYOUT_ORIGIN * 2 +
+      (ORIGINAL_BOUNDS.d - OFFICE_LAYOUT_ORIGIN * 2) * OFFICE_LAYOUT_SCALE,
+  },
+  rooms: ROOMS_BUILT,
   walls: WALLS_BUILT,
   obstacles: OBSTACLES_BUILT,
   props: PROPS_BUILT,
-  taskSpots: TASK_SPOTS,
-  vents: VENTS,
-  stairs: STAIRS,
-  emergency: { x: 61, y: 0.86, z: 10.2, level: 0 },
+  taskSpots: TASK_SPOTS_BUILT,
+  vents: VENTS_BUILT,
+  stairs: STAIRS_BUILT,
+  emergency: compactPlacement({ x: 61, y: 0.86, z: 10.2, level: 0 }),
   spawns: [
     { x: 34, z: 26, level: 0 },
     { x: 37, z: 26, level: 0 },
@@ -1244,7 +1302,7 @@ export const OFFICE_MAP: GameMap = {
     { x: 43, z: 26, level: 0 },
     { x: 31, z: 32, level: 0 },
     { x: 43, z: 32, level: 0 },
-  ],
+  ].map(compactPlacement),
   meetingSeats: MEETING_SEATS,
 };
 
