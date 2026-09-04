@@ -156,4 +156,35 @@ describe('rankPlayerPositions', () => {
       saves: 0,
     });
   });
+
+  it('does not prioritize a one-match rating over a reliable sample', () => {
+    const base = {
+      goals: 0,
+      assists: 0,
+      shots: 0,
+      passesCompleted: 0,
+      passesAttempted: 0,
+      tacklesCompleted: 0,
+      tacklesAttempted: 0,
+      saves: 0,
+    };
+    const positions = rankPlayerPositions([
+      {
+        position: 'FORWARD',
+        appearances: 1,
+        ratingSum: 10,
+        ratedMatches: 1,
+        ...base,
+      },
+      {
+        position: 'MIDFIELDER',
+        appearances: 6,
+        ratingSum: 46.2,
+        ratedMatches: 6,
+        ...base,
+      },
+    ]);
+
+    expect(positions[0]?.position).toBe('MIDFIELDER');
+  });
 });

@@ -46,6 +46,7 @@ export function rankPlayerPositions(positions: RatedPosition[]) {
     }))
     .sort(
       (a, b) =>
+        Number(b.appearances >= 3) - Number(a.appearances >= 3) ||
         Number(b.averageRating ?? -1) - Number(a.averageRating ?? -1) ||
         b.appearances - a.appearances,
     );
