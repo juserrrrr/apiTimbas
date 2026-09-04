@@ -4,9 +4,9 @@ import { ArraySchema, MapSchema, Schema, type } from '@colyseus/schema';
 ///
 /// O papel de cada um fica de fora de propósito: quem é assassino sai por
 /// mensagem direta para o próprio dono do papel, senão bastaria abrir o
-/// inspetor do navegador para ganhar o jogo. Posição, por outro lado, é pública,
-/// igual ao Among Us: quem limita a visão é a tela, e todas as jogadas que
-/// contam (abate, tarefa, voto) o servidor confere de novo antes de aceitar.
+/// inspetor do navegador para ganhar o jogo. A posição é pública para manter
+/// todos os jogadores visíveis até no apagão; nome e cor são ocultados pela
+/// tela. Jogadas que contam são conferidas novamente pelo servidor.
 
 export class PlayerState extends Schema {
   @type('string') id = '';
@@ -16,6 +16,7 @@ export class PlayerState extends Schema {
   @type('number') x = 0;
   @type('number') z = 0;
   @type('number') level = 0;
+  @type('number') elevation = 0;
   @type('number') dir = 0;
   @type('boolean') moving = false;
   @type('boolean') crouching = false;

@@ -50,7 +50,11 @@ function pushOut(point: Vec2, box: WallBox, radius: number): Vec2 {
   return { x: point.x, z: box.maxZ + radius };
 }
 
-export function resolveCollisions(point: Vec2, walls: WallBox[], radius = PLAYER_RADIUS): Vec2 {
+export function resolveCollisions(
+  point: Vec2,
+  walls: WallBox[],
+  radius = PLAYER_RADIUS,
+): Vec2 {
   let resolved = { x: point.x, z: point.z };
   // Duas passadas: sair de uma parede pode encostar na vizinha, e no vão da
   // porta isso acontece o tempo todo.
@@ -64,6 +68,28 @@ export function resolveCollisions(point: Vec2, walls: WallBox[], radius = PLAYER
     if (!touched) break;
   }
   return resolved;
+}
+
+function moveAxis(
+  point: Vec2,
+  delta: number,
+  axis: 'x' | 'z',
+  walls: WallBox[],
+  radius: number,
+): Vec2 {
+  if (delta === 0) return point;
+  const next = { x: point.x, z: point.z };
+  next[axis] += delta;
+
+  for (const wall of walls) {
+    if (!overlaps(next, wall, radius)) continue;
+    if (axis === 'x') {
+      next.x = delta > 0 ? wall.minX - radius : wall.maxX + radius;
+    } else {
+      next.z = delta > 0 ? wall.minZ - radius : wall.maxZ + radius;
+    }
+  }
+  return next;
 }
 
 /// O passo é percorrido em pedaços menores que o corpo do jogador, cada um
@@ -82,9 +108,10 @@ export function moveTowards(
   const stepX = (target.x - from.x) / steps;
   const stepZ = (target.z - from.z) / steps;
 
-  let current = { x: from.x, z: from.z };
+  let current = resolveCollisions(from, walls, radius);
   for (let step = 0; step < steps; step += 1) {
-    current = resolveCollisions({ x: current.x + stepX, z: current.z + stepZ }, walls, radius);
+    current = moveAxis(current, stepX, 'x', walls, radius);
+    current = moveAxis(current, stepZ, 'z', walls, radius);
   }
   return current;
 }
@@ -114,12 +141,21 @@ function segmentHitsBox(from: Vec2, to: Vec2, box: WallBox): boolean {
   return true;
 }
 
-/// Enxerga daqui até ali? Vale para o abate e para decidir quem aparece na tela
-/// de quem: com a parede no meio, ninguém vê nada.
-export function hasLineOfSight(from: Vec2, to: Vec2, walls: WallBox[]): boolean {
+/// Enxerga daqui até ali? Vale para ações de alcance, como abate e tarefa. Os
+/// jogadores continuam renderizados mesmo quando uma parede bloqueia a ação.
+export function hasLineOfSight(
+  from: Vec2,
+  to: Vec2,
+  walls: WallBox[],
+): boolean {
   return !walls.some((wall) => segmentHitsBox(from, to, wall));
 }
 
-export function isWithin(from: Vec2, to: Vec2, range: number, walls: WallBox[]): boolean {
+export function isWithin(
+  from: Vec2,
+  to: Vec2,
+  range: number,
+  walls: WallBox[],
+): boolean {
   return distance(from, to) <= range && hasLineOfSight(from, to, walls);
 }
