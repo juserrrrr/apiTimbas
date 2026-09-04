@@ -266,4 +266,15 @@ describe('o escritório', () => {
       }
     }
   });
+
+  it('mantém livres as duas entradas laterais do átrio', () => {
+    for (const level of [0, 1]) {
+      for (const point of [
+        { x: 28, z: 29 },
+        { x: 46, z: 29 },
+      ]) {
+        expect(resolveCollisions(point, collidersFor(level))).toEqual(point);
+      }
+    }
+  });
 });
