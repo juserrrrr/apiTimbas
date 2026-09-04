@@ -166,6 +166,8 @@ export interface StairDef {
   x: number;
   z: number;
   rot: number;
+  turnX?: number;
+  turnZ?: number;
   targetLevel: number;
   targetX: number;
   targetZ: number;
@@ -472,6 +474,12 @@ function compactRoom(room: RoomDef): RoomDef {
 function compactStair(stair: StairDef): StairDef {
   return {
     ...compactPlacement(stair),
+    ...(stair.turnX !== undefined && stair.turnZ !== undefined
+      ? {
+          turnX: compactAxis(stair.turnX),
+          turnZ: compactAxis(stair.turnZ),
+        }
+      : {}),
     targetX: compactAxis(stair.targetX),
     targetZ: compactAxis(stair.targetZ),
   };
@@ -735,9 +743,8 @@ function buildProps(): PropDef[] {
     { kind: 'plant', x: 4.5, z: 19, rot: 0 },
     { kind: 'plant', x: 17.2, z: 33, rot: 0 },
     { kind: 'sofa', x: 30.5, z: 20.2, rot: 0 },
-    { kind: 'sofa', x: 43.5, z: 37.8, rot: Math.PI },
     { kind: 'plant', x: 28.5, z: 19, rot: 0 },
-    { kind: 'plant', x: 45.5, z: 39, rot: 0 },
+    { kind: 'plant', x: 43, z: 32, rot: 0 },
     { kind: 'printer', x: 49, z: 15, rot: Math.PI },
     { kind: 'sofa', x: 43.5, z: 20.2, rot: Math.PI },
     { kind: 'sofa', x: 30.5, z: 37.8, rot: 0 },
@@ -748,7 +755,7 @@ function buildProps(): PropDef[] {
     { kind: 'sofa', x: 32.5, z: 29, rot: -Math.PI / 2 },
     { kind: 'sofa', x: 41.5, z: 29, rot: Math.PI / 2 },
     { kind: 'cafeTable', x: 37, z: 29, rot: 0 },
-    { kind: 'cafeTable', x: 40, z: 37.5, rot: 0 },
+    { kind: 'cafeTable', x: 37, z: 36, rot: 0 },
 
     // Térreo: sala dos servidores
     { kind: 'rack', x: 6, z: 6, rot: 0 },
@@ -816,7 +823,6 @@ function buildProps(): PropDef[] {
     { kind: 'chair', x: 9.4, z: 27, rot: Math.PI / 2, level: 1 },
     { kind: 'chair', x: 12.6, z: 27, rot: -Math.PI / 2, level: 1 },
     { kind: 'sofa', x: 30.5, z: 20.2, rot: 0, level: 1 },
-    { kind: 'sofa', x: 43.5, z: 37.8, rot: Math.PI, level: 1 },
     { kind: 'sofa', x: 43.5, z: 20.2, rot: Math.PI, level: 1 },
     { kind: 'sofa', x: 30.5, z: 37.8, rot: 0, level: 1 },
     { kind: 'plant', x: 28.5, z: 39, rot: 0, level: 1 },
@@ -828,7 +834,7 @@ function buildProps(): PropDef[] {
     { kind: 'sofa', x: 32.5, z: 29, rot: -Math.PI / 2, level: 1 },
     { kind: 'sofa', x: 41.5, z: 29, rot: Math.PI / 2, level: 1 },
     { kind: 'cafeTable', x: 37, z: 29, rot: 0, level: 1 },
-    { kind: 'cafeTable', x: 40, z: 37.5, rot: 0, level: 1 },
+    { kind: 'cafeTable', x: 37, z: 36, rot: 0, level: 1 },
 
     // Segundo andar: sala do chefe
     { kind: 'desk', x: 61, z: 8, rot: 0, level: 1 },
@@ -1112,44 +1118,16 @@ const VENTS: VentDef[] = [
 
 const STAIRS: StairDef[] = [
   {
-    id: 'escada-oeste-terreo',
+    id: 'escada-hall',
     level: 0,
-    x: 23,
-    z: 28,
-    rot: 0,
-    targetLevel: 1,
-    targetX: 23,
-    targetZ: 22,
-  },
-  {
-    id: 'escada-oeste-superior',
-    level: 1,
-    x: 23,
-    z: 22,
+    x: 45.15,
+    z: 34.2,
     rot: Math.PI,
-    targetLevel: 0,
-    targetX: 23,
-    targetZ: 28,
-  },
-  {
-    id: 'escada-leste-terreo',
-    level: 0,
-    x: 51,
-    z: 30,
-    rot: Math.PI,
+    turnX: 45.15,
+    turnZ: 39.15,
     targetLevel: 1,
-    targetX: 51,
-    targetZ: 36,
-  },
-  {
-    id: 'escada-leste-superior',
-    level: 1,
-    x: 51,
-    z: 36,
-    rot: 0,
-    targetLevel: 0,
-    targetX: 51,
-    targetZ: 30,
+    targetX: 40.2,
+    targetZ: 39.15,
   },
 ];
 
@@ -1166,94 +1144,103 @@ const BASE_MEETING_SEATS = [
 
 export const MEETING_SEATS = BASE_MEETING_SEATS.map(compactPlacement);
 
+function stairPath(stair: StairDef) {
+  const points = [{ x: stair.x, z: stair.z }];
+  if (stair.turnX !== undefined && stair.turnZ !== undefined) {
+    points.push({ x: stair.turnX, z: stair.turnZ });
+  }
+  points.push({ x: stair.targetX, z: stair.targetZ });
+  return points;
+}
+
 export function buildStairBarriers(stairs: StairDef[]): WallBox[] {
   const barriers: WallBox[] = [];
   for (const stair of stairs.filter((item) => item.targetLevel > item.level)) {
-    const vertical =
-      Math.abs(stair.targetZ - stair.z) >= Math.abs(stair.targetX - stair.x);
-    const minX = Math.min(stair.x, stair.targetX);
-    const maxX = Math.max(stair.x, stair.targetX);
-    const minZ = Math.min(stair.z, stair.targetZ);
-    const maxZ = Math.max(stair.z, stair.targetZ);
+    const points = stairPath(stair);
     const side = 1.48;
     const rail = 0.12;
     const end = 0.14;
+    const firstDirection = {
+      x: points[1].x - points[0].x,
+      z: points[1].z - points[0].z,
+    };
+    const secondDirection =
+      points.length === 3
+        ? {
+            x: points[2].x - points[1].x,
+            z: points[2].z - points[1].z,
+          }
+        : null;
+    const insideSign = secondDirection
+      ? Math.sign(
+          firstDirection.x * secondDirection.z -
+            firstDirection.z * secondDirection.x,
+        )
+      : 0;
 
     for (const level of [stair.level, stair.targetLevel]) {
-      if (vertical) {
-        barriers.push(
-          {
-            minX: stair.x - side - rail,
-            maxX: stair.x - side + rail,
-            minZ: minZ - 0.2,
-            maxZ: maxZ + 0.2,
+      for (let index = 0; index < points.length - 1; index += 1) {
+        const from = points[index];
+        const to = points[index + 1];
+        const dx = to.x - from.x;
+        const dz = to.z - from.z;
+        const length = Math.hypot(dx, dz);
+        const unitX = dx / length;
+        const unitZ = dz / length;
+        const sideX = -unitZ;
+        const sideZ = unitX;
+
+        for (const sign of [-1, 1]) {
+          const innerRail = points.length === 3 && sign === insideSign;
+          const startInset = innerRail && index === 1 ? side + rail : 0;
+          const endInset = innerRail && index === 0 ? side + rail : 0;
+          const startX = from.x + unitX * startInset + sideX * side * sign;
+          const startZ = from.z + unitZ * startInset + sideZ * side * sign;
+          const endX = to.x - unitX * endInset + sideX * side * sign;
+          const endZ = to.z - unitZ * endInset + sideZ * side * sign;
+
+          barriers.push({
+            minX: Math.min(startX, endX) - rail,
+            minZ: Math.min(startZ, endZ) - rail,
+            maxX: Math.max(startX, endX) + rail,
+            maxZ: Math.max(startZ, endZ) + rail,
             level,
-          },
-          {
-            minX: stair.x + side - rail,
-            maxX: stair.x + side + rail,
-            minZ: minZ - 0.2,
-            maxZ: maxZ + 0.2,
-            level,
-          },
-        );
-      } else {
-        barriers.push(
-          {
-            minX: minX - 0.2,
-            maxX: maxX + 0.2,
-            minZ: stair.z - side - rail,
-            maxZ: stair.z - side + rail,
-            level,
-          },
-          {
-            minX: minX - 0.2,
-            maxX: maxX + 0.2,
-            minZ: stair.z + side - rail,
-            maxZ: stair.z + side + rail,
-            level,
-          },
-        );
+          });
+        }
       }
     }
 
-    // Embaixo fecha o espaço sob o último degrau; em cima, a borda oposta ao
-    // desembarque recebe guarda-corpo. As duas entradas continuam livres.
-    if (vertical) {
-      barriers.push(
-        {
-          minX: stair.x - side,
-          maxX: stair.x + side,
-          minZ: stair.targetZ - end,
-          maxZ: stair.targetZ + end,
-          level: stair.level,
-        },
-        {
-          minX: stair.x - side,
-          maxX: stair.x + side,
-          minZ: stair.z - end,
-          maxZ: stair.z + end,
-          level: stair.targetLevel,
-        },
-      );
-    } else {
-      barriers.push(
-        {
-          minX: stair.targetX - end,
-          maxX: stair.targetX + end,
-          minZ: stair.z - side,
-          maxZ: stair.z + side,
-          level: stair.level,
-        },
-        {
-          minX: stair.x - end,
-          maxX: stair.x + end,
-          minZ: stair.z - side,
-          maxZ: stair.z + side,
-          level: stair.targetLevel,
-        },
-      );
-    }
+    const endBarrier = (
+      point: { x: number; z: number },
+      neighbor: { x: number; z: number },
+      level: number,
+    ): WallBox =>
+      Math.abs(point.x - neighbor.x) >= Math.abs(point.z - neighbor.z)
+        ? {
+            minX: point.x - end,
+            maxX: point.x + end,
+            minZ: point.z - side,
+            maxZ: point.z + side,
+            level,
+          }
+        : {
+            minX: point.x - side,
+            maxX: point.x + side,
+            minZ: point.z - end,
+            maxZ: point.z + end,
+            level,
+          };
+
+    // Embaixo fecha o volume sob o desembarque. Em cima, a mesma proteção
+    // fecha a borda do vão oposta ao início da descida.
+    barriers.push(
+      endBarrier(
+        points[points.length - 1],
+        points[points.length - 2],
+        stair.level,
+      ),
+      endBarrier(points[0], points[1], stair.targetLevel),
+    );
   }
   return barriers;
 }
@@ -1301,7 +1288,7 @@ export const OFFICE_MAP: GameMap = {
     { x: 31, z: 26, level: 0 },
     { x: 43, z: 26, level: 0 },
     { x: 31, z: 32, level: 0 },
-    { x: 43, z: 32, level: 0 },
+    { x: 28, z: 32, level: 0 },
   ].map(compactPlacement),
   meetingSeats: MEETING_SEATS,
 };
@@ -1319,21 +1306,41 @@ export function stairProgressAt(
   for (const stair of map.stairs.filter(
     (candidate) => candidate.targetLevel > candidate.level,
   )) {
-    const dx = stair.targetX - stair.x;
-    const dz = stair.targetZ - stair.z;
-    const lengthSquared = dx * dx + dz * dz;
-    const rawProgress =
-      ((x - stair.x) * dx + (z - stair.z) * dz) / lengthSquared;
-    if (rawProgress < -0.08 || rawProgress > 1.08) continue;
+    const points = stairPath(stair);
+    const lengths = points.slice(0, -1).map((point, index) =>
+      Math.hypot(
+        points[index + 1].x - point.x,
+        points[index + 1].z - point.z,
+      ),
+    );
+    const totalLength = lengths.reduce((sum, length) => sum + length, 0);
+    let traversed = 0;
 
-    const progress = Math.min(1, Math.max(0, rawProgress));
-    const projectedX = stair.x + dx * progress;
-    const projectedZ = stair.z + dz * progress;
-    const perpendicularDistance = Math.hypot(x - projectedX, z - projectedZ);
-    if (perpendicularDistance > 1.16) continue;
+    for (let index = 0; index < points.length - 1; index += 1) {
+      const from = points[index];
+      const to = points[index + 1];
+      const dx = to.x - from.x;
+      const dz = to.z - from.z;
+      const length = lengths[index];
+      const rawSegmentProgress =
+        ((x - from.x) * dx + (z - from.z) * dz) / (length * length);
+      if (rawSegmentProgress < -0.08 || rawSegmentProgress > 1.08) {
+        traversed += length;
+        continue;
+      }
 
-    if (!closest || perpendicularDistance < closest.distance) {
-      closest = { stair, progress, distance: perpendicularDistance };
+      const segmentProgress = Math.min(1, Math.max(0, rawSegmentProgress));
+      const projectedX = from.x + dx * segmentProgress;
+      const projectedZ = from.z + dz * segmentProgress;
+      const perpendicularDistance = Math.hypot(x - projectedX, z - projectedZ);
+      if (perpendicularDistance <= 1.16) {
+        const progress =
+          (traversed + length * segmentProgress) / totalLength;
+        if (!closest || perpendicularDistance < closest.distance) {
+          closest = { stair, progress, distance: perpendicularDistance };
+        }
+      }
+      traversed += length;
     }
   }
 
@@ -1400,7 +1407,7 @@ export function sightBlockersFor(
 
 export function roomAt(x: number, z: number, level = 0): RoomDef | null {
   return (
-    ROOMS.find(
+    ROOMS_BUILT.find(
       (room) =>
         (room.level ?? 0) === level &&
         x >= room.rect.x &&

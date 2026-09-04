@@ -1,6 +1,7 @@
 import {
   OFFICE_MAP,
   collidersFor,
+  roomAt,
   stairProgressAt,
   surfaceHeightAt,
 } from './map';
@@ -42,10 +43,7 @@ describe('stairProgressAt', () => {
     const stair = OFFICE_MAP.stairs.find(
       (candidate) => candidate.targetLevel > candidate.level,
     )!;
-    const middle = stairProgressAt(
-      (stair.x + stair.targetX) / 2,
-      (stair.z + stair.targetZ) / 2,
-    );
+    const middle = stairProgressAt(stair.turnX!, stair.turnZ!);
 
     expect(stairProgressAt(stair.x, stair.z)?.progress).toBeCloseTo(0);
     expect(middle?.progress).toBeCloseTo(0.5);
@@ -101,6 +99,7 @@ describe('o escritório', () => {
     expect(OFFICE_MAP.bounds.d).toBeCloseTo(49.68);
     expect(openSpace.rect.w).toBeCloseTo(23.52);
     expect(meeting.rect.d).toBeCloseTo(11.76);
+    expect(roomAt(24, 18)?.id).toBe('hall-central');
   });
 
   it('mantém um carro original e um SUV cupê com colisão', () => {
@@ -206,6 +205,7 @@ describe('o escritório', () => {
   });
 
   it('mantém entradas e saídas das escadas livres e com caminho de volta', () => {
+    expect(OFFICE_MAP.stairs).toHaveLength(1);
     for (const stair of OFFICE_MAP.stairs) {
       expect(resolveCollisions(stair, collidersFor(stair.level))).toEqual({
         x: stair.x,
@@ -217,14 +217,14 @@ describe('o escritório', () => {
           collidersFor(stair.targetLevel),
         ),
       ).toEqual({ x: stair.targetX, z: stair.targetZ });
+      expect(stair.turnX).toBeCloseTo(stair.x);
+      expect(stair.turnZ).toBeCloseTo(stair.targetZ);
 
-      expect(
-        OFFICE_MAP.stairs.some(
-          (candidate) =>
-            candidate.level === stair.targetLevel &&
-            candidate.targetLevel === stair.level,
-        ),
-      ).toBe(true);
+      const hall = OFFICE_MAP.rooms.find(
+        (room) => room.id === 'hall-central',
+      )!;
+      expect(hall.rect.x + hall.rect.w - stair.x).toBeCloseTo(1.554);
+      expect(hall.rect.z + hall.rect.d - stair.turnZ!).toBeCloseTo(1.554);
     }
   });
 
