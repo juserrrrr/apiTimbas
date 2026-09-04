@@ -111,6 +111,8 @@ export type PropKind =
   | 'sink'
   | 'vending'
   | 'kitchen'
+  | 'gameTable'
+  | 'arcade'
   | 'tree'
   | 'streetLamp'
   | 'bench';
@@ -118,6 +120,8 @@ export type PropKind =
 export interface PropDef {
   kind: PropKind;
   x: number;
+  /// Altura visual para objetos apoiados, como a cafeteira sobre a bancada.
+  y?: number;
   z: number;
   /// Rotação em torno do eixo vertical, em radianos.
   rot: number;
@@ -686,9 +690,19 @@ function buildProps(): PropDef[] {
     { kind: 'plant', x: 17.2, z: 33, rot: 0 },
     { kind: 'sofa', x: 30.5, z: 20.2, rot: 0 },
     { kind: 'sofa', x: 43.5, z: 37.8, rot: Math.PI },
-    { kind: 'plant', x: 21, z: 19, rot: 0 },
-    { kind: 'plant', x: 53, z: 39, rot: 0 },
+    { kind: 'plant', x: 28.5, z: 19, rot: 0 },
+    { kind: 'plant', x: 45.5, z: 39, rot: 0 },
     { kind: 'printer', x: 49, z: 15, rot: Math.PI },
+    { kind: 'sofa', x: 43.5, z: 20.2, rot: Math.PI },
+    { kind: 'sofa', x: 30.5, z: 37.8, rot: 0 },
+    { kind: 'cafeTable', x: 34, z: 20.5, rot: 0 },
+    { kind: 'cafeTable', x: 40, z: 20.5, rot: 0 },
+    { kind: 'chair', x: 38.5, z: 20.5, rot: Math.PI / 2 },
+    { kind: 'chair', x: 41.5, z: 20.5, rot: -Math.PI / 2 },
+    { kind: 'sofa', x: 32.5, z: 29, rot: -Math.PI / 2 },
+    { kind: 'sofa', x: 41.5, z: 29, rot: Math.PI / 2 },
+    { kind: 'cafeTable', x: 37, z: 29, rot: 0 },
+    { kind: 'cafeTable', x: 40, z: 37.5, rot: 0 },
 
     // Térreo: sala dos servidores
     { kind: 'rack', x: 6, z: 6, rot: 0 },
@@ -710,7 +724,7 @@ function buildProps(): PropDef[] {
     { kind: 'chair', x: 65.7, z: 9.5, rot: -Math.PI / 2 },
     { kind: 'whiteboard', x: 61, z: 4.1, rot: 0 },
     { kind: 'kitchen', x: 70.1, z: 21, rot: -Math.PI / 2 },
-    { kind: 'coffee', x: 68.6, z: 19.2, rot: -Math.PI / 2 },
+    { kind: 'coffee', x: 69.72, y: 0.91, z: 19.6, rot: -Math.PI / 2 },
     { kind: 'vending', x: 69.7, z: 25.1, rot: -Math.PI / 2 },
     { kind: 'cafeTable', x: 59.5, z: 21, rot: 0 },
     { kind: 'chair', x: 57.9, z: 21, rot: Math.PI / 2 },
@@ -719,6 +733,9 @@ function buildProps(): PropDef[] {
     { kind: 'chair', x: 61.9, z: 31, rot: Math.PI / 2 },
     { kind: 'chair', x: 65.1, z: 31, rot: -Math.PI / 2 },
     { kind: 'plant', x: 69, z: 33, rot: 0 },
+    { kind: 'cafeTable', x: 59.5, z: 29.5, rot: 0 },
+    { kind: 'chair', x: 57.9, z: 29.5, rot: Math.PI / 2 },
+    { kind: 'chair', x: 61.1, z: 29.5, rot: -Math.PI / 2 },
 
     // Térreo: garagem e depósito
     { kind: 'car', x: 8, z: 45.5, rot: 0 },
@@ -729,6 +746,7 @@ function buildProps(): PropDef[] {
     { kind: 'shelf', x: 58, z: 39, rot: Math.PI / 2 },
     { kind: 'shelf', x: 68, z: 39, rot: -Math.PI / 2 },
     { kind: 'shelf', x: 58, z: 50, rot: Math.PI / 2 },
+    { kind: 'shelf', x: 68, z: 50, rot: -Math.PI / 2 },
     { kind: 'crate', x: 64, z: 51, rot: 0.3 },
     { kind: 'crate', x: 66, z: 52, rot: -0.3 },
 
@@ -736,15 +754,33 @@ function buildProps(): PropDef[] {
     { kind: 'locker', x: 5, z: 6, rot: Math.PI / 2, level: 1 },
     { kind: 'locker', x: 5, z: 10, rot: Math.PI / 2, level: 1 },
     { kind: 'locker', x: 21, z: 6, rot: -Math.PI / 2, level: 1 },
+    { kind: 'locker', x: 21, z: 10, rot: -Math.PI / 2, level: 1 },
+    { kind: 'shelf', x: 12, z: 4.2, rot: Math.PI, level: 1 },
     { kind: 'shelf', x: 12, z: 15, rot: 0, level: 1 },
     { kind: 'sofa', x: 8, z: 24, rot: 0, level: 1 },
     { kind: 'sofa', x: 14, z: 30, rot: Math.PI, level: 1 },
     { kind: 'vending', x: 17, z: 20, rot: -Math.PI / 2, level: 1 },
+    { kind: 'gameTable', x: 11, z: 20.8, rot: 0, level: 1 },
+    { kind: 'arcade', x: 17.2, z: 28.8, rot: -Math.PI / 2, level: 1 },
+    { kind: 'arcade', x: 17.2, z: 31.2, rot: -Math.PI / 2, level: 1 },
     { kind: 'plant', x: 5, z: 33, rot: 0, level: 1 },
+    { kind: 'cafeTable', x: 11, z: 27, rot: 0, level: 1 },
+    { kind: 'chair', x: 9.4, z: 27, rot: Math.PI / 2, level: 1 },
+    { kind: 'chair', x: 12.6, z: 27, rot: -Math.PI / 2, level: 1 },
     { kind: 'sofa', x: 30.5, z: 20.2, rot: 0, level: 1 },
     { kind: 'sofa', x: 43.5, z: 37.8, rot: Math.PI, level: 1 },
-    { kind: 'plant', x: 21, z: 39, rot: 0, level: 1 },
-    { kind: 'plant', x: 53, z: 19, rot: 0, level: 1 },
+    { kind: 'sofa', x: 43.5, z: 20.2, rot: Math.PI, level: 1 },
+    { kind: 'sofa', x: 30.5, z: 37.8, rot: 0, level: 1 },
+    { kind: 'plant', x: 28.5, z: 39, rot: 0, level: 1 },
+    { kind: 'plant', x: 45.5, z: 19, rot: 0, level: 1 },
+    { kind: 'cafeTable', x: 34, z: 20.5, rot: 0, level: 1 },
+    { kind: 'cafeTable', x: 40, z: 20.5, rot: 0, level: 1 },
+    { kind: 'chair', x: 38.5, z: 20.5, rot: Math.PI / 2, level: 1 },
+    { kind: 'chair', x: 41.5, z: 20.5, rot: -Math.PI / 2, level: 1 },
+    { kind: 'sofa', x: 32.5, z: 29, rot: -Math.PI / 2, level: 1 },
+    { kind: 'sofa', x: 41.5, z: 29, rot: Math.PI / 2, level: 1 },
+    { kind: 'cafeTable', x: 37, z: 29, rot: 0, level: 1 },
+    { kind: 'cafeTable', x: 40, z: 37.5, rot: 0, level: 1 },
 
     // Segundo andar: sala do chefe
     { kind: 'desk', x: 61, z: 8, rot: 0, level: 1 },
@@ -754,6 +790,10 @@ function buildProps(): PropDef[] {
     { kind: 'cafeTable', x: 67, z: 12.5, rot: Math.PI / 2, level: 1 },
     { kind: 'plant', x: 69, z: 5, rot: 0, level: 1 },
     { kind: 'whiteboard', x: 61, z: 4.1, rot: 0, level: 1 },
+    { kind: 'chair', x: 59.3, z: 10.2, rot: 0, level: 1 },
+    { kind: 'chair', x: 62.7, z: 10.2, rot: 0, level: 1 },
+    { kind: 'shelf', x: 69.1, z: 9.5, rot: -Math.PI / 2, level: 1 },
+    { kind: 'sofa', x: 66, z: 14.6, rot: Math.PI, level: 1 },
 
     // Segundo andar: terraço e conselho
     { kind: 'cafeTable', x: 63, z: 24, rot: Math.PI / 2, level: 1 },
@@ -763,8 +803,10 @@ function buildProps(): PropDef[] {
     { kind: 'plant', x: 69, z: 31, rot: 0, level: 1 },
     { kind: 'plant', x: 57, z: 52, rot: 0, level: 1 },
     { kind: 'meetingTable', x: 11, z: 45, rot: Math.PI / 2, level: 1 },
-    { kind: 'chair', x: 8.8, z: 45, rot: -Math.PI / 2, level: 1 },
-    { kind: 'chair', x: 13.2, z: 45, rot: Math.PI / 2, level: 1 },
+    ...[42.5, 44.2, 45.8, 47.5].flatMap((z) => [
+      { kind: 'chair' as const, x: 8.8, z, rot: -Math.PI / 2, level: 1 },
+      { kind: 'chair' as const, x: 13.2, z, rot: Math.PI / 2, level: 1 },
+    ]),
     { kind: 'whiteboard', x: 11, z: 53.8, rot: Math.PI, level: 1 },
   ];
 
@@ -788,16 +830,16 @@ const TASK_SPOTS: TaskSpot[] = [
     kind: 'rack',
     room: 'servidores',
     label: 'Religar o rack principal',
-    x: 8,
-    z: 8,
+    x: 9,
+    z: 7.15,
   },
   {
     id: 'rack-b',
     kind: 'rack',
     room: 'servidores',
     label: 'Trocar o disco do backup',
-    x: 17,
-    z: 12,
+    x: 16,
+    z: 11.85,
   },
   {
     id: 'cabos-a',
@@ -805,47 +847,47 @@ const TASK_SPOTS: TaskSpot[] = [
     room: 'servidores',
     label: 'Refazer o cabeamento',
     x: 12,
-    z: 14.5,
+    z: 11.7,
   },
   {
     id: 'senha-a',
     kind: 'senha',
     room: 'openspace',
     label: 'Destravar a estação 3',
-    x: 33.2,
-    z: 4.5,
+    x: 34.1,
+    z: 7.2,
   },
   {
     id: 'senha-b',
     kind: 'senha',
     room: 'openspace',
     label: 'Reiniciar a estação 7',
-    x: 47.2,
-    z: 12.8,
+    x: 46.5,
+    z: 10.7,
   },
   {
     id: 'cafe-a',
     kind: 'cafe',
     room: 'copa',
     label: 'Calibrar a cafeteira',
-    x: 67.5,
-    z: 19.2,
+    x: 68.65,
+    z: 19.6,
   },
   {
     id: 'estoque-a',
     kind: 'estoque',
     room: 'copa',
     label: 'Repor a máquina de venda',
-    x: 67,
-    z: 24,
+    x: 68.25,
+    z: 25.1,
   },
   {
     id: 'estoque-dispensa',
     kind: 'estoque',
     room: 'dispensa',
     label: 'Conferir os mantimentos',
-    x: 63,
-    z: 42.5,
+    x: 61,
+    z: 42,
   },
   {
     id: 'senha-c',
@@ -860,8 +902,8 @@ const TASK_SPOTS: TaskSpot[] = [
     kind: 'estoque',
     room: 'deposito',
     label: 'Conferir o inventário',
-    x: 63,
-    z: 48,
+    x: 64,
+    z: 49.5,
   },
   {
     id: 'cabos-c',
@@ -876,8 +918,8 @@ const TASK_SPOTS: TaskSpot[] = [
     kind: 'arquivo',
     room: 'arquivo',
     label: 'Arquivar os contratos',
-    x: 7,
-    z: 8,
+    x: 6.15,
+    z: 6,
     level: 1,
   },
   {
@@ -885,8 +927,8 @@ const TASK_SPOTS: TaskSpot[] = [
     kind: 'arquivo',
     room: 'arquivo',
     label: 'Separar os documentos sigilosos',
-    x: 16,
-    z: 14,
+    x: 12,
+    z: 15.9,
     level: 1,
   },
   {
@@ -894,8 +936,8 @@ const TASK_SPOTS: TaskSpot[] = [
     kind: 'senha',
     room: 'operacoes',
     label: 'Autorizar o painel de operações',
-    x: 41,
-    z: 12.8,
+    x: 40.3,
+    z: 10.7,
     level: 1,
   },
   {
@@ -903,8 +945,8 @@ const TASK_SPOTS: TaskSpot[] = [
     kind: 'senha',
     room: 'chefe',
     label: 'Liberar o terminal do chefe',
-    x: 63,
-    z: 8,
+    x: 62,
+    z: 9.25,
     level: 1,
   },
   {
@@ -937,7 +979,6 @@ const FOOTPRINTS: Partial<
   rack: { w: 0.8, d: 1.0, h: 2, tall: true },
   locker: { w: 1.1, d: 0.55, h: 2, tall: true },
   shelf: { w: 2.6, d: 0.6, h: 1.9, tall: true },
-  coffee: { w: 0.7, d: 0.6, h: 1 },
   crate: { w: 1.0, d: 1.0, h: 0.94 },
   printer: { w: 0.9, d: 0.7, h: 0.9 },
   whiteboard: { w: 2.7, d: 0.12, h: 2.05 },
@@ -946,6 +987,8 @@ const FOOTPRINTS: Partial<
   sink: { w: 1.7, d: 0.6, h: 0.95 },
   vending: { w: 1.1, d: 0.75, h: 2, tall: true },
   kitchen: { w: 4.2, d: 0.72, h: 2.2, tall: true },
+  gameTable: { w: 2.25, d: 1.25, h: 0.92 },
+  arcade: { w: 0.85, d: 0.72, h: 1.85, tall: true },
   tree: { w: 1.35, d: 1.35, h: 4, tall: true },
   streetLamp: { w: 0.4, d: 0.4, h: 4, tall: true },
   bench: { w: 1.9, d: 0.65, h: 0.95 },
