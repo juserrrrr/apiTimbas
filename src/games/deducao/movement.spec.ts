@@ -50,6 +50,12 @@ describe('stairProgressAt', () => {
     expect(stairProgressAt(stair.targetX, stair.targetZ)?.progress).toBeCloseTo(
       1,
     );
+    expect(
+      stairProgressAt(stair.turnX!, stair.turnZ! - 0.5)?.progress,
+    ).toBeCloseTo(0.5);
+    expect(
+      stairProgressAt(stair.turnX! - 0.5, stair.turnZ!)?.progress,
+    ).toBeCloseTo(0.5);
   });
 
   it('não trata o corredor ao lado como degrau', () => {
@@ -57,6 +63,22 @@ describe('stairProgressAt', () => {
       (candidate) => candidate.targetLevel > candidate.level,
     )!;
     expect(stairProgressAt(stair.x + 2, stair.z)).toBeNull();
+  });
+
+  it.each([
+    [-0.55, -0.55],
+    [-0.55, 0.55],
+    [0.55, -0.55],
+    [0.55, 0.55],
+  ])('mantém o patamar plano no quadrante %s, %s', (dx, dz) => {
+    const stair = OFFICE_MAP.stairs[0];
+    const point = { x: stair.turnX! + dx, z: stair.turnZ! + dz };
+
+    expect(resolveCollisions(point, collidersFor(stair.level))).toEqual(point);
+    expect(resolveCollisions(point, collidersFor(stair.targetLevel))).toEqual(
+      point,
+    );
+    expect(stairProgressAt(point.x, point.z)?.progress).toBeCloseTo(0.5);
   });
 });
 
@@ -220,13 +242,63 @@ describe('o escritório', () => {
       expect(stair.turnX).toBeCloseTo(stair.x);
       expect(stair.turnZ).toBeCloseTo(stair.targetZ);
 
-      const hall = OFFICE_MAP.rooms.find(
-        (room) => room.id === 'hall-central',
-      )!;
+      const hall = OFFICE_MAP.rooms.find((room) => room.id === 'hall-central')!;
       expect(hall.rect.x + hall.rect.w - stair.x).toBeCloseTo(1.554);
       expect(hall.rect.z + hall.rect.d - stair.turnZ!).toBeCloseTo(1.554);
     }
   });
+
+  it.each(['subida', 'descida'] as const)(
+    'percorre a escada inteira na %s e sai no andar correto',
+    (direction) => {
+      const stair = OFFICE_MAP.stairs[0];
+      const route = [
+        { x: stair.x, z: stair.z - 0.8 },
+        { x: stair.x, z: stair.z },
+        { x: stair.turnX!, z: stair.turnZ! - 0.5 },
+        { x: stair.turnX! + 0.5, z: stair.turnZ! + 0.5 },
+        { x: stair.turnX! - 0.5, z: stair.turnZ! },
+        { x: stair.targetX, z: stair.targetZ },
+        { x: stair.targetX - 0.8, z: stair.targetZ },
+      ];
+      if (direction === 'descida') route.reverse();
+      let point = route[0];
+      let level = direction === 'subida' ? stair.level : stair.targetLevel;
+      const visitedLevels = [level];
+
+      for (const target of route.slice(1)) {
+        for (let step = 0; step < 150; step += 1) {
+          if (Math.hypot(point.x - target.x, point.z - target.z) < 1e-6) break;
+          const next = moveTowards(point, target, 0.05, collidersFor(level));
+          expect(
+            Math.hypot(next.x - point.x, next.z - point.z),
+          ).toBeGreaterThan(0);
+          point = next;
+          const crossing = stairProgressAt(point.x, point.z);
+          if (crossing && level === stair.level && crossing.progress >= 0.52) {
+            level = stair.targetLevel;
+            visitedLevels.push(level);
+          } else if (
+            crossing &&
+            level === stair.targetLevel &&
+            crossing.progress <= 0.48
+          ) {
+            level = stair.level;
+            visitedLevels.push(level);
+          }
+        }
+        expect(point.x).toBeCloseTo(target.x, 6);
+        expect(point.z).toBeCloseTo(target.z, 6);
+      }
+
+      expect(visitedLevels).toEqual(
+        direction === 'subida'
+          ? [stair.level, stair.targetLevel]
+          : [stair.targetLevel, stair.level],
+      );
+      expect(stairProgressAt(point.x, point.z)).toBeNull();
+    },
+  );
 
   it('deixa toda sala alcançável a pé desde o nascimento', () => {
     // Uma porta fora do lugar deixa um cômodo mudo, que só apareceria quando

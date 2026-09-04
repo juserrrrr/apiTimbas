@@ -439,6 +439,11 @@ function openLinks(rooms: RoomDef[], links: Link[]) {
 const OFFICE_LAYOUT_ORIGIN = 3;
 const OFFICE_LAYOUT_SCALE = 0.84;
 const ORIGINAL_BOUNDS = { w: 74, d: 58 } as const;
+const STAIR_WIDTH = 2.42;
+const STAIR_LANDING_SIZE = 2.42;
+const STAIR_RAIL_OFFSET = STAIR_WIDTH / 2 - 0.08;
+const STAIR_RAIL_COLLIDER_HALF = 0.08;
+const STAIR_END_COLLIDER_HALF = 0.1;
 
 function compactAxis(value: number) {
   return (
@@ -1157,20 +1162,22 @@ export function buildStairBarriers(stairs: StairDef[]): WallBox[] {
   const barriers: WallBox[] = [];
   for (const stair of stairs.filter((item) => item.targetLevel > item.level)) {
     const points = stairPath(stair);
-    const side = 1.48;
-    const rail = 0.12;
-    const end = 0.14;
-    const firstDirection = {
-      x: points[1].x - points[0].x,
-      z: points[1].z - points[0].z,
-    };
-    const secondDirection =
-      points.length === 3
-        ? {
-            x: points[2].x - points[1].x,
-            z: points[2].z - points[1].z,
-          }
-        : null;
+    const directions = points.slice(0, -1).map((from, index) => {
+      const dx = points[index + 1].x - from.x;
+      const dz = points[index + 1].z - from.z;
+      const length = Math.hypot(dx, dz);
+      return { x: dx / length, z: dz / length, length };
+    });
+    const landingHalf =
+      directions.length === 2
+        ? Math.min(
+            STAIR_LANDING_SIZE / 2,
+            directions[0].length * 0.4,
+            directions[1].length * 0.4,
+          )
+        : 0;
+    const firstDirection = directions[0];
+    const secondDirection = directions[1] ?? null;
     const insideSign = secondDirection
       ? Math.sign(
           firstDirection.x * secondDirection.z -
@@ -1178,35 +1185,87 @@ export function buildStairBarriers(stairs: StairDef[]): WallBox[] {
         )
       : 0;
 
+    const addRail = (
+      from: { x: number; z: number },
+      to: { x: number; z: number },
+      level: number,
+    ) => {
+      barriers.push({
+        minX: Math.min(from.x, to.x) - STAIR_RAIL_COLLIDER_HALF,
+        minZ: Math.min(from.z, to.z) - STAIR_RAIL_COLLIDER_HALF,
+        maxX: Math.max(from.x, to.x) + STAIR_RAIL_COLLIDER_HALF,
+        maxZ: Math.max(from.z, to.z) + STAIR_RAIL_COLLIDER_HALF,
+        level,
+      });
+    };
+
     for (const level of [stair.level, stair.targetLevel]) {
-      for (let index = 0; index < points.length - 1; index += 1) {
+      for (let index = 0; index < directions.length; index += 1) {
         const from = points[index];
-        const to = points[index + 1];
-        const dx = to.x - from.x;
-        const dz = to.z - from.z;
-        const length = Math.hypot(dx, dz);
-        const unitX = dx / length;
-        const unitZ = dz / length;
-        const sideX = -unitZ;
-        const sideZ = unitX;
+        const direction = directions[index];
+        const startInset = index > 0 ? landingHalf : 0;
+        const endInset = index < directions.length - 1 ? landingHalf : 0;
+        const start = {
+          x: from.x + direction.x * startInset,
+          z: from.z + direction.z * startInset,
+        };
+        const end = {
+          x: points[index + 1].x - direction.x * endInset,
+          z: points[index + 1].z - direction.z * endInset,
+        };
+        const sideX = -direction.z;
+        const sideZ = direction.x;
 
         for (const sign of [-1, 1]) {
-          const innerRail = points.length === 3 && sign === insideSign;
-          const startInset = innerRail && index === 1 ? side + rail : 0;
-          const endInset = innerRail && index === 0 ? side + rail : 0;
-          const startX = from.x + unitX * startInset + sideX * side * sign;
-          const startZ = from.z + unitZ * startInset + sideZ * side * sign;
-          const endX = to.x - unitX * endInset + sideX * side * sign;
-          const endZ = to.z - unitZ * endInset + sideZ * side * sign;
-
-          barriers.push({
-            minX: Math.min(startX, endX) - rail,
-            minZ: Math.min(startZ, endZ) - rail,
-            maxX: Math.max(startX, endX) + rail,
-            maxZ: Math.max(startZ, endZ) + rail,
+          addRail(
+            {
+              x: start.x + sideX * STAIR_RAIL_OFFSET * sign,
+              z: start.z + sideZ * STAIR_RAIL_OFFSET * sign,
+            },
+            {
+              x: end.x + sideX * STAIR_RAIL_OFFSET * sign,
+              z: end.z + sideZ * STAIR_RAIL_OFFSET * sign,
+            },
             level,
-          });
+          );
         }
+      }
+
+      if (secondDirection) {
+        const outerSign = -insideSign;
+        const turn = points[1];
+        const firstSide = { x: -firstDirection.z, z: firstDirection.x };
+        const secondSide = { x: -secondDirection.z, z: secondDirection.x };
+        const firstOuter = {
+          x:
+            turn.x -
+            firstDirection.x * landingHalf +
+            firstSide.x * STAIR_RAIL_OFFSET * outerSign,
+          z:
+            turn.z -
+            firstDirection.z * landingHalf +
+            firstSide.z * STAIR_RAIL_OFFSET * outerSign,
+        };
+        const corner = {
+          x:
+            turn.x +
+            (firstSide.x + secondSide.x) * STAIR_RAIL_OFFSET * outerSign,
+          z:
+            turn.z +
+            (firstSide.z + secondSide.z) * STAIR_RAIL_OFFSET * outerSign,
+        };
+        const secondOuter = {
+          x:
+            turn.x +
+            secondDirection.x * landingHalf +
+            secondSide.x * STAIR_RAIL_OFFSET * outerSign,
+          z:
+            turn.z +
+            secondDirection.z * landingHalf +
+            secondSide.z * STAIR_RAIL_OFFSET * outerSign,
+        };
+        addRail(firstOuter, corner, level);
+        addRail(corner, secondOuter, level);
       }
     }
 
@@ -1217,17 +1276,17 @@ export function buildStairBarriers(stairs: StairDef[]): WallBox[] {
     ): WallBox =>
       Math.abs(point.x - neighbor.x) >= Math.abs(point.z - neighbor.z)
         ? {
-            minX: point.x - end,
-            maxX: point.x + end,
-            minZ: point.z - side,
-            maxZ: point.z + side,
+            minX: point.x - STAIR_END_COLLIDER_HALF,
+            maxX: point.x + STAIR_END_COLLIDER_HALF,
+            minZ: point.z - STAIR_RAIL_OFFSET,
+            maxZ: point.z + STAIR_RAIL_OFFSET,
             level,
           }
         : {
-            minX: point.x - side,
-            maxX: point.x + side,
-            minZ: point.z - end,
-            maxZ: point.z + end,
+            minX: point.x - STAIR_RAIL_OFFSET,
+            maxX: point.x + STAIR_RAIL_OFFSET,
+            minZ: point.z - STAIR_END_COLLIDER_HALF,
+            maxZ: point.z + STAIR_END_COLLIDER_HALF,
             level,
           };
 
@@ -1307,13 +1366,34 @@ export function stairProgressAt(
     (candidate) => candidate.targetLevel > candidate.level,
   )) {
     const points = stairPath(stair);
-    const lengths = points.slice(0, -1).map((point, index) =>
-      Math.hypot(
-        points[index + 1].x - point.x,
-        points[index + 1].z - point.z,
-      ),
-    );
+    const lengths = points
+      .slice(0, -1)
+      .map((point, index) =>
+        Math.hypot(
+          points[index + 1].x - point.x,
+          points[index + 1].z - point.z,
+        ),
+      );
     const totalLength = lengths.reduce((sum, length) => sum + length, 0);
+    const landingHalf =
+      lengths.length === 2
+        ? Math.min(STAIR_LANDING_SIZE / 2, lengths[0] * 0.4, lengths[1] * 0.4)
+        : 0;
+    const climbLength = totalLength - landingHalf * 2;
+    const landingStart = lengths[0] - landingHalf;
+    const landingEnd = lengths[0] + landingHalf;
+    if (
+      landingHalf > 0 &&
+      Math.abs(x - points[1].x) <= landingHalf &&
+      Math.abs(z - points[1].z) <= landingHalf
+    ) {
+      closest = {
+        stair,
+        progress: landingStart / climbLength,
+        distance: 0,
+      };
+      continue;
+    }
     let traversed = 0;
 
     for (let index = 0; index < points.length - 1; index += 1) {
@@ -1334,8 +1414,16 @@ export function stairProgressAt(
       const projectedZ = from.z + dz * segmentProgress;
       const perpendicularDistance = Math.hypot(x - projectedX, z - projectedZ);
       if (perpendicularDistance <= 1.16) {
-        const progress =
-          (traversed + length * segmentProgress) / totalLength;
+        const pathDistance = traversed + length * segmentProgress;
+        const climbDistance =
+          landingHalf === 0
+            ? pathDistance
+            : pathDistance <= landingStart
+              ? pathDistance
+              : pathDistance <= landingEnd
+                ? landingStart
+                : pathDistance - landingHalf * 2;
+        const progress = Math.min(1, Math.max(0, climbDistance / climbLength));
         if (!closest || perpendicularDistance < closest.distance) {
           closest = { stair, progress, distance: perpendicularDistance };
         }
