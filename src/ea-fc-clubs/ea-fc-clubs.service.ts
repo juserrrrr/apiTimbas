@@ -16,6 +16,11 @@ import {
 import { EaLeaderboardQueryDto } from './dto/leaderboard-query.dto';
 import { EaMatchQueryDto } from './dto/match-query.dto';
 import { EaFcClubsProvider } from './ea-fc-clubs.provider';
+import {
+  completeFormation,
+  formationShape,
+  selectBestFormation,
+} from './ea-formation';
 import { analyseRecentPlayerMatches } from './ea-player-analysis';
 import {
   EaClubMatch,
@@ -430,9 +435,18 @@ export class EaFcClubsService {
         aggregated.set(player.id, player);
       }
     }
+    const selectedFormation = selectBestFormation(
+      matches.map((match) => ({
+        id: match.id,
+        playedAt: match.playedAt,
+        result: match.result as 'WIN' | 'DRAW' | 'LOSS',
+        positions: match.playerStats.flatMap((stat) => stat.position ?? []),
+      })),
+    );
     return {
       match: matches[0] ? { playedAt: matches[0].playedAt } : null,
-      formation: '4-3-3',
+      formation: selectedFormation?.formation ?? '4-3-3',
+      formationSummary: selectedFormation,
       summary: {
         matches: matches.length,
         wins: matches.filter((match) => match.result === EaClubMatchResult.WIN).length,
@@ -456,15 +470,9 @@ export class EaFcClubsService {
             b.appearances - a.appearances,
         ),
       history: matches.map((match) => {
-        const positions = { goalkeeper: 0, defense: 0, midfield: 0, attack: 0 };
-        for (const stat of match.playerStats) {
-          const position = stat.position?.trim().toUpperCase();
-          if (!position) continue;
-          if (position === 'GK' || position === 'GOALKEEPER') positions.goalkeeper += 1;
-          else if (/(CB|LB|RB|LWB|RWB|SW|DEFENDER|DEF)/.test(position)) positions.defense += 1;
-          else if (/(ST|CF|LW|RW|LF|RF|FORWARD|ATT)/.test(position)) positions.attack += 1;
-          else positions.midfield += 1;
-        }
+        const positions = formationShape(
+          match.playerStats.flatMap((stat) => stat.position ?? []),
+        );
         return {
           id: match.id,
           playedAt: match.playedAt,
@@ -472,6 +480,9 @@ export class EaFcClubsService {
           opponentName: match.opponentName,
           goalsFor: match.goalsFor,
           goalsAgainst: match.goalsAgainst,
+          formation: completeFormation(
+            match.playerStats.flatMap((stat) => stat.position ?? []),
+          ),
           positions,
         };
       }),
