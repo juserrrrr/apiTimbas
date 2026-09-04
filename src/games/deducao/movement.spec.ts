@@ -93,6 +93,39 @@ describe('hasLineOfSight', () => {
 });
 
 describe('o escritório', () => {
+  it('mantém um carro original e um SUV cupê com colisão', () => {
+    const cars = OFFICE_MAP.props.filter((prop) =>
+      ['car', 'sportCar'].includes(prop.kind),
+    );
+    const sportCar = cars.find((prop) => prop.kind === 'sportCar')!;
+    const obstacle = OFFICE_MAP.obstacles.find(
+      (box) =>
+        (box.minX + box.maxX) / 2 === sportCar.x &&
+        (box.minZ + box.maxZ) / 2 === sportCar.z,
+    );
+
+    expect(cars.map((car) => car.kind).sort()).toEqual(['car', 'sportCar']);
+    expect(obstacle).toMatchObject({ height: 1.65, tall: true, level: 0 });
+    expect(obstacle!.maxX - obstacle!.minX).toBeCloseTo(2);
+    expect(obstacle!.maxZ - obstacle!.minZ).toBeCloseTo(4.45);
+  });
+
+  it('deixa o botão sobre a mesa de reunião e ao alcance', () => {
+    const table = OFFICE_MAP.props.find(
+      (prop) => prop.kind === 'meetingTable' && (prop.level ?? 0) === 0,
+    )!;
+    const button = OFFICE_MAP.emergency;
+    const approach = { x: 61, z: 12.7 };
+
+    expect(Math.abs(button.x - table.x)).toBeLessThanOrEqual(6.65 / 2);
+    expect(Math.abs(button.z - table.z)).toBeLessThanOrEqual(2.5 / 2);
+    expect(button.y).toBeCloseTo(0.86);
+    expect(resolveCollisions(approach, collidersFor(0))).toEqual(approach);
+    expect(
+      Math.hypot(button.x - approach.x, button.z - approach.z),
+    ).toBeLessThanOrEqual(2.6);
+  });
+
   it('permite ficar sobre o sofá depois de um pulo', () => {
     const sofa = OFFICE_MAP.props.find((prop) => prop.kind === 'sofa')!;
     const height = surfaceHeightAt(sofa.x, sofa.z, sofa.level ?? 0);

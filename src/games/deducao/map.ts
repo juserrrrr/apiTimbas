@@ -106,6 +106,7 @@ export type PropKind =
   | 'printer'
   | 'whiteboard'
   | 'car'
+  | 'sportCar'
   | 'cone'
   | 'sink'
   | 'vending'
@@ -182,7 +183,7 @@ export interface GameMap {
   taskSpots: TaskSpot[];
   vents: VentDef[];
   stairs: StairDef[];
-  emergency: { x: number; z: number; level?: number };
+  emergency: { x: number; y?: number; z: number; level?: number };
   spawns: { x: number; z: number; level?: number }[];
   meetingSeats: { x: number; z: number; level: number; dir: number }[];
   source?: {
@@ -721,7 +722,7 @@ function buildProps(): PropDef[] {
 
     // Térreo: garagem e depósito
     { kind: 'car', x: 8, z: 45.5, rot: 0 },
-    { kind: 'car', x: 14, z: 45.5, rot: 0 },
+    { kind: 'sportCar', x: 14, z: 45.5, rot: 0 },
     { kind: 'cone', x: 10.8, z: 52.5, rot: 0 },
     { kind: 'cone', x: 12, z: 51.5, rot: 0 },
     { kind: 'crate', x: 5, z: 53, rot: 0.2 },
@@ -941,6 +942,7 @@ const FOOTPRINTS: Partial<
   printer: { w: 0.9, d: 0.7, h: 0.9 },
   whiteboard: { w: 2.7, d: 0.12, h: 2.05 },
   car: { w: 2.0, d: 4.3, h: 1.5, tall: true },
+  sportCar: { w: 2.0, d: 4.45, h: 1.65, tall: true },
   sink: { w: 1.7, d: 0.6, h: 0.95 },
   vending: { w: 1.1, d: 0.75, h: 2, tall: true },
   kitchen: { w: 4.2, d: 0.72, h: 2.2, tall: true },
@@ -1178,7 +1180,7 @@ export const OFFICE_MAP: GameMap = {
   taskSpots: TASK_SPOTS,
   vents: VENTS,
   stairs: STAIRS,
-  emergency: { x: 37, z: 29, level: 0 },
+  emergency: { x: 61, y: 0.86, z: 10.2, level: 0 },
   spawns: [
     { x: 34, z: 26, level: 0 },
     { x: 37, z: 26, level: 0 },
