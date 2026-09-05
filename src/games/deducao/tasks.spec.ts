@@ -9,7 +9,10 @@ describe('drawTasks', () => {
 
   it('espalha as tarefas por salas diferentes', () => {
     const tasks = drawTasks(['a'], OFFICE_MAP.taskSpots, 4).get('a')!;
-    const rooms = tasks.map((task) => OFFICE_MAP.taskSpots.find((spot) => spot.id === task.spotId)!.room);
+    const rooms = tasks.map(
+      (task) =>
+        OFFICE_MAP.taskSpots.find((spot) => spot.id === task.spotId)!.room,
+    );
     expect(new Set(rooms).size).toBe(4);
   });
 
@@ -21,6 +24,25 @@ describe('drawTasks', () => {
   it('nasce tudo por fazer', () => {
     const tasks = drawTasks(['a'], OFFICE_MAP.taskSpots, 3).get('a')!;
     expect(tasks.every((task) => !task.done)).toBe(true);
+  });
+
+  it('não distribui a recarga do carro removida nem inventa tarefa no apoio', () => {
+    const tasks = drawTasks(
+      ['a'],
+      OFFICE_MAP.taskSpots,
+      OFFICE_MAP.taskSpots.length,
+      () => 0.5,
+    ).get('a')!;
+
+    expect(tasks).toHaveLength(OFFICE_MAP.taskSpots.length);
+    expect(tasks.some((task) => task.spotId === 'cabos-c')).toBe(false);
+    for (const task of tasks) {
+      const spot = OFFICE_MAP.taskSpots.find(
+        (candidate) => candidate.id === task.spotId,
+      )!;
+      expect(spot.room).not.toBe('apoio');
+      expect(spot.room).not.toBe('garagem');
+    }
   });
 });
 

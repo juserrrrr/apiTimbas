@@ -1,5 +1,6 @@
 import {
   OFFICE_MAP,
+  buildObstacles,
   collidersFor,
   roomAt,
   stairProgressAt,
@@ -117,28 +118,149 @@ describe('o escritório', () => {
     const openSpace = OFFICE_MAP.rooms.find((room) => room.id === 'openspace')!;
     const meeting = OFFICE_MAP.rooms.find((room) => room.id === 'reuniao')!;
 
-    expect(OFFICE_MAP.bounds.w).toBeCloseTo(63.12);
-    expect(OFFICE_MAP.bounds.d).toBeCloseTo(49.68);
-    expect(openSpace.rect.w).toBeCloseTo(23.52);
-    expect(meeting.rect.d).toBeCloseTo(11.76);
+    expect(OFFICE_MAP.bounds.w).toBeCloseTo(56.32);
+    expect(OFFICE_MAP.bounds.d).toBeCloseTo(44.48);
+    expect(openSpace.rect.w).toBeCloseTo(20.72);
+    expect(meeting.rect.d).toBeCloseTo(10.36);
     expect(roomAt(24, 18)?.id).toBe('hall-central');
   });
 
-  it('mantém um carro original e um SUV cupê com colisão', () => {
-    const cars = OFFICE_MAP.props.filter((prop) =>
-      ['car', 'sportCar'].includes(prop.kind),
+  it('substitui a garagem por apoio sem mudar a sala nem a porta', () => {
+    const support = OFFICE_MAP.rooms.find((room) => room.id === 'apoio')!;
+    const corridor = OFFICE_MAP.rooms.find(
+      (room) => room.id === 'corredor-oeste',
+    )!;
+
+    expect(support).toMatchObject({ name: 'Sala de apoio', finish: 'vinyl' });
+    expect(support.rect.x).toBeCloseTo(3);
+    expect(support.rect.z).toBeCloseTo(26.68);
+    expect(support.rect.w).toBeCloseTo(11.84);
+    expect(support.rect.d).toBeCloseTo(14.8);
+    expect(support.doors).toHaveLength(1);
+    expect(support.doors[0].side).toBe('east');
+    expect(support.doors[0].at).toBeCloseTo(1.036);
+    expect(support.doors[0].width).toBeCloseTo(2.368);
+    expect(corridor.rect.x).toBeCloseTo(support.rect.x + support.rect.w);
+    expect(corridor.doors).toContainEqual({
+      side: 'west',
+      at: expect.closeTo(
+        support.rect.z + support.doors[0].at - corridor.rect.z,
+      ),
+      width: support.doors[0].width,
+    });
+    expect(
+      OFFICE_MAP.rooms.some((room) => /garagem/i.test(room.id + room.name)),
+    ).toBe(false);
+    expect(
+      OFFICE_MAP.props.some((prop) =>
+        ['car', 'sportCar', 'cone'].includes(prop.kind),
+      ),
+    ).toBe(false);
+  });
+
+  it('usa mobiliário de apoio com colisões reais e sem obstáculos dos carros', () => {
+    const support = OFFICE_MAP.rooms.find((room) => room.id === 'apoio')!;
+    const furniture = OFFICE_MAP.props.filter(
+      (prop) => roomAt(prop.x, prop.z, prop.level ?? 0)?.id === support.id,
     );
-    const sportCar = cars.find((prop) => prop.kind === 'sportCar')!;
-    const obstacle = OFFICE_MAP.obstacles.find(
+    const obstacles = OFFICE_MAP.obstacles.filter(
       (box) =>
-        (box.minX + box.maxX) / 2 === sportCar.x &&
-        (box.minZ + box.maxZ) / 2 === sportCar.z,
+        roomAt(
+          (box.minX + box.maxX) / 2,
+          (box.minZ + box.maxZ) / 2,
+          box.level ?? 0,
+        )?.id === support.id,
     );
 
-    expect(cars.map((car) => car.kind).sort()).toEqual(['car', 'sportCar']);
-    expect(obstacle).toMatchObject({ height: 1.65, tall: true, level: 0 });
-    expect(obstacle!.maxX - obstacle!.minX).toBeCloseTo(2);
-    expect(obstacle!.maxZ - obstacle!.minZ).toBeCloseTo(4.45);
+    expect(furniture.map((prop) => prop.kind).sort()).toEqual([
+      'chair',
+      'desk',
+      'plant',
+      'shelf',
+      'shelf',
+    ]);
+    expect(obstacles).toEqual(buildObstacles(furniture));
+    for (const obstacle of obstacles) {
+      expect(obstacle.minX).toBeGreaterThan(support.rect.x + 0.2);
+      expect(obstacle.maxX).toBeLessThan(support.rect.x + support.rect.w - 0.2);
+      expect(obstacle.minZ).toBeGreaterThan(support.rect.z + 0.2);
+      expect(obstacle.maxZ).toBeLessThan(support.rect.z + support.rect.d - 0.2);
+      const center = {
+        x: (obstacle.minX + obstacle.maxX) / 2,
+        z: (obstacle.minZ + obstacle.maxZ) / 2,
+      };
+      expect(resolveCollisions(center, collidersFor(0))).not.toEqual(center);
+      if (obstacle.tall) {
+        expect(obstacle.maxZ).toBeLessThan(support.rect.z + 2);
+      }
+    }
+  });
+
+  it.each(['entrada', 'saída'] as const)(
+    'percorre a sala de apoio e o duto na %s sem prender na mobília',
+    (direction) => {
+      const support = OFFICE_MAP.rooms.find((room) => room.id === 'apoio')!;
+      const vent = OFFICE_MAP.vents.find(
+        (candidate) => candidate.id === 'vent-apoio',
+      )!;
+      const desk = OFFICE_MAP.props.find(
+        (prop) =>
+          prop.kind === 'desk' &&
+          roomAt(prop.x, prop.z, prop.level ?? 0)?.id === support.id,
+      )!;
+      const doorway = {
+        x: support.rect.x + support.rect.w,
+        z: support.rect.z + support.doors[0].at + support.doors[0].width / 2,
+      };
+      const route = [
+        { x: doorway.x + 1, z: doorway.z },
+        { x: doorway.x - 1, z: doorway.z },
+        { x: desk.x + 1.6, z: doorway.z },
+        { x: desk.x + 1.6, z: desk.z },
+        { x: vent.x, z: desk.z },
+        { x: vent.x, z: vent.z },
+      ];
+      if (direction === 'saída') route.reverse();
+      let point = route[0];
+      for (const target of route.slice(1)) {
+        for (let step = 0; step < 200; step += 1) {
+          if (Math.hypot(point.x - target.x, point.z - target.z) < 1e-6) break;
+          const next = moveTowards(point, target, 0.05, collidersFor(0));
+          expect(
+            Math.hypot(next.x - point.x, next.z - point.z),
+          ).toBeGreaterThan(0);
+          point = next;
+        }
+        expect(point.x).toBeCloseTo(target.x, 6);
+        expect(point.z).toBeCloseTo(target.z, 6);
+      }
+      expect(vent).toMatchObject({
+        room: 'apoio',
+        links: ['vent-servidores', 'vent-terraco'],
+      });
+    },
+  );
+
+  it('remove a tarefa do carro e mantém tarefas e dutos em salas válidas', () => {
+    expect(
+      OFFICE_MAP.taskSpots.some(
+        (spot) =>
+          spot.id === 'cabos-c' ||
+          /garagem|carro/i.test(spot.room + spot.label),
+      ),
+    ).toBe(false);
+    expect(OFFICE_MAP.taskSpots.some((spot) => spot.room === 'apoio')).toBe(
+      false,
+    );
+    expect(
+      OFFICE_MAP.vents.some(
+        (vent) =>
+          vent.id === 'vent-garagem' || vent.links.includes('vent-garagem'),
+      ),
+    ).toBe(false);
+    for (const point of [...OFFICE_MAP.taskSpots, ...OFFICE_MAP.vents]) {
+      expect(roomAt(point.x, point.z, point.level ?? 0)?.id).toBe(point.room);
+    }
   });
 
   it('deixa o botão sobre a mesa de reunião e ao alcance', () => {
@@ -146,7 +268,7 @@ describe('o escritório', () => {
       (prop) => prop.kind === 'meetingTable' && (prop.level ?? 0) === 0,
     )!;
     const button = OFFICE_MAP.emergency;
-    const approach = { x: button.x, z: button.z + 2.25 };
+    const approach = { x: button.x, z: button.z + 2.4 };
 
     expect(Math.abs(button.x - table.x)).toBeLessThanOrEqual(6.65 / 2);
     expect(Math.abs(button.z - table.z)).toBeLessThanOrEqual(2.5 / 2);
@@ -243,8 +365,8 @@ describe('o escritório', () => {
       expect(stair.turnZ).toBeCloseTo(stair.targetZ);
 
       const hall = OFFICE_MAP.rooms.find((room) => room.id === 'hall-central')!;
-      expect(hall.rect.x + hall.rect.w - stair.x).toBeCloseTo(1.554);
-      expect(hall.rect.z + hall.rect.d - stair.turnZ!).toBeCloseTo(1.554);
+      expect(hall.rect.x + hall.rect.w - stair.x).toBeCloseTo(1.589);
+      expect(hall.rect.z + hall.rect.d - stair.turnZ!).toBeCloseTo(1.589);
     }
   });
 

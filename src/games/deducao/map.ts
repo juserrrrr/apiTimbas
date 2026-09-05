@@ -99,6 +99,8 @@ export type PropKind =
   | 'counter'
   | 'meetingTable'
   | 'cafeTable'
+  | 'diningTable'
+  | 'diningChair'
   | 'rack'
   | 'locker'
   | 'shelf'
@@ -437,7 +439,7 @@ function openLinks(rooms: RoomDef[], links: Link[]) {
 /// Dois pavimentos dentro do mesmo volume. Corredores laterais separam as salas
 /// do átrio, dão quinas para perseguição e evitam o aspecto de tabuleiro aberto.
 const OFFICE_LAYOUT_ORIGIN = 3;
-const OFFICE_LAYOUT_SCALE = 0.84;
+const OFFICE_LAYOUT_SCALE = 0.74;
 const ORIGINAL_BOUNDS = { w: 74, d: 58 } as const;
 const STAIR_WIDTH = 2.42;
 const STAIR_LANDING_SIZE = 2.42;
@@ -479,14 +481,16 @@ function compactRoom(room: RoomDef): RoomDef {
 function compactStair(stair: StairDef): StairDef {
   return {
     ...compactPlacement(stair),
+    x: compactAxis(stair.x) - 0.22,
+    z: compactAxis(stair.z) - 0.22,
     ...(stair.turnX !== undefined && stair.turnZ !== undefined
       ? {
-          turnX: compactAxis(stair.turnX),
-          turnZ: compactAxis(stair.turnZ),
+          turnX: compactAxis(stair.turnX) - 0.22,
+          turnZ: compactAxis(stair.turnZ) - 0.22,
         }
       : {}),
-    targetX: compactAxis(stair.targetX),
-    targetZ: compactAxis(stair.targetZ),
+    targetX: compactAxis(stair.targetX) - 0.22,
+    targetZ: compactAxis(stair.targetZ) - 0.22,
   };
 }
 
@@ -562,6 +566,16 @@ const ROOMS: RoomDef[] = [
     doors: [],
   },
   {
+    id: 'corredor-servico',
+    name: 'Corredor de serviço',
+    rect: { x: 47, z: 41, w: 8, d: 14 },
+    kind: 'corredor',
+    floor: '#8794a5',
+    finish: 'vinyl',
+    light: '#60a5fa',
+    doors: [],
+  },
+  {
     id: 'copa',
     name: 'Copa',
     rect: { x: 55, z: 17, w: 16, d: 18 },
@@ -572,13 +586,13 @@ const ROOMS: RoomDef[] = [
     doors: [],
   },
   {
-    id: 'garagem',
-    name: 'Garagem',
+    id: 'apoio',
+    name: 'Sala de apoio',
     rect: { x: 3, z: 35, w: 16, d: 20 },
     kind: 'sala',
-    floor: '#777f89',
-    finish: 'concrete',
-    light: '#fb923c',
+    floor: '#8794a5',
+    finish: 'vinyl',
+    light: '#7aa2f7',
     doors: [],
   },
   {
@@ -712,9 +726,10 @@ const LINKS: Link[] = [
   { a: 'corredor-oeste', b: 'hall-central' },
   { a: 'hall-central', b: 'corredor-leste' },
   { a: 'copa', b: 'corredor-leste' },
-  { a: 'garagem', b: 'corredor-oeste' },
+  { a: 'apoio', b: 'corredor-oeste' },
   { a: 'banheiro', b: 'corredor-leste' },
-  { a: 'banheiro', b: 'deposito' },
+  { a: 'corredor-leste', b: 'corredor-servico' },
+  { a: 'corredor-servico', b: 'deposito' },
   { a: 'arquivo', b: 'corredor-superior-oeste' },
   { a: 'operacoes', b: 'hall-superior' },
   { a: 'chefe', b: 'corredor-superior-leste' },
@@ -727,16 +742,39 @@ const LINKS: Link[] = [
 
 openLinks(ROOMS, LINKS);
 
+// Só a âncora acompanha a planta; os afastamentos dos móveis ficam em metros.
+function furnitureGroup(
+  x: number,
+  z: number,
+  props: PropDef[],
+  level = 0,
+): PropDef[] {
+  return props.map((prop) => ({
+    ...prop,
+    x: x + prop.x / OFFICE_LAYOUT_SCALE,
+    z: z + prop.z / OFFICE_LAYOUT_SCALE,
+    level,
+  }));
+}
+
+function meetingChairs(): PropDef[] {
+  return furnitureGroup(61, 9.5, [
+    ...[-2.52, -1.26, 0, 1.26, 2.52].flatMap((x) => [
+      { kind: 'chair' as const, x, z: -1.974, rot: 0 },
+      { kind: 'chair' as const, x, z: 1.974, rot: Math.PI },
+    ]),
+    { kind: 'chair', x: -3.948, z: 0, rot: Math.PI / 2 },
+    { kind: 'chair', x: 3.948, z: 0, rot: -Math.PI / 2 },
+  ]);
+}
+
 function deskCluster(x: number, z: number, rot: number): PropDef[] {
-  const reversed = Math.abs(Math.cos(rot) + 1) < 0.01;
-  const screenZ = z + (reversed ? 0.34 : -0.34);
-  const chairZ = z + (reversed ? -1.28 : 1.28);
-  return [
-    { kind: 'desk', x, z, rot },
-    { kind: 'monitor', x: x - 0.34, z: screenZ, rot },
-    { kind: 'monitor', x: x + 0.34, z: screenZ, rot },
-    { kind: 'chair', x, z: chairZ, rot },
-  ];
+  const direction = Math.cos(rot);
+  return furnitureGroup(x, z, [
+    { kind: 'desk', x: 0, z: 0, rot },
+    { kind: 'monitor', x: 0, z: -0.2856 * direction, rot },
+    { kind: 'chair', x: 0, z: 1.0752 * direction, rot: rot + Math.PI },
+  ]);
 }
 
 function buildProps(): PropDef[] {
@@ -744,23 +782,20 @@ function buildProps(): PropDef[] {
     // Térreo: recepção e átrio
     { kind: 'counter', x: 10.5, z: 21, rot: 0 },
     { kind: 'monitor', x: 10.5, z: 20.6, rot: 0 },
-    { kind: 'sofa', x: 7, z: 30.5, rot: 0 },
+    ...furnitureGroup(10.5, 27.6, [
+      { kind: 'sofa', x: 0, z: 2.436, rot: Math.PI },
+      { kind: 'cafeTable', x: 0, z: 0, rot: 0 },
+    ]),
     { kind: 'plant', x: 4.5, z: 19, rot: 0 },
     { kind: 'plant', x: 17.2, z: 33, rot: 0 },
-    { kind: 'sofa', x: 30.5, z: 20.2, rot: 0 },
+    ...furnitureGroup(37, 22.5, [
+      { kind: 'sofa', x: -2.52, z: 0, rot: Math.PI / 2 },
+      { kind: 'sofa', x: 2.52, z: 0, rot: -Math.PI / 2 },
+      { kind: 'cafeTable', x: 0, z: 0, rot: 0 },
+    ]),
     { kind: 'plant', x: 28.5, z: 19, rot: 0 },
     { kind: 'plant', x: 43, z: 32, rot: 0 },
     { kind: 'printer', x: 49, z: 15, rot: Math.PI },
-    { kind: 'sofa', x: 43.5, z: 20.2, rot: Math.PI },
-    { kind: 'sofa', x: 30.5, z: 37.8, rot: 0 },
-    { kind: 'cafeTable', x: 34, z: 20.5, rot: 0 },
-    { kind: 'cafeTable', x: 40, z: 20.5, rot: 0 },
-    { kind: 'chair', x: 38.5, z: 20.5, rot: Math.PI / 2 },
-    { kind: 'chair', x: 41.5, z: 20.5, rot: -Math.PI / 2 },
-    { kind: 'sofa', x: 32.5, z: 29, rot: -Math.PI / 2 },
-    { kind: 'sofa', x: 41.5, z: 29, rot: Math.PI / 2 },
-    { kind: 'cafeTable', x: 37, z: 29, rot: 0 },
-    { kind: 'cafeTable', x: 37, z: 36, rot: 0 },
 
     // Térreo: sala dos servidores
     { kind: 'rack', x: 6, z: 6, rot: 0 },
@@ -774,41 +809,43 @@ function buildProps(): PropDef[] {
 
     // Térreo: reunião e copa
     { kind: 'meetingTable', x: 61, z: 9.5, rot: 0 },
-    ...[58, 59.5, 61, 62.5, 64].flatMap((x) => [
-      { kind: 'chair' as const, x, z: 7.15, rot: 0 },
-      { kind: 'chair' as const, x, z: 11.85, rot: Math.PI },
-    ]),
-    { kind: 'chair', x: 56.3, z: 9.5, rot: Math.PI / 2 },
-    { kind: 'chair', x: 65.7, z: 9.5, rot: -Math.PI / 2 },
+    ...meetingChairs(),
     { kind: 'whiteboard', x: 61, z: 4.1, rot: 0 },
-    { kind: 'kitchen', x: 70.1, z: 21, rot: -Math.PI / 2 },
-    { kind: 'coffee', x: 69.72, y: 0.91, z: 19.6, rot: -Math.PI / 2 },
+    {
+      kind: 'kitchen',
+      x: 71 - 0.504 / OFFICE_LAYOUT_SCALE,
+      z: 21,
+      rot: -Math.PI / 2,
+    },
+    { kind: 'coffee', x: 69.6, z: 29.5, rot: -Math.PI / 2 },
     { kind: 'vending', x: 69.7, z: 25.1, rot: -Math.PI / 2 },
-    { kind: 'cafeTable', x: 59.5, z: 21, rot: 0 },
-    { kind: 'chair', x: 57.9, z: 21, rot: Math.PI / 2 },
-    { kind: 'chair', x: 61.1, z: 21, rot: -Math.PI / 2 },
-    { kind: 'cafeTable', x: 63.5, z: 31, rot: 0 },
-    { kind: 'chair', x: 61.9, z: 31, rot: Math.PI / 2 },
-    { kind: 'chair', x: 65.1, z: 31, rot: -Math.PI / 2 },
+    ...furnitureGroup(61.5, 26, [
+      { kind: 'diningTable', x: 0, z: 0, rot: 0 },
+      ...[-0.924, 0, 0.924].flatMap((x) => [
+        { kind: 'diningChair' as const, x, z: -1.092, rot: 0 },
+        { kind: 'diningChair' as const, x, z: 1.092, rot: Math.PI },
+      ]),
+    ]),
     { kind: 'plant', x: 69, z: 33, rot: 0 },
-    { kind: 'cafeTable', x: 59.5, z: 29.5, rot: 0 },
-    { kind: 'chair', x: 57.9, z: 29.5, rot: Math.PI / 2 },
-    { kind: 'chair', x: 61.1, z: 29.5, rot: -Math.PI / 2 },
 
-    // Térreo: garagem e depósito
-    { kind: 'car', x: 8, z: 45.5, rot: 0 },
-    { kind: 'sportCar', x: 14, z: 45.5, rot: 0 },
-    { kind: 'cone', x: 10.8, z: 52.5, rot: 0 },
-    { kind: 'cone', x: 12, z: 51.5, rot: 0 },
-    { kind: 'crate', x: 5, z: 53, rot: 0.2 },
-    { kind: 'bathroomVanity', x: 69.65, z: 40.4, rot: -Math.PI / 2 },
+    // Térreo: apoio, banheiro e depósito
+    { kind: 'shelf', x: 7, z: 36.2, rot: Math.PI },
+    { kind: 'shelf', x: 12, z: 36.2, rot: Math.PI },
+    { kind: 'desk', x: 8, z: 45, rot: 0 },
+    { kind: 'chair', x: 8, z: 45 + 1.26 / OFFICE_LAYOUT_SCALE, rot: Math.PI },
+    { kind: 'plant', x: 5, z: 51.5, rot: 0 },
+    {
+      kind: 'bathroomVanity',
+      x: 71 - 0.504 / OFFICE_LAYOUT_SCALE,
+      z: 40.4,
+      rot: -Math.PI / 2,
+    },
     { kind: 'toilet', x: 58.5, z: 42.6, rot: Math.PI },
     { kind: 'toilet', x: 62.2, z: 42.6, rot: Math.PI },
     { kind: 'plant', x: 68.5, z: 36.5, rot: 0 },
     { kind: 'shelf', x: 58, z: 50, rot: Math.PI / 2 },
     { kind: 'shelf', x: 68, z: 50, rot: -Math.PI / 2 },
     { kind: 'crate', x: 64, z: 51, rot: 0.3 },
-    { kind: 'crate', x: 66, z: 52, rot: -0.3 },
 
     // Segundo andar: arquivo, lounge e mezanino
     { kind: 'locker', x: 5, z: 6, rot: Math.PI / 2, level: 1 },
@@ -817,62 +854,94 @@ function buildProps(): PropDef[] {
     { kind: 'locker', x: 21, z: 10, rot: -Math.PI / 2, level: 1 },
     { kind: 'shelf', x: 12, z: 4.2, rot: Math.PI, level: 1 },
     { kind: 'shelf', x: 12, z: 15, rot: 0, level: 1 },
-    { kind: 'sofa', x: 8, z: 24, rot: 0, level: 1 },
-    { kind: 'sofa', x: 14, z: 30, rot: Math.PI, level: 1 },
+    ...furnitureGroup(
+      10.5,
+      31.6,
+      [
+        { kind: 'sofa', x: 0, z: -2.184, rot: 0 },
+        { kind: 'cafeTable', x: 0, z: 0, rot: 0 },
+      ],
+      1,
+    ),
     { kind: 'vending', x: 17, z: 20, rot: -Math.PI / 2, level: 1 },
     { kind: 'gameTable', x: 11, z: 20.8, rot: 0, level: 1 },
     { kind: 'arcade', x: 17.2, z: 28.8, rot: -Math.PI / 2, level: 1 },
-    { kind: 'arcade', x: 17.2, z: 31.2, rot: -Math.PI / 2, level: 1 },
     { kind: 'plant', x: 5, z: 33, rot: 0, level: 1 },
-    { kind: 'cafeTable', x: 11, z: 27, rot: 0, level: 1 },
-    { kind: 'chair', x: 9.4, z: 27, rot: Math.PI / 2, level: 1 },
-    { kind: 'chair', x: 12.6, z: 27, rot: -Math.PI / 2, level: 1 },
-    { kind: 'sofa', x: 30.5, z: 20.2, rot: 0, level: 1 },
-    { kind: 'sofa', x: 43.5, z: 20.2, rot: Math.PI, level: 1 },
-    { kind: 'sofa', x: 30.5, z: 37.8, rot: 0, level: 1 },
+    ...furnitureGroup(
+      31.2,
+      19.8,
+      [
+        { kind: 'sofa', x: 0, z: 2.268, rot: Math.PI },
+        { kind: 'cafeTable', x: 0, z: 0, rot: 0 },
+      ],
+      1,
+    ),
+    ...furnitureGroup(
+      31.2,
+      35.4,
+      [
+        { kind: 'sofa', x: 0, z: 2.184, rot: Math.PI },
+        { kind: 'cafeTable', x: 0, z: 0, rot: 0 },
+      ],
+      1,
+    ),
     { kind: 'plant', x: 28.5, z: 39, rot: 0, level: 1 },
     { kind: 'plant', x: 45.5, z: 19, rot: 0, level: 1 },
-    { kind: 'cafeTable', x: 34, z: 20.5, rot: 0, level: 1 },
-    { kind: 'cafeTable', x: 40, z: 20.5, rot: 0, level: 1 },
-    { kind: 'chair', x: 38.5, z: 20.5, rot: Math.PI / 2, level: 1 },
-    { kind: 'chair', x: 41.5, z: 20.5, rot: -Math.PI / 2, level: 1 },
-    { kind: 'sofa', x: 32.5, z: 29, rot: -Math.PI / 2, level: 1 },
-    { kind: 'sofa', x: 41.5, z: 29, rot: Math.PI / 2, level: 1 },
-    { kind: 'cafeTable', x: 37, z: 29, rot: 0, level: 1 },
-    { kind: 'cafeTable', x: 37, z: 36, rot: 0, level: 1 },
 
     // Segundo andar: sala do chefe
     { kind: 'desk', x: 61, z: 8, rot: 0, level: 1 },
     { kind: 'monitor', x: 61, z: 7.65, rot: 0, level: 1 },
-    { kind: 'chair', x: 61, z: 9.3, rot: 0, level: 1 },
-    { kind: 'sofa', x: 55, z: 13.5, rot: Math.PI / 2, level: 1 },
-    { kind: 'cafeTable', x: 67, z: 12.5, rot: Math.PI / 2, level: 1 },
+    {
+      kind: 'chair',
+      x: 61,
+      z: 8 + 1.092 / OFFICE_LAYOUT_SCALE,
+      rot: Math.PI,
+      level: 1,
+    },
+    ...furnitureGroup(
+      64.7,
+      13.5,
+      [
+        { kind: 'sofa', x: -2.1, z: 0, rot: Math.PI / 2 },
+        { kind: 'sofa', x: 2.1, z: 0, rot: -Math.PI / 2 },
+        { kind: 'cafeTable', x: 0, z: 0, rot: 0 },
+      ],
+      1,
+    ),
     { kind: 'plant', x: 69, z: 5, rot: 0, level: 1 },
     { kind: 'whiteboard', x: 61, z: 4.1, rot: 0, level: 1 },
-    { kind: 'chair', x: 59.3, z: 10.2, rot: 0, level: 1 },
-    { kind: 'chair', x: 62.7, z: 10.2, rot: 0, level: 1 },
     { kind: 'shelf', x: 69.1, z: 9.5, rot: -Math.PI / 2, level: 1 },
-    { kind: 'sofa', x: 66, z: 14.6, rot: Math.PI, level: 1 },
 
     // Segundo andar: terraço e conselho
-    { kind: 'cafeTable', x: 63, z: 24, rot: Math.PI / 2, level: 1 },
-    { kind: 'cafeTable', x: 63, z: 36, rot: Math.PI / 2, level: 1 },
-    { kind: 'sofa', x: 66, z: 48, rot: Math.PI, level: 1 },
+    ...furnitureGroup(
+      66.5,
+      46,
+      [
+        { kind: 'cafeTable', x: 0, z: 0, rot: 0 },
+        { kind: 'sofa', x: -2.52, z: 0, rot: Math.PI / 2 },
+      ],
+      1,
+    ),
     { kind: 'plant', x: 57, z: 20, rot: 0, level: 1 },
     { kind: 'plant', x: 69, z: 31, rot: 0, level: 1 },
     { kind: 'plant', x: 57, z: 52, rot: 0, level: 1 },
     { kind: 'meetingTable', x: 11, z: 45, rot: Math.PI / 2, level: 1 },
-    ...[42.5, 44.2, 45.8, 47.5].flatMap((z) => [
-      { kind: 'chair' as const, x: 8.8, z, rot: -Math.PI / 2, level: 1 },
-      { kind: 'chair' as const, x: 13.2, z, rot: Math.PI / 2, level: 1 },
-    ]),
+    ...furnitureGroup(
+      11,
+      45,
+      [-2.1, 0, 2.1].flatMap((z) => [
+        { kind: 'chair' as const, x: -1.9, z, rot: Math.PI / 2 },
+        { kind: 'chair' as const, x: 1.9, z, rot: -Math.PI / 2 },
+      ]),
+      1,
+    ),
     { kind: 'whiteboard', x: 11, z: 53.8, rot: Math.PI, level: 1 },
   ];
 
   // Estações no térreo e na central de operações do piso superior.
   for (const level of [0, 1]) {
     for (let row = 0; row < 2; row += 1) {
-      for (let column = 0; column < 4; column += 1) {
+      for (let column = 1; column < 4; column += 1) {
         const x = 27 + column * 6.2;
         const z = 6 + row * 6;
         for (const item of deskCluster(x, z, row ? Math.PI : 0))
@@ -890,7 +959,7 @@ const TASK_SPOTS: TaskSpot[] = [
     room: 'servidores',
     label: 'Religar o rack principal',
     x: 9,
-    z: 7.15,
+    z: 6 + 1.03 / OFFICE_LAYOUT_SCALE,
   },
   {
     id: 'rack-b',
@@ -898,7 +967,7 @@ const TASK_SPOTS: TaskSpot[] = [
     room: 'servidores',
     label: 'Trocar o disco do backup',
     x: 16,
-    z: 11.85,
+    z: 13 - 1.03 / OFFICE_LAYOUT_SCALE,
   },
   {
     id: 'cabos-a',
@@ -906,38 +975,38 @@ const TASK_SPOTS: TaskSpot[] = [
     room: 'servidores',
     label: 'Refazer o cabeamento',
     x: 12,
-    z: 11.7,
+    z: 13 - 1.03 / OFFICE_LAYOUT_SCALE,
   },
   {
     id: 'senha-a',
     kind: 'senha',
     room: 'openspace',
     label: 'Destravar a estação 3',
-    x: 34.35,
-    z: 7.2,
+    x: 33.2 + 1.05 / OFFICE_LAYOUT_SCALE,
+    z: 6 + 1.1 / OFFICE_LAYOUT_SCALE,
   },
   {
     id: 'senha-b',
     kind: 'senha',
     room: 'openspace',
     label: 'Reiniciar a estação 7',
-    x: 46.75,
-    z: 10.7,
+    x: 45.6 + 1.05 / OFFICE_LAYOUT_SCALE,
+    z: 12 - 1.1 / OFFICE_LAYOUT_SCALE,
   },
   {
     id: 'cafe-a',
     kind: 'cafe',
     room: 'copa',
     label: 'Calibrar a cafeteira',
-    x: 68.65,
-    z: 19.6,
+    x: 69.6 - 1.134 / OFFICE_LAYOUT_SCALE,
+    z: 29.5,
   },
   {
     id: 'estoque-a',
     kind: 'estoque',
     room: 'copa',
     label: 'Repor a máquina de venda',
-    x: 68.25,
+    x: 69.7 - 1.218 / OFFICE_LAYOUT_SCALE,
     z: 25.1,
   },
   {
@@ -945,7 +1014,7 @@ const TASK_SPOTS: TaskSpot[] = [
     kind: 'estoque',
     room: 'banheiro',
     label: 'Repor itens de higiene',
-    x: 68.35,
+    x: 71 - (0.504 + 1.26) / OFFICE_LAYOUT_SCALE,
     z: 40.4,
   },
   {
@@ -954,7 +1023,7 @@ const TASK_SPOTS: TaskSpot[] = [
     room: 'recepcao',
     label: 'Fechar o caixa da recepção',
     x: 10.5,
-    z: 22.2,
+    z: 21 + 1.1 / OFFICE_LAYOUT_SCALE,
   },
   {
     id: 'estoque-b',
@@ -962,15 +1031,7 @@ const TASK_SPOTS: TaskSpot[] = [
     room: 'deposito',
     label: 'Conferir o inventário',
     x: 64,
-    z: 49.5,
-  },
-  {
-    id: 'cabos-c',
-    kind: 'cabos',
-    room: 'garagem',
-    label: 'Recarregar o carro da empresa',
-    x: 8,
-    z: 42.25,
+    z: 51 - 1.22 / OFFICE_LAYOUT_SCALE,
   },
   {
     id: 'arquivo-a',
@@ -987,7 +1048,7 @@ const TASK_SPOTS: TaskSpot[] = [
     room: 'arquivo',
     label: 'Separar os documentos sigilosos',
     x: 12,
-    z: 15.9,
+    z: 15 - 0.8 / OFFICE_LAYOUT_SCALE,
     level: 1,
   },
   {
@@ -995,8 +1056,8 @@ const TASK_SPOTS: TaskSpot[] = [
     kind: 'senha',
     room: 'operacoes',
     label: 'Autorizar o painel de operações',
-    x: 40.55,
-    z: 10.7,
+    x: 39.4 + 1.05 / OFFICE_LAYOUT_SCALE,
+    z: 12 - 1.1 / OFFICE_LAYOUT_SCALE,
     level: 1,
   },
   {
@@ -1004,7 +1065,7 @@ const TASK_SPOTS: TaskSpot[] = [
     kind: 'senha',
     room: 'chefe',
     label: 'Liberar o terminal do chefe',
-    x: 62.8,
+    x: 61 + 1.5 / OFFICE_LAYOUT_SCALE,
     z: 8,
     level: 1,
   },
@@ -1035,6 +1096,9 @@ const FOOTPRINTS: Partial<
   counter: { w: 4.5, d: 1.1, h: 1.13 },
   meetingTable: { w: 6.65, d: 2.5, h: 0.86 },
   cafeTable: { w: 1.35, d: 1.35, h: 0.82 },
+  diningTable: { w: 2.8, d: 1.2, h: 0.78 },
+  diningChair: { w: 0.52, d: 0.56, h: 0.9 },
+  coffee: { w: 0.85, d: 0.82, h: 1.95, tall: true },
   rack: { w: 0.8, d: 1.0, h: 2, tall: true },
   locker: { w: 1.1, d: 0.55, h: 2, tall: true },
   shelf: { w: 2.6, d: 0.6, h: 1.9, tall: true },
@@ -1080,17 +1144,47 @@ export function buildObstacles(props: PropDef[]): WallBox[] {
   return boxes;
 }
 
+export function buildBathroomBarriers(rooms: RoomDef[]): WallBox[] {
+  const bathroom = rooms.find((room) => room.id === 'banheiro');
+  if (!bathroom) return [];
+  const { rect } = bathroom;
+  const columns = [1.75, 5.35, 9].map(
+    (offset) => rect.x + (offset * rect.w) / 16,
+  );
+  const front = rect.z + (5.5 * rect.d) / 10;
+  const back = rect.z + rect.d - 0.15;
+  const halfThickness = 0.085 / 2;
+  const common = { level: bathroom.level ?? 0, height: 2.32, tall: true };
+
+  return [
+    ...columns.map((x) => ({
+      minX: x - halfThickness,
+      maxX: x + halfThickness,
+      minZ: front - 0.045,
+      maxZ: back,
+      ...common,
+    })),
+    {
+      minX: columns[0] - halfThickness,
+      maxX: columns[2] + halfThickness,
+      minZ: front - halfThickness,
+      maxZ: front + halfThickness,
+      ...common,
+    },
+  ];
+}
+
 const VENTS: VentDef[] = [
   {
     id: 'vent-servidores',
     room: 'servidores',
     x: 21,
     z: 15,
-    links: ['vent-garagem', 'vent-operacoes'],
+    links: ['vent-apoio', 'vent-operacoes'],
   },
   {
-    id: 'vent-garagem',
-    room: 'garagem',
+    id: 'vent-apoio',
+    room: 'apoio',
     x: 17,
     z: 53,
     links: ['vent-servidores', 'vent-terraco'],
@@ -1117,7 +1211,7 @@ const VENTS: VentDef[] = [
     x: 69,
     z: 53,
     level: 1,
-    links: ['vent-chefe', 'vent-garagem'],
+    links: ['vent-chefe', 'vent-apoio'],
   },
 ];
 
@@ -1138,14 +1232,12 @@ const STAIRS: StairDef[] = [
 
 /// Cadeiras da sala de reunião. A direção já aponta para o centro da mesa,
 /// então a câmera e o corpo chegam olhando para a discussão.
-const BASE_MEETING_SEATS = [
-  ...[58, 59.5, 61, 62.5, 64].flatMap((x) => [
-    { x, z: 7.15, dir: 0, level: 0 },
-    { x, z: 11.85, dir: Math.PI, level: 0 },
-  ]),
-  { x: 56.3, z: 9.5, dir: Math.PI / 2, level: 0 },
-  { x: 65.7, z: 9.5, dir: -Math.PI / 2, level: 0 },
-];
+const BASE_MEETING_SEATS = meetingChairs().map(({ x, z, rot }) => ({
+  x,
+  z,
+  dir: rot,
+  level: 0,
+}));
 
 export const MEETING_SEATS = BASE_MEETING_SEATS.map(compactPlacement);
 
@@ -1313,6 +1405,7 @@ const WALLS_BUILT = buildWalls(ROOMS_BUILT);
 const OBSTACLES_BUILT = [
   ...buildObstacles(PROPS_BUILT),
   ...buildStairBarriers(STAIRS_BUILT),
+  ...buildBathroomBarriers(ROOMS_BUILT),
 ];
 
 export const OFFICE_MAP: GameMap = {

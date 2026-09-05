@@ -24,6 +24,19 @@ describe('GameMapService', () => {
     });
   });
 
+  it.each(['', '   ', ' original '])(
+    'resolve o id %j para a mesma instância do mapa oficial',
+    async (id) => {
+      const entry = await service.get(id);
+      expect(entry.id).toBe(PRIMARY_MAP_ID);
+      expect(entry.map).toBe(OFFICE_MAP);
+    },
+  );
+
+  it('entrega a mesma definição no endpoint do mapa atual', async () => {
+    await expect(service.current()).resolves.toBe(OFFICE_MAP);
+  });
+
   it('recusa um mapa que não foi registrado no código', async () => {
     await expect(service.get('nao-existe')).rejects.toBeInstanceOf(
       NotFoundException,
