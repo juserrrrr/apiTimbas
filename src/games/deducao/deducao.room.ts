@@ -457,7 +457,6 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
 
       if (player.level !== previousLevel) {
         seat.activeTask = null;
-        client.send('andar', { level: player.level });
       }
     }
   }
