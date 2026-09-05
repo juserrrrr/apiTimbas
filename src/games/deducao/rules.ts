@@ -25,7 +25,6 @@ export interface MatchConfig {
   voteSeconds: number;
   revealRoleOnEject: boolean;
   emergencyPerPlayer: number;
-  blackoutEverySeconds: number;
   blackoutSeconds: number;
 }
 
@@ -40,7 +39,6 @@ export const DEFAULT_CONFIG: MatchConfig = {
   voteSeconds: 30,
   revealRoleOnEject: true,
   emergencyPerPlayer: 1,
-  blackoutEverySeconds: 150,
   blackoutSeconds: 25,
 };
 
@@ -62,7 +60,8 @@ export function maxKillersFor(playerCount: number): number {
 
 export function sanitizeConfig(config: MatchConfig, playerCount: number): MatchConfig {
   return {
-    ...config,
+    withDetective: config.withDetective,
+    revealRoleOnEject: config.revealRoleOnEject,
     killers: Math.min(Math.max(1, Math.round(config.killers)), maxKillersFor(playerCount)),
     tasksPerPlayer: Math.min(Math.max(2, Math.round(config.tasksPerPlayer)), 8),
     killCooldownMs: Math.min(Math.max(10_000, Math.round(config.killCooldownMs)), 60_000),
@@ -71,7 +70,6 @@ export function sanitizeConfig(config: MatchConfig, playerCount: number): MatchC
     meetingSeconds: Math.min(Math.max(15, Math.round(config.meetingSeconds)), 120),
     voteSeconds: Math.min(Math.max(15, Math.round(config.voteSeconds)), 120),
     emergencyPerPlayer: Math.min(Math.max(0, Math.round(config.emergencyPerPlayer)), 3),
-    blackoutEverySeconds: Math.min(Math.max(60, Math.round(config.blackoutEverySeconds)), 600),
     blackoutSeconds: Math.min(Math.max(10, Math.round(config.blackoutSeconds)), 60),
   };
 }

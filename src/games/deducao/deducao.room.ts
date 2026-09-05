@@ -87,7 +87,6 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
 
   private password = '';
   private seats = new Map<string, Seat>();
-  private nextBlackoutAt = 0;
   private meetingDeadline = 0;
   private officeMap: GameMap = OFFICE_MAP;
   private voiceClients = new Set<string>();
@@ -156,6 +155,7 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
     this.onMessage('kill', (client, payload) => this.onKill(client, payload));
     this.onMessage('vent', (client, payload) => this.onVent(client, payload));
     this.onMessage('sabotage', (client) => this.onSabotage(client));
+    this.onMessage('sabotage:status', (client) => this.sendSabotageStatus(client));
     this.onMessage('report', (client, payload) =>
       this.onReport(client, payload),
     );
@@ -234,9 +234,10 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
     const consented = code === CloseCode.CONSENTED;
     if (!consented && this.state.phase !== 'lobby') {
       try {
-        await this.allowReconnection(client, 40);
+        const reconnected = await this.allowReconnection(client, 40);
         const back = this.state.players.get(client.sessionId);
         if (back) back.connected = true;
+        this.sendSabotageStatus(reconnected);
         return;
       } catch {
         // Não voltou a tempo, segue o baque abaixo.
@@ -337,9 +338,9 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
     this.state.winner = '';
     this.state.endReason = '';
     this.state.blackout = false;
+    this.state.blackoutEndsAt = 0;
     this.state.phase = 'jogando';
     this.state.startedAt = Date.now();
-    this.nextBlackoutAt = Date.now() + config.blackoutEverySeconds * 1000;
     this.teleportToSpawns();
 
     for (const id of ids) {
@@ -355,6 +356,7 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
             ? killers.filter((killer) => killer !== id)
             : [],
       });
+      if (client) this.sendSabotageStatus(client);
     }
     void this.publishMetadata();
   }
@@ -395,12 +397,20 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
       crouching?: boolean;
       airborne?: boolean;
       elevation?: number;
+      sequence?: number;
     },
   ) {
     const player = this.state.players.get(client.sessionId);
     const seat = this.seats.get(client.sessionId);
     if (!player || !seat || !this.isPlayable()) return;
-    if (typeof payload?.x !== 'number' || typeof payload?.z !== 'number')
+    if (!Number.isFinite(payload?.x) || !Number.isFinite(payload?.z))
+      return;
+    if (
+      payload.sequence !== undefined &&
+      (!Number.isSafeInteger(payload.sequence) ||
+        payload.sequence < 1 ||
+        payload.sequence <= player.moveSequence)
+    )
       return;
 
     const now = Date.now();
@@ -459,6 +469,7 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
         seat.activeTask = null;
       }
     }
+    if (payload.sequence !== undefined) player.moveSequence = payload.sequence;
   }
 
   private onTaskBegin(client: Client, payload: { spotId?: string }) {
@@ -613,12 +624,36 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
   private onSabotage(client: Client) {
     const seat = this.seats.get(client.sessionId);
     const player = this.state.players.get(client.sessionId);
-    if (!seat || !player || seat.role !== 'assassino' || !player.alive) return;
-    if (this.state.phase !== 'jogando' || Date.now() < seat.sabotageReadyAt)
+    if (
+      !seat ||
+      !player?.connected ||
+      seat.role !== 'assassino' ||
+      !player.alive ||
+      this.state.phase !== 'jogando'
+    )
       return;
+    if (this.state.blackout || Date.now() < seat.sabotageReadyAt) {
+      this.sendSabotageStatus(client);
+      return;
+    }
 
     seat.sabotageReadyAt = Date.now() + SABOTAGE_COOLDOWN_MS;
     this.startBlackout();
+    this.sendSabotageStatus(client);
+  }
+
+  private sendSabotageStatus(client: Client) {
+    const seat = this.seats.get(client.sessionId);
+    if (
+      seat?.role !== 'assassino' ||
+      !this.state.players.get(client.sessionId)?.connected
+    )
+      return;
+    client.send('sabotage:status', {
+      readyAt: seat.sabotageReadyAt,
+      serverNow: Date.now(),
+      cooldownMs: SABOTAGE_COOLDOWN_MS,
+    });
   }
 
   private onReport(client: Client, payload: { corpseId?: string }) {
@@ -826,6 +861,7 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
   ) {
     this.state.phase = 'reuniao';
     this.state.blackout = false;
+    this.state.blackoutEndsAt = 0;
     this.state.chat.clear();
     this.state.corpses.clear();
 
@@ -970,8 +1006,6 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
         if (!this.checkEnd()) {
           this.teleportToSpawns();
           this.state.phase = 'jogando';
-          this.nextBlackoutAt =
-            now + this.state.config.blackoutEverySeconds * 1000;
         }
       }
       return;
@@ -980,13 +1014,7 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
 
     if (this.state.blackout && now >= this.state.blackoutEndsAt) {
       this.state.blackout = false;
-      this.nextBlackoutAt = now + this.state.config.blackoutEverySeconds * 1000;
-    } else if (
-      !this.state.blackout &&
-      this.nextBlackoutAt > 0 &&
-      now >= this.nextBlackoutAt
-    ) {
-      this.startBlackout();
+      this.state.blackoutEndsAt = 0;
     }
   }
 
@@ -997,7 +1025,6 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
     this.state.blackout = true;
     this.state.blackoutEndsAt =
       Date.now() + this.state.config.blackoutSeconds * 1000;
-    this.nextBlackoutAt = 0;
     this.broadcast('apagao', { until: this.state.blackoutEndsAt });
   }
 
@@ -1023,6 +1050,7 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
           : 'Todos os assassinos foram expulsos.'
         : 'Os assassinos ficaram em maioria.';
     this.state.blackout = false;
+    this.state.blackoutEndsAt = 0;
     this.closeMeeting();
 
     this.broadcast('fim', {
@@ -1109,7 +1137,6 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
       voteSeconds: config.voteSeconds,
       revealRoleOnEject: config.revealRoleOnEject,
       emergencyPerPlayer: config.emergencyPerPlayer,
-      blackoutEverySeconds: config.blackoutEverySeconds,
       blackoutSeconds: config.blackoutSeconds,
     };
   }

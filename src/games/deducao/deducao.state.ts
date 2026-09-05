@@ -19,6 +19,7 @@ export class PlayerState extends Schema {
   @type('number') elevation = 0;
   @type('number') dir = 0;
   @type('boolean') moving = false;
+  @type('number') moveSequence = 0;
   @type('boolean') crouching = false;
   @type('boolean') airborne = false;
   @type('boolean') alive = true;
@@ -82,7 +83,6 @@ export class ConfigState extends Schema {
   @type('number') voteSeconds = 30;
   @type('boolean') revealRoleOnEject = true;
   @type('number') emergencyPerPlayer = 1;
-  @type('number') blackoutEverySeconds = 150;
   @type('number') blackoutSeconds = 25;
 }
 

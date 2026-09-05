@@ -42,6 +42,14 @@ describe('maxKillersFor', () => {
 });
 
 describe('sanitizeConfig', () => {
+  it('descarta configuração antiga de apagão automático e limita só a duração', () => {
+    const legacy = { ...DEFAULT_CONFIG, blackoutEverySeconds: 1, blackoutSeconds: 999 };
+    const config = sanitizeConfig(legacy, 7);
+    expect(config).not.toHaveProperty('blackoutEverySeconds');
+    expect(config.blackoutSeconds).toBe(60);
+    expect(sanitizeConfig({ ...DEFAULT_CONFIG, blackoutSeconds: 0 }, 7).blackoutSeconds).toBe(10);
+  });
+
   it('não deixa a sala pequena ter mais assassino do que aguenta', () => {
     const config = sanitizeConfig({ ...DEFAULT_CONFIG, killers: 3 }, 5);
     expect(config.killers).toBe(1);
