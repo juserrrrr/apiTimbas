@@ -63,7 +63,7 @@ describe('sanitizeConfig', () => {
     expect(config.meetingSeconds).toBe(15);
     expect(config.voteSeconds).toBe(120);
     expect(config.killCooldownMs).toBe(10_000);
-    expect(config.visionRange).toBe(15);
+    expect(config.visionRange).toBe(DEFAULT_CONFIG.visionRange);
   });
 });
 

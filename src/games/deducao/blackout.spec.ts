@@ -69,6 +69,8 @@ async function harness(count = 7) {
     );
   }
   handlers.get('config')!(clients[0], { killers: 2, blackoutEverySeconds: 1 });
+  for (const client of clients)
+    handlers.get('microphone:status')!(client, { ready: true });
   for (const client of clients.slice(1)) handlers.get('ready')!(client);
   handlers.get('start')!(clients[0]);
   expect(room.state.phase).toBe('jogando');
@@ -279,7 +281,7 @@ describe('apagão na sala real', () => {
       serverNow: 0,
       sessionId: h.killers[1].sessionId,
     });
-    expect(back.send).toHaveBeenCalledTimes(2);
+    expect(back.send.mock.calls.filter(([type]) => type === 'sabotage:status')).toHaveLength(2);
     expect(back.send).toHaveBeenLastCalledWith('sabotage:status', {
       readyAt,
       serverNow: now,

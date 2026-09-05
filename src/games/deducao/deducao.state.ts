@@ -25,6 +25,7 @@ export class PlayerState extends Schema {
   @type('boolean') alive = true;
   @type('boolean') connected = true;
   @type('boolean') ready = false;
+  @type('boolean') microphoneReady = false;
   @type('boolean') inVent = false;
   @type('number') tasksDone = 0;
   @type('number') tasksTotal = 0;
@@ -78,11 +79,12 @@ export class ConfigState extends Schema {
   @type('number') tasksPerPlayer = 4;
   @type('number') killCooldownMs = 25_000;
   @type('number') killRange = 2.2;
-  @type('number') visionRange = 13;
+  @type('number') visionRange = 11;
   @type('number') meetingSeconds = 45;
   @type('number') voteSeconds = 30;
   @type('boolean') revealRoleOnEject = true;
   @type('number') emergencyPerPlayer = 1;
+  @type('number') emergencyCooldownMs = 30_000;
   @type('number') blackoutSeconds = 25;
 }
 
@@ -101,6 +103,7 @@ export class DeducaoState extends Schema {
   @type('number') tasksTotal = 0;
   @type('boolean') blackout = false;
   @type('number') blackoutEndsAt = 0;
+  @type('number') emergencyReadyAt = 0;
   @type('string') winner = '';
   @type('string') endReason = '';
   @type({ map: PlayerState }) players = new MapSchema<PlayerState>();

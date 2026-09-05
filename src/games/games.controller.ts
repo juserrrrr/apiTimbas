@@ -14,6 +14,7 @@ import {
 import { FeatureFlagsService } from '../feature-flags/feature-flags.service';
 import { Role } from '../enums/role.enum';
 import { DEFAULT_CONFIG, MAX_PLAYERS, MIN_PLAYERS } from './deducao/rules';
+import { LOBBY_MAP } from './deducao/lobby-map';
 import { GameMapService } from './game-map.service';
 import { DEDUCAO_ROOM } from './game-server.service';
 import { GameTicketsService } from './game-tickets.service';
@@ -125,6 +126,7 @@ export class GamesController {
     await this.requireDeducaoAccess(req);
     return {
       map: await this.maps.current(),
+      lobby: LOBBY_MAP,
       config: DEFAULT_CONFIG,
       minPlayers: MIN_PLAYERS,
       maxPlayers: MAX_PLAYERS,
@@ -143,6 +145,7 @@ export class GamesController {
     const entry = await this.maps.get(id);
     return {
       ...entry,
+      lobby: LOBBY_MAP,
       config: DEFAULT_CONFIG,
       minPlayers: MIN_PLAYERS,
       maxPlayers: MAX_PLAYERS,

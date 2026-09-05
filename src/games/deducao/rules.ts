@@ -25,6 +25,7 @@ export interface MatchConfig {
   voteSeconds: number;
   revealRoleOnEject: boolean;
   emergencyPerPlayer: number;
+  emergencyCooldownMs: number;
   blackoutSeconds: number;
 }
 
@@ -39,6 +40,7 @@ export const DEFAULT_CONFIG: MatchConfig = {
   voteSeconds: 30,
   revealRoleOnEject: true,
   emergencyPerPlayer: 1,
+  emergencyCooldownMs: 30_000,
   blackoutSeconds: 25,
 };
 
@@ -59,18 +61,21 @@ export function maxKillersFor(playerCount: number): number {
 }
 
 export function sanitizeConfig(config: MatchConfig, playerCount: number): MatchConfig {
+  const number = (key: Exclude<keyof MatchConfig, 'withDetective' | 'revealRoleOnEject'>) =>
+    Number.isFinite(config[key]) ? config[key] : DEFAULT_CONFIG[key];
   return {
-    withDetective: config.withDetective,
-    revealRoleOnEject: config.revealRoleOnEject,
-    killers: Math.min(Math.max(1, Math.round(config.killers)), maxKillersFor(playerCount)),
-    tasksPerPlayer: Math.min(Math.max(2, Math.round(config.tasksPerPlayer)), 8),
-    killCooldownMs: Math.min(Math.max(10_000, Math.round(config.killCooldownMs)), 60_000),
-    killRange: Math.min(Math.max(1.4, config.killRange), 4),
-    visionRange: Math.min(Math.max(7, config.visionRange), 15),
-    meetingSeconds: Math.min(Math.max(15, Math.round(config.meetingSeconds)), 120),
-    voteSeconds: Math.min(Math.max(15, Math.round(config.voteSeconds)), 120),
-    emergencyPerPlayer: Math.min(Math.max(0, Math.round(config.emergencyPerPlayer)), 3),
-    blackoutSeconds: Math.min(Math.max(10, Math.round(config.blackoutSeconds)), 60),
+    withDetective: typeof config.withDetective === 'boolean' ? config.withDetective : DEFAULT_CONFIG.withDetective,
+    revealRoleOnEject: typeof config.revealRoleOnEject === 'boolean' ? config.revealRoleOnEject : DEFAULT_CONFIG.revealRoleOnEject,
+    killers: Math.min(Math.max(1, Math.round(number('killers'))), maxKillersFor(playerCount)),
+    tasksPerPlayer: Math.min(Math.max(2, Math.round(number('tasksPerPlayer'))), 8),
+    killCooldownMs: Math.min(Math.max(10_000, Math.round(number('killCooldownMs'))), 60_000),
+    killRange: Math.min(Math.max(1.4, number('killRange')), 4),
+    visionRange: DEFAULT_CONFIG.visionRange,
+    meetingSeconds: Math.min(Math.max(15, Math.round(number('meetingSeconds'))), 120),
+    voteSeconds: Math.min(Math.max(15, Math.round(number('voteSeconds'))), 120),
+    emergencyPerPlayer: Math.min(Math.max(0, Math.round(number('emergencyPerPlayer'))), 3),
+    emergencyCooldownMs: Math.min(Math.max(10_000, Math.round(number('emergencyCooldownMs'))), 60_000),
+    blackoutSeconds: Math.min(Math.max(10, Math.round(number('blackoutSeconds'))), 60),
   };
 }
 

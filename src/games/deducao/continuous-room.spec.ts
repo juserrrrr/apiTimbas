@@ -10,6 +10,7 @@ interface TestPlayer {
   z: number;
   level: number;
   alive: boolean;
+  connected: boolean;
   inVent: boolean;
 }
 
@@ -65,7 +66,7 @@ function harness(position: { x: number; z: number; level: number }) {
   });
   const Constructor = module.exports as new () => MovementContext;
   const context = new Constructor();
-  const player = { ...position, alive: true, inVent: false };
+  const player = { ...position, alive: true, connected: true, inVent: false };
   const seat = {
     lastMoveAt: 0,
     activeTask: { spotId: 'test' } as object | null,

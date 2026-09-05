@@ -23,6 +23,7 @@ import {
   ventById,
 } from './map';
 import { distance, isWithin, moveTowards, PLAYER_RADIUS } from './movement';
+import { LOBBY_MAP } from './lobby-map';
 import {
   DEFAULT_CONFIG,
   MAX_PLAYERS,
@@ -141,6 +142,9 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
     this.applyConfig(DEFAULT_CONFIG);
 
     this.onMessage('ready', (client) => this.onReady(client));
+    this.onMessage('microphone:status', (client, payload) =>
+      this.onMicrophoneStatus(client, payload),
+    );
     this.onMessage('config', (client, payload) =>
       this.onConfig(client, payload),
     );
@@ -160,6 +164,7 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
       this.onReport(client, payload),
     );
     this.onMessage('emergency', (client) => this.onEmergency(client));
+    this.onMessage('emergency:status', (client) => this.sendEmergencyStatus(client));
     this.onMessage('inspect', (client, payload) =>
       this.onInspect(client, payload),
     );
@@ -193,10 +198,9 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
     player.avatar = person.avatar ?? '';
     player.color = this.freeColor();
     player.emergenciesLeft = this.state.config.emergencyPerPlayer;
-    const spawn =
-      this.officeMap.spawns[
-        this.state.players.size % this.officeMap.spawns.length
-      ];
+    const spawn = LOBBY_MAP.spawns.find((candidate) =>
+      [...this.state.players.values()].every((other) => distance(candidate, other) >= PLAYER_RADIUS * 2),
+    ) ?? LOBBY_MAP.spawns[this.state.players.size % LOBBY_MAP.spawns.length];
     player.x = spawn.x;
     player.z = spawn.z;
     player.level = spawn.level ?? 0;
@@ -226,7 +230,11 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
 
   async onLeave(client: Client, code?: number) {
     const player = this.state.players.get(client.sessionId);
-    if (player) player.connected = false;
+    if (player) {
+      player.connected = false;
+      player.ready = false;
+      player.microphoneReady = false;
+    }
     this.onVoiceLeave(client);
 
     // Saída pela porta é a pessoa clicando em sair. Qualquer outro código é
@@ -237,6 +245,7 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
         const reconnected = await this.allowReconnection(client, 40);
         const back = this.state.players.get(client.sessionId);
         if (back) back.connected = true;
+        this.sendEmergencyStatus(reconnected);
         this.sendSabotageStatus(reconnected);
         return;
       } catch {
@@ -260,16 +269,48 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
 
   // ── Lobby ────────────────────────────────────────────────────────────────
 
+  private onMicrophoneStatus(
+    client: Client,
+    payload: { ready?: unknown } | null | undefined,
+  ) {
+    const player = this.state.players.get(client.sessionId);
+    if (
+      !player?.connected ||
+      !this.seats.has(client.sessionId) ||
+      typeof payload?.ready !== 'boolean'
+    )
+      return;
+    // O navegador confirma captura ativa; sinalização WebRTC não comprova permissão.
+    player.microphoneReady = payload.ready;
+    if (!payload.ready && this.state.phase === 'lobby') player.ready = false;
+  }
+
   private onReady(client: Client) {
     if (this.state.phase !== 'lobby') return;
     const player = this.state.players.get(client.sessionId);
-    if (player) player.ready = !player.ready;
+    if (!player?.connected || !this.seats.has(client.sessionId)) return;
+    if (!player.ready && !player.microphoneReady) {
+      client.send('erro', 'Permita o microfone antes de marcar pronto.');
+      return;
+    }
+    player.ready = !player.ready;
   }
 
   private onConfig(client: Client, payload: Partial<MatchConfig>) {
     if (this.state.phase !== 'lobby' || client.sessionId !== this.state.hostId)
       return;
-    this.applyConfig({ ...this.currentConfig(), ...payload });
+    const next = this.currentConfig();
+    for (const key of Object.keys(next) as (keyof MatchConfig)[]) {
+      if (key === 'visionRange') continue;
+      const value = payload?.[key];
+      if (
+        typeof value !== typeof next[key] ||
+        (typeof value === 'number' && !Number.isFinite(value))
+      )
+        continue;
+      Object.assign(next, { [key]: value });
+    }
+    this.applyConfig(next);
   }
 
   private onStart(client: Client) {
@@ -281,6 +322,18 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
       client.send(
         'erro',
         `A partida precisa de pelo menos ${MIN_PLAYERS} jogadores.`,
+      );
+      return;
+    }
+    if (
+      ids.some((id) => {
+        const player = this.state.players.get(id)!;
+        return !player.connected || !player.microphoneReady;
+      })
+    ) {
+      client.send(
+        'erro',
+        'Todos precisam estar conectados e permitir o microfone antes de iniciar.',
       );
       return;
     }
@@ -358,6 +411,7 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
       });
       if (client) this.sendSabotageStatus(client);
     }
+    this.startEmergencyCooldown();
     void this.publishMetadata();
   }
 
@@ -365,6 +419,7 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
     if (this.state.phase !== 'fim' || client.sessionId !== this.state.hostId)
       return;
     this.state.phase = 'lobby';
+    this.state.emergencyReadyAt = 0;
     this.state.winner = '';
     this.state.endReason = '';
     this.state.corpses.clear();
@@ -380,7 +435,7 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
       player.tasksDone = 0;
       player.tasksTotal = 0;
     }
-    this.teleportToSpawns();
+    this.teleportToSpawns(LOBBY_MAP);
     void this.publishMetadata();
   }
 
@@ -402,7 +457,7 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
   ) {
     const player = this.state.players.get(client.sessionId);
     const seat = this.seats.get(client.sessionId);
-    if (!player || !seat || !this.isPlayable()) return;
+    if (!player?.connected || !seat || !this.isPlayable()) return;
     if (!Number.isFinite(payload?.x) || !Number.isFinite(payload?.z))
       return;
     if (
@@ -413,6 +468,7 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
     )
       return;
 
+    const map = this.state.phase === 'lobby' ? LOBBY_MAP : this.officeMap;
     const now = Date.now();
     const elapsed = Math.min(Math.max(now - seat.lastMoveAt, 0), 400) / 1000;
     seat.lastMoveAt = now;
@@ -433,9 +489,9 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
             { x: player.x, z: player.z },
             target,
             budget,
-            collidersFor(player.level, this.officeMap, elevation),
+            collidersFor(player.level, map, elevation),
           )
-        : this.clampToBounds(target, { x: player.x, z: player.z }, budget);
+        : this.clampToBounds(target, { x: player.x, z: player.z }, budget, map);
 
     player.x = next.x;
     player.z = next.z;
@@ -446,7 +502,7 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
     player.airborne = Boolean(payload.airborne);
 
     if (player.alive && !player.inVent) {
-      const crossing = stairProgressAt(player.x, player.z, this.officeMap);
+      const crossing = stairProgressAt(player.x, player.z, map);
       const previousLevel = player.level;
 
       // A altura muda continuamente no navegador conforme x/z. O servidor só
@@ -672,7 +728,18 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
 
   private onEmergency(client: Client) {
     const player = this.state.players.get(client.sessionId);
-    if (!player?.alive || this.state.phase !== 'jogando') return;
+    if (
+      !player?.alive ||
+      !player.connected ||
+      player.inVent ||
+      !this.seats.has(client.sessionId) ||
+      this.state.phase !== 'jogando'
+    )
+      return;
+    if (Date.now() < this.state.emergencyReadyAt) {
+      this.sendEmergencyStatus(client);
+      return;
+    }
     if (player.emergenciesLeft <= 0) return;
     if (
       (this.officeMap.emergency.level ?? 0) !== player.level ||
@@ -682,6 +749,25 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
 
     player.emergenciesLeft -= 1;
     this.openMeeting('emergencia', player, '');
+  }
+
+  private startEmergencyCooldown() {
+    this.state.emergencyReadyAt =
+      Date.now() + this.state.config.emergencyCooldownMs;
+    for (const client of this.clients) this.sendEmergencyStatus(client);
+  }
+
+  private sendEmergencyStatus(client: Client) {
+    if (
+      !this.state.players.get(client.sessionId)?.connected ||
+      !this.seats.has(client.sessionId)
+    )
+      return;
+    client.send('emergency:status', {
+      readyAt: this.state.emergencyReadyAt,
+      serverNow: Date.now(),
+      cooldownMs: this.state.config.emergencyCooldownMs,
+    });
   }
 
   /// O detetive escolhe alguém durante a reunião e a leitura chega só na
@@ -860,6 +946,7 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
     victimName: string,
   ) {
     this.state.phase = 'reuniao';
+    this.state.emergencyReadyAt = 0;
     this.state.blackout = false;
     this.state.blackoutEndsAt = 0;
     this.state.chat.clear();
@@ -1006,6 +1093,7 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
         if (!this.checkEnd()) {
           this.teleportToSpawns();
           this.state.phase = 'jogando';
+          this.startEmergencyCooldown();
         }
       }
       return;
@@ -1042,6 +1130,7 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
     if (!winner) return false;
 
     this.state.phase = 'fim';
+    this.state.emergencyReadyAt = 0;
     this.state.winner = winner;
     this.state.endReason =
       winner === 'escritorio'
@@ -1074,9 +1163,10 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
     target: { x: number; z: number },
     from: { x: number; z: number },
     budget: number,
+    map: GameMap,
   ) {
     const stepped = moveTowards(from, target, budget, [], PLAYER_RADIUS);
-    const { x, z, w, d } = this.officeMap.bounds;
+    const { x, z, w, d } = map.bounds;
     return {
       x: Math.min(
         Math.max(stepped.x, x + PLAYER_RADIUS),
@@ -1089,10 +1179,10 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
     };
   }
 
-  private teleportToSpawns() {
+  private teleportToSpawns(map: GameMap = this.officeMap) {
     let index = 0;
     for (const player of this.state.players.values()) {
-      const spawn = this.officeMap.spawns[index % this.officeMap.spawns.length];
+      const spawn = map.spawns[index % map.spawns.length];
       player.x = spawn.x;
       player.z = spawn.z;
       player.level = spawn.level ?? 0;
@@ -1100,6 +1190,8 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
       player.crouching = false;
       player.airborne = false;
       player.elevation = 0;
+      const seat = this.seats.get(player.id);
+      if (seat) seat.lastMoveAt = Date.now();
       index += 1;
     }
   }
@@ -1137,6 +1229,7 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
       voteSeconds: config.voteSeconds,
       revealRoleOnEject: config.revealRoleOnEject,
       emergencyPerPlayer: config.emergencyPerPlayer,
+      emergencyCooldownMs: config.emergencyCooldownMs,
       blackoutSeconds: config.blackoutSeconds,
     };
   }
