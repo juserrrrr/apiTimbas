@@ -249,9 +249,7 @@ describe('o escritório', () => {
           /garagem|carro/i.test(spot.room + spot.label),
       ),
     ).toBe(false);
-    expect(OFFICE_MAP.taskSpots.some((spot) => spot.room === 'apoio')).toBe(
-      false,
-    );
+    expect(OFFICE_MAP.taskSpots.filter((spot) => spot.room === 'apoio').length).toBeGreaterThanOrEqual(2);
     expect(
       OFFICE_MAP.vents.some(
         (vent) =>

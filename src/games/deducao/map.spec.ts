@@ -162,6 +162,21 @@ describe('portas e paredes externas', () => {
 });
 
 describe('acesso às interações', () => {
+  it('oferece dois ou três pontos e pelo menos dois minigames distintos em cada ambiente jogável', () => {
+    expect(OFFICE_MAP.taskSpots).toHaveLength(55);
+    for (const room of OFFICE_MAP.rooms) {
+      const spots = OFFICE_MAP.taskSpots.filter((spot) => spot.room === room.id);
+      expect({ room: room.id, enough: spots.length >= 2 && spots.length <= 3 }).toEqual({ room: room.id, enough: true });
+      expect(new Set(spots.map((spot) => spot.kind)).size).toBeGreaterThanOrEqual(2);
+      for (const spot of spots) {
+        expect(roomAt(spot.x, spot.z, spot.level ?? 0)?.id).toBe(room.id);
+        expect(stairProgressAt(spot.x, spot.z)).toBeNull();
+      }
+    }
+    expect(new Set(OFFICE_MAP.taskSpots.map((spot) => spot.kind))).toEqual(new Set(['rack', 'arquivo', 'senha', 'cafe', 'cabos', 'impressora', 'estoque']));
+    expect(['curta', 'media', 'longa'].map((duration) => OFFICE_MAP.taskSpots.filter((spot) => spot.duration === duration).length)).toEqual([21, 21, 13]);
+  });
+
   it.each([0, 1])(
     'chega a todas as tarefas e dutos do piso %s por caminhos com colisão',
     (level) => {

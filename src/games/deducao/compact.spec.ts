@@ -15,7 +15,7 @@ describe('escritório compacto sem mobiliário solto', () => {
     );
     expect(area / 4357.7856).toBeCloseTo((0.74 / 0.84) ** 2, 8);
     expect(OFFICE_MAP.rooms).toHaveLength(21);
-    expect(OFFICE_MAP.taskSpots).toHaveLength(15);
+    expect(OFFICE_MAP.taskSpots).toHaveLength(55);
     expect(OFFICE_MAP.vents).toHaveLength(5);
     for (const room of OFFICE_MAP.rooms) {
       for (const door of room.doors) expect(door.width).toBeGreaterThan(1.5);

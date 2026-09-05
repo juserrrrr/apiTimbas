@@ -38,7 +38,7 @@ import {
   tallyVotes,
   winnerFor,
 } from './rules';
-import { AssignedTask, MIN_TASK_MS, TASK_RANGE, drawTasks } from './tasks';
+import { AssignedTask, TASK_RANGE, drawTasks, minTaskDurationMs } from './tasks';
 
 const TICK_MS = 50;
 const WALK_SPEED = 4.6;
@@ -50,6 +50,7 @@ const REPORT_RANGE = 2.6;
 const VENT_RANGE = 1.8;
 const CHAT_LIMIT = 80;
 const SABOTAGE_COOLDOWN_MS = 40_000;
+const FORENSIC_COOLDOWN_MS = 30_000;
 const VOICE_SDP_LIMIT = 32_000;
 const VOICE_ICE_LIMIT = 2_048;
 
@@ -76,11 +77,18 @@ interface Seat {
   lastMoveAt: number;
   killReadyAt: number;
   sabotageReadyAt: number;
-  activeTask: { spotId: string; startedAt: number } | null;
+  activeTask: { spotId: string; startedAt: number; requestId?: string } | null;
+  forensicReadyAt: number;
+  inspectedCorpseIds: Set<string>;
   vote: string | null;
   /// Leitura que o detetive pediu na reunião passada e recebe nesta.
   pendingReading: { targetId: string; targetName: string } | null;
   isAdmin: boolean;
+}
+
+interface TaskRequest {
+  spotId?: unknown;
+  requestId?: unknown;
 }
 
 export class DeducaoRoom extends Room<{ state: DeducaoState }> {
@@ -91,6 +99,7 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
   private meetingDeadline = 0;
   private officeMap: GameMap = OFFICE_MAP;
   private voiceClients = new Set<string>();
+  private deathEvidence = new Map<string, { at: number; blackout: boolean }>();
 
   async onAuth(
     client: Client,
@@ -168,6 +177,8 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
     this.onMessage('inspect', (client, payload) =>
       this.onInspect(client, payload),
     );
+    this.onMessage('forensic:inspect', (client, payload) => this.onForensicInspect(client, payload));
+    this.onMessage('forensic:status', (client) => this.sendForensicStatus(client));
     this.onMessage('vote', (client, payload) => this.onVote(client, payload));
     this.onMessage('chat', (client, payload) => this.onChat(client, payload));
     this.onMessage('voice:join', (client) => this.onVoiceJoin(client));
@@ -215,6 +226,8 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
       killReadyAt: 0,
       sabotageReadyAt: 0,
       activeTask: null,
+      forensicReadyAt: 0,
+      inspectedCorpseIds: new Set(),
       vote: null,
       pendingReading: null,
       isAdmin: person.role === UserRole.ADMIN,
@@ -247,6 +260,7 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
         if (back) back.connected = true;
         this.sendEmergencyStatus(reconnected);
         this.sendSabotageStatus(reconnected);
+        this.sendForensicStatus(reconnected);
         return;
       } catch {
         // Não voltou a tempo, segue o baque abaixo.
@@ -369,6 +383,8 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
       seat.killReadyAt = Date.now() + config.killCooldownMs;
       seat.sabotageReadyAt = Date.now() + SABOTAGE_COOLDOWN_MS;
       seat.activeTask = null;
+      seat.forensicReadyAt = 0;
+      seat.inspectedCorpseIds.clear();
       seat.vote = null;
       seat.pendingReading = null;
 
@@ -387,6 +403,7 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
     this.state.corpses.clear();
     this.state.chat.clear();
     this.state.tasksDone = 0;
+    this.deathEvidence.clear();
     this.state.tasksTotal = crewTasks;
     this.state.winner = '';
     this.state.endReason = '';
@@ -410,6 +427,7 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
             : [],
       });
       if (client) this.sendSabotageStatus(client);
+      if (client) this.sendForensicStatus(client);
     }
     this.startEmergencyCooldown();
     void this.publishMetadata();
@@ -425,6 +443,12 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
     this.state.corpses.clear();
     this.state.chat.clear();
     this.closeMeeting();
+    this.deathEvidence.clear();
+    for (const seat of this.seats.values()) {
+      seat.activeTask = null;
+      seat.forensicReadyAt = 0;
+      seat.inspectedCorpseIds.clear();
+    }
     for (const player of this.state.players.values()) {
       player.alive = true;
       player.ready = false;
@@ -528,58 +552,76 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
     if (payload.sequence !== undefined) player.moveSequence = payload.sequence;
   }
 
-  private onTaskBegin(client: Client, payload: { spotId?: string }) {
-    const seat = this.seats.get(client.sessionId);
-    const player = this.state.players.get(client.sessionId);
-    if (!seat || !player || this.state.phase !== 'jogando') return;
-
-    const assigned = seat.tasks.find(
-      (task) => task.spotId === payload?.spotId && !task.done,
-    );
-    const spot = assigned && taskSpotById(assigned.spotId, this.officeMap);
-    if (!spot) return;
-    if (
-      (spot.level ?? 0) !== player.level ||
-      distance(player, spot) > TASK_RANGE
-    )
-      return;
-
-    seat.activeTask = { spotId: spot.id, startedAt: Date.now() };
-    client.send('task:ok', {
-      spotId: spot.id,
-      kind: spot.kind,
-      label: spot.label,
+  private taskResponse(client: Client, type: string, payload: TaskRequest, details: object = {}) {
+    client.send(type, {
+      spotId: typeof payload?.spotId === 'string' ? payload.spotId.slice(0, 100) : '',
+      ...(typeof payload?.requestId === 'string' && payload.requestId.length > 0 && payload.requestId.length <= 100
+        ? { requestId: payload.requestId } : {}),
+      ...details,
     });
   }
 
-  private onTaskDone(client: Client, payload: { spotId?: string }) {
+  private validTaskRequest(payload: TaskRequest) {
+    return typeof payload?.spotId === 'string' && payload.spotId.length > 0 && payload.spotId.length <= 100
+      && (payload.requestId === undefined || (typeof payload.requestId === 'string' && payload.requestId.length > 0 && payload.requestId.length <= 100));
+  }
+
+  private onTaskBegin(client: Client, payload: TaskRequest) {
     const seat = this.seats.get(client.sessionId);
     const player = this.state.players.get(client.sessionId);
-    if (!seat || !player || this.state.phase !== 'jogando') return;
-
-    const active = seat.activeTask;
-    if (!active || active.spotId !== payload?.spotId) return;
-    if (Date.now() - active.startedAt < MIN_TASK_MS) return;
-
-    const spot = taskSpotById(active.spotId, this.officeMap);
-    // Fantasma termina a tarefa de onde estiver: ele não anda mais pelo mapa
-    // para provar que chegou lá.
-    if (
-      !spot ||
-      (player.alive &&
-        ((spot.level ?? 0) !== player.level ||
-          distance(player, spot) > TASK_RANGE))
-    )
+    const reject = (reason: string) => this.taskResponse(client, 'task:rejected', payload, { reason });
+    if (!this.validTaskRequest(payload) || !seat || !player?.connected || player.inVent || this.state.phase !== 'jogando') {
+      reject('Não é possível iniciar essa tarefa agora.');
       return;
+    }
+    const assigned = seat.tasks.find((task) => task.spotId === payload.spotId);
+    const spot = assigned && taskSpotById(assigned.spotId, this.officeMap);
+    if (!spot) { reject('Essa tarefa não está na sua lista.'); return; }
+    if (assigned.done) { this.taskResponse(client, 'task:completed', payload); return; }
+    if ((spot.level ?? 0) !== player.level || distance(player, spot) > TASK_RANGE
+      || (player.alive && !isWithin(player, spot, TASK_RANGE, sightBlockersFor(player.level, this.officeMap)))) {
+      reject('Aproxime-se da tarefa por um caminho livre.');
+      return;
+    }
+    const requestId = payload.requestId as string | undefined;
+    if (!requestId || seat.activeTask?.spotId !== spot.id || seat.activeTask.requestId !== requestId)
+      seat.activeTask = { spotId: spot.id, startedAt: Date.now(), requestId };
+    this.taskResponse(client, 'task:ok', payload, {
+      kind: spot.kind, label: spot.label, duration: spot.duration ?? 'curta', minDurationMs: minTaskDurationMs(spot),
+    });
+  }
 
-    const assigned = seat.tasks.find((task) => task.spotId === active.spotId);
-    if (!assigned || assigned.done) return;
-
+  private onTaskDone(client: Client, payload: TaskRequest) {
+    const seat = this.seats.get(client.sessionId);
+    const player = this.state.players.get(client.sessionId);
+    const reject = (reason: string, retryAfterMs?: number) => this.taskResponse(client, 'task:rejected', payload, {
+      reason, ...(retryAfterMs === undefined ? {} : { retryAfterMs }),
+    });
+    if (!this.validTaskRequest(payload) || !seat || !player?.connected || player.inVent || this.state.phase !== 'jogando') {
+      reject('Não é possível concluir essa tarefa agora.');
+      return;
+    }
+    const assigned = seat.tasks.find((task) => task.spotId === payload.spotId);
+    if (!assigned) { reject('Essa tarefa não está na sua lista.'); return; }
+    if (assigned.done) { this.taskResponse(client, 'task:completed', payload); return; }
+    const active = seat.activeTask;
+    if (!active || active.spotId !== payload.spotId || active.requestId !== payload.requestId) {
+      reject('Abra novamente a tarefa antes de concluir.');
+      return;
+    }
+    const spot = taskSpotById(active.spotId, this.officeMap);
+    // Fantasmas mantêm a conclusão remota de uma tarefa que já abriram.
+    if (!spot || (player.alive && ((spot.level ?? 0) !== player.level
+      || !isWithin(player, spot, TASK_RANGE, sightBlockersFor(player.level, this.officeMap))))) {
+      reject('Aproxime-se da tarefa por um caminho livre.');
+      return;
+    }
+    const remaining = minTaskDurationMs(spot) - (Date.now() - active.startedAt);
+    if (remaining > 0) { reject('Finalize todas as etapas da tarefa.', Math.ceil(remaining)); return; }
     assigned.done = true;
     seat.activeTask = null;
     player.tasksDone += 1;
-    // A tarefa do assassino é de mentira: serve para ele fingir que trabalha,
-    // não para ganhar o jogo do outro time.
+    this.taskResponse(client, 'task:completed', payload);
     if (seat.role !== 'assassino') {
       this.state.tasksDone += 1;
       this.checkEnd();
@@ -628,6 +670,7 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
     corpse.x = victim.x;
     corpse.z = victim.z;
     corpse.level = victim.level;
+    this.deathEvidence.set(corpse.id, { at: Date.now(), blackout: this.state.blackout });
     this.state.corpses.push(corpse);
 
     killer.x = victim.x;
@@ -638,7 +681,7 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
 
     this.clients
       .find((candidate) => candidate.sessionId === victim.id)
-      ?.send('morte', { by: killer.name });
+      ?.send('morte', { by: this.state.blackout ? 'Alguém no apagão' : killer.name });
     this.checkEnd();
   }
 
@@ -775,7 +818,7 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
   private onInspect(client: Client, payload: { targetId?: string }) {
     const seat = this.seats.get(client.sessionId);
     const player = this.state.players.get(client.sessionId);
-    if (!seat || !player?.alive || seat.role !== 'detetive') return;
+    if (!seat || !player?.alive || !player.connected || seat.role !== 'detetive') return;
     if (this.state.phase !== 'reuniao' || seat.pendingReading) return;
 
     const target = this.state.players.get(payload?.targetId ?? '');
@@ -783,6 +826,51 @@ export class DeducaoRoom extends Room<{ state: DeducaoState }> {
 
     seat.pendingReading = { targetId: target.id, targetName: target.name };
     client.send('investigacao', { status: 'anotado', name: target.name });
+  }
+
+  private sendForensicStatus(client: Client) {
+    const seat = this.seats.get(client.sessionId);
+    const player = this.state.players.get(client.sessionId);
+    if (!seat || seat.role !== 'detetive' || !player?.connected) return;
+    client.send('forensic:status', {
+      readyAt: seat.forensicReadyAt,
+      serverNow: Date.now(),
+      cooldownMs: FORENSIC_COOLDOWN_MS,
+      inspectedCorpseIds: [...seat.inspectedCorpseIds],
+    });
+  }
+
+  private onForensicInspect(client: Client, payload: { corpseId?: string }) {
+    const seat = this.seats.get(client.sessionId);
+    const player = this.state.players.get(client.sessionId);
+    if (!seat || seat.role !== 'detetive' || !player?.connected) return;
+    const reject = (reason: string) => {
+      client.send('forensic:rejected', { reason });
+      this.sendForensicStatus(client);
+    };
+    if (!player.alive || player.inVent || this.state.phase !== 'jogando') {
+      reject('Não é possível periciar um corpo agora.');
+      return;
+    }
+    const corpse = this.state.corpses.find((candidate) => candidate.id === payload?.corpseId);
+    const evidence = corpse && this.deathEvidence.get(corpse.id);
+    if (!corpse || corpse.reported || !evidence || corpse.level !== player.level
+      || !isWithin(player, corpse, REPORT_RANGE, sightBlockersFor(player.level, this.officeMap))) {
+      reject('Aproxime-se de um corpo ainda não reportado por um caminho livre.');
+      return;
+    }
+    if (seat.inspectedCorpseIds.has(corpse.id)) { reject('Você já periciou este corpo.'); return; }
+    const now = Date.now();
+    if (now < seat.forensicReadyAt) { reject('A perícia ainda está em recarga.'); return; }
+    const age = Math.max(0, now - evidence.at);
+    seat.forensicReadyAt = now + FORENSIC_COOLDOWN_MS;
+    seat.inspectedCorpseIds.add(corpse.id);
+    client.send('forensic:result', {
+      corpseId: corpse.id,
+      ageBand: age < 15_000 ? 'recente' : age < 45_000 ? 'intermediario' : 'antigo',
+      blackout: evidence.blackout,
+    });
+    this.sendForensicStatus(client);
   }
 
   private onVote(client: Client, payload: { targetId?: string }) {

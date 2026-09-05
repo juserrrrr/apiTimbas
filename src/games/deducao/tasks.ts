@@ -1,4 +1,4 @@
-import type { TaskSpot } from './map';
+import type { TaskDuration, TaskSpot } from './map';
 
 /// Distribuição e validação das tarefas. O minigame em si roda no navegador, mas
 /// o servidor só aceita a conclusão de uma tarefa que é daquela pessoa, que
@@ -9,6 +9,16 @@ export const TASK_RANGE = 2.2;
 
 /// Nem o mais rápido dos minigames fecha antes disso, então serve de piso.
 export const MIN_TASK_MS = 1_200;
+
+const TASK_MINIMUM_MS: Record<TaskDuration, number> = {
+  curta: MIN_TASK_MS,
+  media: 3_500,
+  longa: 6_500,
+};
+
+export function minTaskDurationMs(spot: Pick<TaskSpot, 'duration'>): number {
+  return TASK_MINIMUM_MS[spot.duration ?? 'curta'];
+}
 
 export interface AssignedTask {
   spotId: string;
@@ -24,44 +34,80 @@ function shuffle<T>(items: T[], random: () => number): T[] {
   return copy;
 }
 
-/// Cada um recebe tarefas espalhadas por salas diferentes. Quatro tarefas na
-/// mesma sala fariam a pessoa nunca cruzar com ninguém, e cruzar com os outros
-/// é o que gera o álibi.
+/// A ordem sugere destinos, mas nunca limita qual tarefa pode ser aberta.
 export function drawTasks(
   playerIds: string[],
   spots: TaskSpot[],
   perPlayer: number,
   random: () => number = Math.random,
 ): Map<string, AssignedTask[]> {
-  const result = new Map<string, AssignedTask[]>();
-
-  for (const playerId of playerIds) {
-    const pool = shuffle(spots, random);
-    const chosen: TaskSpot[] = [];
-    const usedRooms = new Set<string>();
-
-    for (const spot of pool) {
-      if (chosen.length >= perPlayer) break;
-      if (usedRooms.has(spot.room)) continue;
-      chosen.push(spot);
-      usedRooms.add(spot.room);
+  const chosen = new Map(playerIds.map((id) => [id, [] as TaskSpot[]]));
+  const spotUse = new Map<string, number>();
+  const roomUse = new Map<string, number>();
+  for (let round = 0; round < Math.min(perPlayer, spots.length); round++) {
+    const destinations: TaskSpot[] = [];
+    for (const playerId of shuffle(playerIds, random)) {
+      const assigned = chosen.get(playerId)!;
+      let best: TaskSpot | undefined;
+      let bestScore: number[] = [];
+      for (const spot of shuffle(spots, random)) {
+        if (assigned.some((task) => task.id === spot.id)) continue;
+        const neighbors = [...destinations, ...assigned];
+        // A diferença de piso participa da dispersão; não estima uma rota de navegação.
+        const separation = neighbors.length
+          ? Math.min(
+              ...neighbors.map((other) =>
+                Math.hypot(
+                  spot.x - other.x,
+                  spot.z - other.z,
+                  ((spot.level ?? 0) - (other.level ?? 0)) * 8,
+                ),
+              ),
+            )
+          : 0;
+        const score = [
+          Number(assigned.some((task) => task.room === spot.room)),
+          spotUse.get(spot.id) ?? 0,
+          roomUse.get(spot.room) ?? 0,
+          Number(assigned.some((task) => task.kind === spot.kind)),
+          Number(
+            assigned.some(
+              (task) =>
+                (task.duration ?? 'curta') === (spot.duration ?? 'curta'),
+            ),
+          ),
+          -separation,
+        ];
+        const difference = score.findIndex(
+          (value, index) => value !== bestScore[index],
+        );
+        if (
+          !best ||
+          (difference >= 0 && score[difference] < bestScore[difference])
+        ) {
+          best = spot;
+          bestScore = score;
+        }
+      }
+      if (!best) continue;
+      assigned.push(best);
+      destinations.push(best);
+      spotUse.set(best.id, (spotUse.get(best.id) ?? 0) + 1);
+      roomUse.set(best.room, (roomUse.get(best.room) ?? 0) + 1);
     }
-    // Sala repetida só entra quando não sobrou variedade suficiente.
-    for (const spot of pool) {
-      if (chosen.length >= perPlayer) break;
-      if (chosen.includes(spot)) continue;
-      chosen.push(spot);
-    }
-
-    result.set(
-      playerId,
-      chosen.map((spot) => ({ spotId: spot.id, done: false })),
-    );
   }
-  return result;
+  return new Map(
+    [...chosen].map(([id, tasks]) => [
+      id,
+      tasks.map((spot) => ({ spotId: spot.id, done: false })),
+    ]),
+  );
 }
 
-export function totalTasks(assignments: Map<string, AssignedTask[]>, aliveOnly: Set<string>): number {
+export function totalTasks(
+  assignments: Map<string, AssignedTask[]>,
+  aliveOnly: Set<string>,
+): number {
   let total = 0;
   for (const [playerId, tasks] of assignments) {
     if (!aliveOnly.has(playerId)) continue;
@@ -70,7 +116,10 @@ export function totalTasks(assignments: Map<string, AssignedTask[]>, aliveOnly: 
   return total;
 }
 
-export function doneTasks(assignments: Map<string, AssignedTask[]>, aliveOnly: Set<string>): number {
+export function doneTasks(
+  assignments: Map<string, AssignedTask[]>,
+  aliveOnly: Set<string>,
+): number {
   let done = 0;
   for (const [playerId, tasks] of assignments) {
     if (!aliveOnly.has(playerId)) continue;
